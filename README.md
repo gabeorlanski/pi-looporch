@@ -1,13 +1,13 @@
-# pi-looporch
+# pi-workflow
 
-A small pi extension for running project-local agent loops instead of repeatedly prompting a coding agent by hand.
+A small pi extension for running project-local workflows with agent orchestration primitives.
 
 ## Install in pi
 
 From this checkout:
 
 ```bash
-pi install /path/to/pi-looporch
+pi install /path/to/pi-workflow
 ```
 
 For development:
@@ -15,65 +15,82 @@ For development:
 ```bash
 npm install
 npm run check
-pi -e ./extensions/loop.ts
+pi -e ./extensions/workflow.ts
 ```
 
-## Loop layout
+## Workflow layout
 
-Loops can live in the project using the extension:
+Workflows live in one directory per workflow:
 
 ```text
-.pi/loops/<loop-name>/
-  LOOP.md      # human-readable loop intent and instructions
-  loop.js      # optional executable orchestration
-  ...          # optional task files referenced by loop.js
+.pi/workflows/<workflow-name>/
+  workflow.js  # required executable workflow and metadata
+  ...          # optional prompts, schemas, fixtures, and examples
 ```
 
-You can also point a project at external loop directories with `.pi/settings.json`:
+You can also point a project at external workflow directories with `.pi/settings.json`:
 
 ```json
 {
-  "looporch": {
-    "loopDirs": ["../shared-loops", "/absolute/path/to/loop-library"]
+  "workflow": {
+    "workflowDirs": ["../shared-workflows", "/absolute/path/to/workflow-library"]
   }
 }
 ```
 
-Each entry can be either a loop root containing `<loop-name>/LOOP.md` children or a direct loop directory containing `LOOP.md`. Relative paths resolve from the project root. Project-local `.pi/loops` is always searched first.
+Each entry is a workflow root containing `<workflow-name>/workflow.js` children. Relative paths resolve from the project root. Project-local `.pi/workflows` is always searched first.
 
-`loop.js` exports one function:
+## Authoring
+
+`workflow.js` exports required metadata and a default function:
 
 ```js
-export default async function loop(ctx) {
-  ctx.phase("fanout");
-  const result = await ctx.agent("Review the auth flow", {
-    label: "auth review",
-    reasoning: "high",
-    model: "anthropic/claude-sonnet-4-5"
+export const metadata = {
+  name: "review",
+  description: "Review a set of files in parallel and synthesize findings"
+};
+
+export default async function workflow() {
+  phase("fanout");
+  const reviews = await parallel(args.files, async (file) => {
+    return agent(readText("prompts/review.txt") + "\n\nFile: " + file, {
+      label: file,
+      reasoning: "high",
+      taskFile: file
+    });
+  }, { label: "file reviews", reduction: "synthesize reviews" });
+
+  phase("synthesis");
+  return agent("Synthesize these reviews:\n" + reviews.join("\n\n"), {
+    label: "synthesis",
+    reasoning: "medium"
   });
-  return { result };
 }
 ```
 
-The context provides `input`, `loopDir`, `loopName`, `loopMarkdown`, `agent()`, `phase()`, `log()`, `readLoopFile()`, and `resolveLoopPath()`.
+Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `phase`, `log`, `args`, `cwd`, `budget`, `readText`, and `readJson`. File helpers are constrained to the workflow directory.
 
-If `loop.js` is absent, pi-looporch asks an agent to generate the loop implementation from `LOOP.md` and the provided input, then runs that generated loop for the current invocation.
+Generated workflows are review-gated. Pi must show the generated source to the user before saving it under `.pi/workflows/<name>/workflow.js` or running it.
 
 ## Commands
 
 ```text
-/loop <loop-name> [json-or-text-input]
-/loop:<loop-name> [json-or-text-input]
+/workflow <workflow-name> [json-or-text-input]
+/workflow:<workflow-name> [json-or-text-input]
+/workflow <natural-language request>
+/workflow-review <workflow-name>
 ```
 
 Examples:
 
 ```text
-/loop count-to-target {"target":10}
-/loop:review {"files":["src/index.ts","tests/index.test.ts"]}
+/workflow count-to-target {"target":10}
+/workflow:review {"files":["src/index.ts","tests/index.test.ts"]}
+/workflow review the auth flow and create a reusable workflow if needed
+/workflow-review review
 ```
 
-While a loop is running in the TUI, pi-looporch shows a compact panel with the active phase, rough token estimate, agent progress, and the current plan phases. Press `Esc` to cancel.
+While a workflow is running in the TUI, pi-workflow shows a compact panel with the active phase, grouped fan-out progress, child agent status, and token count. Press `Esc` to cancel.
 
 ## Development
 

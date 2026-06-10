@@ -1,6 +1,6 @@
-# pi-looporch Agent Instructions
+# pi-workflow Agent Instructions
 
-This repository is a pi package that adds loop orchestration primitives to pi.
+This repository is a pi package that adds workflow orchestration primitives to pi.
 
 ## Commands
 
@@ -24,8 +24,8 @@ npm run pack:dry   # inspect package contents
 
 - Keep the extension small and dependency-light.
 - Put pi command/UI wiring in `extensions/`.
-- Put testable loop orchestration logic in `src/`.
-- Loops are project data under `.pi/loops/<loop-name>/LOOP.md` with optional `loop.js`; `.pi/settings.json` may add external loop roots via `looporch.loopDirs`.
+- Put testable workflow orchestration logic in `src/`.
+- Workflows are project data under `.pi/workflows/<workflow-name>/workflow.js`; `.pi/settings.json` may add external workflow roots via `workflow.workflowDirs`.
 - Core runtime accepts normalized inputs; command handlers do parsing and coercion.
 - Use deterministic fake agents in tests. Do not call real models from tests.
 - Prefer simple functions over framework code, managers, or class hierarchies.

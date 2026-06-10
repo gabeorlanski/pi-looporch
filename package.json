@@ -1,12 +1,12 @@
 {
-  "name": "pi-looporch",
+  "name": "pi-workflow",
   "version": "0.1.0",
-  "description": "Loop orchestration extension for pi.",
+  "description": "Workflow orchestration extension for pi.",
   "type": "module",
   "keywords": [
     "pi-package",
     "pi",
-    "loop",
+    "workflow",
     "agents",
     "orchestration"
   ],
@@ -19,16 +19,16 @@
   ],
   "pi": {
     "extensions": [
-      "./extensions/loop.ts"
+      "./extensions/workflow.ts"
     ]
   },
   "scripts": {
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
-    "loadcheck": "pi --no-extensions -e ./extensions/loop.ts --list-models __pi_looporch_load_check__",
+    "loadcheck": "pi --no-extensions -e ./extensions/workflow.ts --list-models __pi_workflow_load_check__",
     "check": "npm run lint && npm run typecheck && npm test && npm run loadcheck",
-    "dev": "pi -e ./extensions/loop.ts",
+    "dev": "pi -e ./extensions/workflow.ts",
     "pack:dry": "npm pack --dry-run"
   },
   "peerDependencies": {

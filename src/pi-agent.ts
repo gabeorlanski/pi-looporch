@@ -9,15 +9,15 @@ import {
   type CreateAgentSessionOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { LoopAgent, LoopAgentOptions, LoopAgentProgress } from "./loop-runtime.ts";
+import type { WorkflowAgent, WorkflowAgentOptions, WorkflowAgentProgress } from "./workflow-runtime.ts";
 
-export interface PiLoopAgentOptions {
+export interface PiWorkflowAgentOptions {
   cwd: string;
   tools?: ToolDefinition[];
   session?: Partial<CreateAgentSessionOptions>;
 }
 
-export function createPiLoopAgent(options: PiLoopAgentOptions): LoopAgent {
+export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): WorkflowAgent {
   return async (prompt, agentOptions, reportProgress) => {
     const agentDir = getAgentDir();
     const authStorage = options.session?.authStorage ?? AuthStorage.create();
@@ -43,7 +43,7 @@ export function createPiLoopAgent(options: PiLoopAgentOptions): LoopAgent {
 
     let removeAbortListener: (() => void) | undefined;
     try {
-      if (agentOptions.signal?.aborted) throw new Error("Loop agent aborted");
+      if (agentOptions.signal?.aborted) throw new Error("Workflow agent aborted");
       if (agentOptions.signal) {
         const abortSession = () => void session.abort();
         agentOptions.signal.addEventListener("abort", abortSession, { once: true });
@@ -51,7 +51,7 @@ export function createPiLoopAgent(options: PiLoopAgentOptions): LoopAgent {
       }
 
       await session.prompt(buildAgentPrompt(prompt, agentOptions));
-      if (agentOptions.signal?.aborted) throw new Error("Loop agent aborted");
+      if (agentOptions.signal?.aborted) throw new Error("Workflow agent aborted");
       return lastAssistantText(session.messages);
     } finally {
       removeAbortListener?.();
@@ -61,9 +61,9 @@ export function createPiLoopAgent(options: PiLoopAgentOptions): LoopAgent {
   };
 }
 
-function buildAgentPrompt(prompt: string, options: LoopAgentOptions): string {
+function buildAgentPrompt(prompt: string, options: WorkflowAgentOptions): string {
   const parts = [
-    options.label ? `Loop task label: ${options.label}` : undefined,
+    options.label ? `Workflow task label: ${options.label}` : undefined,
     options.taskFile ? `Task file: ${options.taskFile}` : undefined,
     prompt,
   ];
@@ -77,45 +77,19 @@ function resolveModel(modelRegistry: ModelRegistry, spec: string): ReturnType<Mo
   return modelRegistry.getAll().find((model) => model.id === modelSpec || model.name === modelSpec);
 }
 
-function createProgressTracker(reportProgress: (progress: LoopAgentProgress) => void) {
-  let toolUseCount = 0;
-  let activeToolUseCount = 0;
+function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress) => void) {
   let tokenCount = 0;
-  const filesTouched = new Set<string>();
-
-  const emit = (statusMessage: string) => {
-    reportProgress({
-      statusMessage,
-      toolUseCount,
-      activeToolUseCount,
-      filesTouched: [...filesTouched],
-      tokenCount,
-    });
-  };
-
   return {
     handleEvent(event: unknown): void {
       if (!isEventObject(event)) return;
-      if (event.type === "turn_start") emit("thinking");
-      if (event.type === "tool_execution_start") {
-        toolUseCount++;
-        activeToolUseCount++;
-        collectFilePaths(event.args, filesTouched);
-        emit(`using ${String(event.toolName ?? "tool")}`);
+      if (event.type === "turn_start") reportProgress({ statusMessage: "thinking", tokenCount });
+      if (event.type === "tool_execution_start" || event.type === "tool_execution_update") {
+        reportProgress({ statusMessage: `using ${String(event.toolName ?? "tool")}`, tokenCount });
       }
-      if (event.type === "tool_execution_update") {
-        collectFilePaths(event.args, filesTouched);
-        emit(`using ${String(event.toolName ?? "tool")}`);
-      }
-      if (event.type === "tool_execution_end") {
-        activeToolUseCount = Math.max(0, activeToolUseCount - 1);
-        collectFilePaths(event.args, filesTouched);
-        collectFilePaths(event.result, filesTouched);
-        emit(`finished ${String(event.toolName ?? "tool")}`);
-      }
+      if (event.type === "tool_execution_end") reportProgress({ statusMessage: `finished ${String(event.toolName ?? "tool")}`, tokenCount });
       if (event.type === "message_end") {
         tokenCount += tokensFromMessage(event.message);
-        emit(activeToolUseCount > 0 ? "using tools" : "thinking");
+        reportProgress({ statusMessage: "thinking", tokenCount });
       }
     },
   };
@@ -125,44 +99,11 @@ function isEventObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && typeof (value as { type?: unknown }).type === "string";
 }
 
-function collectFilePaths(value: unknown, files: Set<string>): void {
-  if (typeof value === "string") return;
-  if (Array.isArray(value)) {
-    for (const item of value) collectFilePaths(item, files);
-    return;
-  }
-  if (typeof value !== "object" || value === null) return;
-
-  for (const [key, child] of Object.entries(value)) {
-    if (isPathKey(key)) collectPathValue(child, files);
-    else collectFilePaths(child, files);
-  }
-}
-
-function isPathKey(key: string): boolean {
-  return key === "path" || key === "file" || key === "filePath" || key === "target" || key === "taskFile" || key === "paths" || key === "files";
-}
-
-function collectPathValue(value: unknown, files: Set<string>): void {
-  if (typeof value === "string" && looksLikePath(value)) files.add(value);
-  else if (Array.isArray(value)) {
-    for (const item of value) collectPathValue(item, files);
-  }
-}
-
-function looksLikePath(value: string): boolean {
-  return value.includes("/") || value.includes(".");
-}
-
 function tokensFromMessage(value: unknown): number {
   if (typeof value !== "object" || value === null) return 0;
   const usage = (value as { usage?: unknown }).usage;
   if (typeof usage !== "object" || usage === null) return 0;
-  const input = numericProperty(usage, "input");
-  const output = numericProperty(usage, "output");
-  const cacheRead = numericProperty(usage, "cacheRead");
-  const cacheWrite = numericProperty(usage, "cacheWrite");
-  return input + output + cacheRead + cacheWrite;
+  return numericProperty(usage, "input") + numericProperty(usage, "output") + numericProperty(usage, "cacheRead") + numericProperty(usage, "cacheWrite");
 }
 
 function numericProperty(value: object, key: string): number {

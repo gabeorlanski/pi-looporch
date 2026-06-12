@@ -70,7 +70,7 @@ export default async function workflow() {
 
 Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `phase`, `log`, `args`, `cwd`, `budget`, `readText`, and `readJson`. File helpers are constrained to the workflow directory.
 
-Generated workflows are review-gated. Pi must show the generated source to the user before saving it under `.pi/workflows/<name>/workflow.js` or running it.
+Agents spawned from workflows can call `run_workflow` to invoke an existing workflow, or `propose_workflow` to submit a new `.pi/workflows/<name>/workflow.js` draft. Generated workflows are review-gated. Pi shows a natural-language proposal before saving under `.pi/workflows/<name>/workflow.js` or running it, and reviewer-updated source is what gets saved.
 
 ## Commands
 

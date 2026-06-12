@@ -9,12 +9,19 @@ import {
   type CreateAgentSessionOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import type { WorkflowReviewer } from "./workflow-request.ts";
 import type { WorkflowAgent, WorkflowAgentOptions, WorkflowAgentProgress } from "./workflow-runtime.ts";
+import { createWorkflowTools, type WorkflowToolsOptions } from "./workflow-tools.ts";
 
 export interface PiWorkflowAgentOptions {
   cwd: string;
   tools?: ToolDefinition[];
+  reviewer?: WorkflowReviewer;
   session?: Partial<CreateAgentSessionOptions>;
+}
+
+export function createPiWorkflowAgentTools(cwd: string, workflowOptions: Omit<WorkflowToolsOptions, "cwd"> = {}): ToolDefinition[] {
+  return [...(createCodingTools(cwd) as ToolDefinition[]), ...createWorkflowTools({ cwd, ...workflowOptions })];
 }
 
 export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): WorkflowAgent {
@@ -30,7 +37,7 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       modelRegistry,
       sessionManager: SessionManager.inMemory(options.cwd),
       settingsManager: SettingsManager.create(options.cwd, agentDir),
-      customTools: options.tools ?? createCodingTools(options.cwd),
+      customTools: options.tools ?? createPiWorkflowAgentTools(options.cwd, { agent: createPiWorkflowAgent(options), reviewer: options.reviewer }),
       ...options.session,
       thinkingLevel: agentOptions.reasoning ?? options.session?.thinkingLevel,
       ...(model ? { model } : {}),

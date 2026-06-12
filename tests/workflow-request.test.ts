@@ -29,3 +29,56 @@ export default async function workflow() {
   assert.equal(resolved.action, "created");
   assert.equal((await readFile(workflowFile, "utf8")).trim(), source);
 });
+
+void test("generated_workflows_pass_natural_language_proposal_to_review", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-request-"));
+  const source = `export const metadata = { name: "summarize", description: "Summarize files" };
+export default async function workflow() {
+  return { prompt: args.prompt };
+}`;
+  const proposal = {
+    summary: "Create a reusable summarizer workflow.",
+    steps: ["Read args.prompt", "Return it for smoke testing"],
+    willRun: ["Save .pi/workflows/summarize/workflow.js", "Run summarize with the original request as prompt"],
+  };
+  const agent: WorkflowAgent = async () => JSON.stringify({ action: "create", name: "summarize", source, proposal });
+  let reviewedProposal: unknown;
+
+  const resolved = await resolveWorkflowRequest({
+    cwd: project,
+    request: "summarize",
+    agent,
+    reviewer: ({ draft }) => {
+      reviewedProposal = draft.proposal;
+      return { action: "approve" };
+    },
+  });
+
+  assert.equal(resolved.action, "created");
+  assert.deepEqual(reviewedProposal, proposal);
+  assert.deepEqual(resolved.draft.proposal, proposal);
+});
+
+void test("generated_workflows_save_reviewer_updated_source", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-request-"));
+  const source = `export const metadata = { name: "summarize", description: "Summarize files" };
+export default async function workflow() {
+  return { prompt: args.prompt };
+}`;
+  const updatedSource = `export const metadata = { name: "summarize", description: "Summarize files with edits" };
+export default async function workflow() {
+  return { prompt: args.prompt, reviewed: true };
+}`;
+  const agent: WorkflowAgent = async () => JSON.stringify({ action: "create", name: "summarize", source });
+  const workflowFile = path.join(project, ".pi", "workflows", "summarize", "workflow.js");
+
+  const resolved = await resolveWorkflowRequest({
+    cwd: project,
+    request: "summarize",
+    agent,
+    reviewer: () => ({ action: "approve", source: updatedSource }),
+  });
+
+  assert.equal(resolved.action, "created");
+  assert.equal((await readFile(workflowFile, "utf8")).trim(), updatedSource);
+});

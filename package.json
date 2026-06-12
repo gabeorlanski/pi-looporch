@@ -48,5 +48,8 @@
     "type": "git",
     "url": "git+https://github.com/gabeorlanski/pi-looporch.git"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "typebox": "^1.2.8"
+  }
 }

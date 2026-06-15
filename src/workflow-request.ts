@@ -1,7 +1,13 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { discoverWorkflows, type WorkflowReference } from "./workflow-discovery.ts";
-import { normalizeWorkflowName, parseWorkflowSourceMetadata, type WorkflowAgent, type WorkflowMetadata } from "./workflow-runtime.ts";
+import {
+  normalizeWorkflowName,
+  parseWorkflowSourceMetadata,
+  type WorkflowAgent,
+  type WorkflowAgentProgress,
+  type WorkflowMetadata,
+} from "./workflow-runtime.ts";
 
 export interface WorkflowSelectionRun {
   action: "run";
@@ -37,9 +43,7 @@ export interface WorkflowReviewRequest {
   request: string;
 }
 
-export type WorkflowReviewDecision =
-  | { action: "approve"; source?: string }
-  | { action: "reject"; reason?: string };
+export type WorkflowReviewDecision = { action: "approve"; source?: string } | { action: "reject"; reason?: string };
 
 export type WorkflowReviewer = (request: WorkflowReviewRequest) => Promise<WorkflowReviewDecision> | WorkflowReviewDecision;
 
@@ -65,7 +69,12 @@ export async function resolveWorkflowRequest(options: ResolveWorkflowRequestOpti
 
   const name = normalizeWorkflowName(selection.name);
   const metadata = parseWorkflowSourceMetadata(selection.source, name);
-  const draft = { name, source: selection.source, metadata, proposal: normalizeWorkflowProposal(selection.proposal, options.request, name) };
+  const draft = {
+    name,
+    source: selection.source,
+    metadata,
+    proposal: normalizeWorkflowProposal(selection.proposal, options.request, name),
+  };
   if (!options.reviewer) throw new Error("Generated workflows require review before they are saved or run");
   const decision = await options.reviewer({ cwd: options.cwd, draft, request: options.request });
   if (decision.action === "reject") throw new Error(decision.reason ?? "Generated workflow was rejected");
@@ -83,8 +92,12 @@ export async function saveWorkflowDraft(cwd: string, draft: GeneratedWorkflowDra
 }
 
 async function selectWorkflow(request: string, workflows: WorkflowReference[], agent: WorkflowAgent): Promise<WorkflowSelection> {
-  const response = await agent(selectionPrompt(request, workflows), { label: "select workflow", reasoning: "low" }, () => {});
+  const response = await agent(selectionPrompt(request, workflows), { label: "select workflow", reasoning: "low" }, ignoreProgress);
   return parseSelection(response);
+}
+
+function ignoreProgress(progress: WorkflowAgentProgress): void {
+  void progress;
 }
 
 function selectionPrompt(request: string, workflows: WorkflowReference[]): string {
@@ -110,7 +123,7 @@ function selectionPrompt(request: string, workflows: WorkflowReference[]): strin
 }
 
 function parseSelection(value: unknown): WorkflowSelection {
-  const raw = typeof value === "object" && value !== null && "selection" in value ? (value as { selection: unknown }).selection : value;
+  const raw = typeof value === "object" && value !== null && "selection" in value ? value.selection : value;
   if (typeof raw !== "string") throw new Error("Workflow selector must return JSON text");
   const parsed = JSON.parse(extractJson(raw)) as unknown;
   if (!isSelection(parsed)) throw new Error("Workflow selector returned an invalid action");
@@ -118,7 +131,7 @@ function parseSelection(value: unknown): WorkflowSelection {
 }
 
 function extractJson(text: string): string {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text)?.[1];
   return (fenced ?? text).trim();
 }
 

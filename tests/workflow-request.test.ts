@@ -13,7 +13,7 @@ void test("generated_workflows_save_only_after_review", async () => {
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;
-  const agent: WorkflowAgent = async () => JSON.stringify({ action: "create", name: "summarize", source });
+  const agent: WorkflowAgent = () => Promise.resolve(JSON.stringify({ action: "create", name: "summarize", source }));
   const workflowFile = path.join(project, ".pi", "workflows", "summarize", "workflow.js");
 
   await assert.rejects(resolveWorkflowRequest({ cwd: project, request: "summarize", agent }), /require review/);
@@ -41,7 +41,7 @@ export default async function workflow() {
     steps: ["Read args.prompt", "Return it for smoke testing"],
     willRun: ["Save .pi/workflows/summarize/workflow.js", "Run summarize with the original request as prompt"],
   };
-  const agent: WorkflowAgent = async () => JSON.stringify({ action: "create", name: "summarize", source, proposal });
+  const agent: WorkflowAgent = () => Promise.resolve(JSON.stringify({ action: "create", name: "summarize", source, proposal }));
   let reviewedProposal: unknown;
 
   const resolved = await resolveWorkflowRequest({
@@ -69,7 +69,7 @@ export default async function workflow() {
 export default async function workflow() {
   return { prompt: args.prompt, reviewed: true };
 }`;
-  const agent: WorkflowAgent = async () => JSON.stringify({ action: "create", name: "summarize", source });
+  const agent: WorkflowAgent = () => Promise.resolve(JSON.stringify({ action: "create", name: "summarize", source }));
   const workflowFile = path.join(project, ".pi", "workflows", "summarize", "workflow.js");
 
   const resolved = await resolveWorkflowRequest({

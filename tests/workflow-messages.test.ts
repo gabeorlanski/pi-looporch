@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { workflowCompleteMessage, workflowFailureMessage, workflowSnapshotMessages, workflowStartMessage } from "../src/workflow-messages.ts";
+import {
+  workflowCompleteMessage,
+  workflowFailureMessage,
+  workflowSnapshotMessages,
+  workflowStartMessage,
+} from "../src/workflow-messages.ts";
 import type { WorkflowSnapshot } from "../src/workflow-runtime.ts";
 
 void test("workflow_boundary_messages_are_visible_text", () => {

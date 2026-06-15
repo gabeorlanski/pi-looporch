@@ -66,12 +66,14 @@ async function workflowSteerMessage(
   fixedWorkflowName: string | undefined,
   args: string,
 ): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
-  if (fixedWorkflowName) return { ok: true, message: workflowRunRequestMessage(normalizeWorkflowName(fixedWorkflowName), parseWorkflowInput(args)) };
+  if (fixedWorkflowName)
+    return { ok: true, message: workflowRunRequestMessage(normalizeWorkflowName(fixedWorkflowName), parseWorkflowInput(args)) };
 
   const workflows = await discoverWorkflows(ctx.cwd);
   const names = workflows.map((workflow) => workflow.name);
   const trimmed = args.trim();
-  if (!trimmed) return { ok: false, message: names.length ? `Usage: /workflow <name> [input]. Available: ${names.join(", ")}` : "No workflows found." };
+  if (!trimmed)
+    return { ok: false, message: names.length ? `Usage: /workflow <name> [input]. Available: ${names.join(", ")}` : "No workflows found." };
 
   const [first, rest] = splitFirstWord(trimmed);
   if (names.includes(first)) return { ok: true, message: workflowRunRequestMessage(first, parseWorkflowInput(rest)) };
@@ -90,7 +92,9 @@ function sendWhenReady(pi: ExtensionAPI, ctx: ExtensionCommandContext, message: 
 function createReviewer(ctx: ExtensionContext): WorkflowReviewer {
   return async ({ draft }) => {
     if (ctx.mode !== "tui") return { action: "reject", reason: "Generated workflows require TUI review before save or run" };
-    return (await reviewGeneratedWorkflow(ctx, draft)) ? { action: "approve" } : { action: "reject", reason: "Generated workflow was rejected" };
+    return (await reviewGeneratedWorkflow(ctx, draft))
+      ? { action: "approve" }
+      : { action: "reject", reason: "Generated workflow was rejected" };
   };
 }
 
@@ -139,11 +143,11 @@ function parseWorkflowInput(text: string): unknown {
 }
 
 function splitFirstWord(text: string): [string, string] {
-  const match = text.match(/^(\S+)(?:\s+([\s\S]*))?$/);
+  const match = /^(\S+)(?:\s+([\s\S]*))?$/.exec(text);
   return [match?.[1] ?? "", match?.[2] ?? ""];
 }
 
-async function workflowCompletions(cwd: string, prefix: string): Promise<Array<{ value: string; label: string }> | null> {
+async function workflowCompletions(cwd: string, prefix: string): Promise<{ value: string; label: string }[] | null> {
   const matches = (await discoverWorkflows(cwd)).map((workflow) => workflow.name).filter((name) => name.startsWith(prefix));
   return matches.length ? matches.map((name) => ({ value: name, label: name })) : null;
 }

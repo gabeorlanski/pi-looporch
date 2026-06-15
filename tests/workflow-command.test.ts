@@ -5,7 +5,7 @@ import { workflowNaturalLanguageRequestMessage, workflowRunRequestMessage } from
 void test("named_workflow_command_steers_current_session_to_run_workflow_tool", () => {
   assert.equal(
     workflowRunRequestMessage("echo", { hello: "world" }),
-    "Use the run_workflow tool in this current session with name \"echo\" and input:\n{\n  \"hello\": \"world\"\n}",
+    'Use the run_workflow tool in this current session with name "echo" and input:\n{\n  "hello": "world"\n}',
   );
 });
 

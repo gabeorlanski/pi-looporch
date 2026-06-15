@@ -77,13 +77,13 @@ export interface WorkflowRunResult {
   snapshot: WorkflowSnapshot;
 }
 
-type WorkflowFunction = () => Promise<unknown> | unknown;
+type WorkflowFunction = () => unknown;
 type PipelineStage<T> = ((item: T, index: number) => Promise<T> | T) | { run: (item: T, index: number) => Promise<T> | T };
 const fanOutScope = new AsyncLocalStorage<number>();
 
 export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Promise<WorkflowRunResult> {
   const workflowName = normalizeWorkflowName(options.workflowName);
-  const workflowDir = await resolveWorkflowDirectory(options.cwd, workflowName, options.workflowRoots);
+  const workflowDir = resolveWorkflowDirectory(options.cwd, workflowName, options.workflowRoots);
   const entryFile = path.join(workflowDir, "workflow.js");
   const source = await readFile(entryFile, "utf8");
   const { metadata } = compileWorkflow(source, entryFile, workflowGlobals(options, workflowDir));
@@ -112,7 +112,7 @@ export function normalizeWorkflowName(workflowName: string): string {
   return normalized;
 }
 
-export async function resolveWorkflowDirectory(cwd: string, workflowName: string, workflowRoots: string[] | undefined): Promise<string> {
+export function resolveWorkflowDirectory(cwd: string, workflowName: string, workflowRoots: string[] | undefined): string {
   for (const root of workflowRoots?.length ? workflowRoots : [path.resolve(cwd, ".pi", "workflows")]) {
     const direct = path.resolve(root);
     const child = path.join(direct, workflowName);
@@ -132,7 +132,8 @@ export function validateWorkflowMetadata(metadata: unknown, workflowName: string
   if (typeof metadata !== "object" || metadata === null) throw new Error("workflow.js must export metadata");
   const candidate = metadata as { name?: unknown; description?: unknown };
   if (candidate.name !== workflowName) throw new Error(`Workflow metadata name must be '${workflowName}'`);
-  if (typeof candidate.description !== "string" || !candidate.description.trim()) throw new Error("Workflow metadata description must be non-empty");
+  if (typeof candidate.description !== "string" || !candidate.description.trim())
+    throw new Error("Workflow metadata description must be non-empty");
 }
 
 function workflowGlobals(
@@ -155,19 +156,19 @@ function workflowGlobals(
     agent: (prompt: string, agentOptions: WorkflowAgentOptions = {}) => runAgent(options, snapshot, emit, prompt, agentOptions),
     phase: (title: string) => {
       if (!snapshot || !emit) throw new Error("Workflow phase primitive is not available during metadata loading");
-      snapshot.phases.push(String(title));
+      snapshot.phases.push(title);
       emit();
     },
     log: (message: string) => {
       if (!snapshot || !emit) throw new Error("Workflow log primitive is not available during metadata loading");
-      snapshot.logs.push(String(message));
+      snapshot.logs.push(message);
       emit();
     },
     readText: (relativePath: string) => readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8"),
     readJson: (relativePath: string) => JSON.parse(readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8")) as unknown,
     parallel: <T, R>(items: readonly T[], worker: (item: T, index: number) => Promise<R> | R, fanOutOptions: { label?: string } = {}) =>
       runParallel(snapshot, emit, items, worker, fanOutOptions.label),
-    pipeline: <T>(items: readonly T[], stages: Array<PipelineStage<T>>) =>
+    pipeline: <T>(items: readonly T[], stages: PipelineStage<T>[]) =>
       Promise.all(items.map((item, index) => runPipelineItem(item, index, stages))),
   };
 }
@@ -182,7 +183,7 @@ async function runParallel<T, R>(
   if (!snapshot || !emit) throw new Error("Workflow parallel primitive is not available during metadata loading");
   const fanOut: WorkflowFanOutSnapshot = {
     id: snapshot.fanOuts.length + 1,
-    label: label ?? `parallel ${snapshot.fanOuts.length + 1}`,
+    label: label ?? `parallel ${String(snapshot.fanOuts.length + 1)}`,
     total: items.length,
     running: items.length,
     done: 0,
@@ -218,7 +219,7 @@ async function runAgent(
   if (options.signal?.aborted) throw new Error("Workflow aborted");
   const agent: WorkflowAgentSnapshot = {
     id: snapshot.agents.length + 1,
-    label: agentOptions.label ?? `agent ${snapshot.agents.length + 1}`,
+    label: agentOptions.label ?? `agent ${String(snapshot.agents.length + 1)}`,
     status: "running",
     tokenCount: 0,
     fanOutId: fanOutScope.getStore(),
@@ -243,13 +244,17 @@ async function runAgent(
   }
 }
 
-async function runPipelineItem<T>(item: T, index: number, stages: Array<PipelineStage<T>>): Promise<T> {
+async function runPipelineItem<T>(item: T, index: number, stages: PipelineStage<T>[]): Promise<T> {
   let current = item;
   for (const stage of stages) current = typeof stage === "function" ? await stage(current, index) : await stage.run(current, index);
   return current;
 }
 
-function compileWorkflow(source: string, filePath: string, globals: Record<string, unknown>): { metadata: unknown; workflow: WorkflowFunction } {
+function compileWorkflow(
+  source: string,
+  filePath: string,
+  globals: Record<string, unknown>,
+): { metadata: unknown; workflow: WorkflowFunction } {
   const context = vm.createContext({ ...globals });
   const script = new vm.Script(
     `${transformWorkflowModule(source)}\n;({ metadata: typeof metadata === "undefined" ? undefined : metadata, workflow: typeof workflow === "undefined" ? undefined : workflow });`,
@@ -264,8 +269,14 @@ function transformWorkflowModule(source: string): string {
   if (/\bimport\b/.test(source)) throw new Error("workflow.js cannot import modules");
   const transformed = source
     .replace(/\bexport\s+const\s+metadata\s*=/g, "const metadata =")
-    .replace(/\bexport\s+default\s+async\s+function\s*([A-Za-z_$][\w$]*)?\s*\(/, (_match, name: string | undefined) => `const workflow = async function ${name ?? ""}(`)
-    .replace(/\bexport\s+default\s+function\s*([A-Za-z_$][\w$]*)?\s*\(/, (_match, name: string | undefined) => `const workflow = function ${name ?? ""}(`)
+    .replace(
+      /\bexport\s+default\s+async\s+function\s*([A-Za-z_$][\w$]*)?\s*\(/,
+      (_match, name: string | undefined) => `const workflow = async function ${name ?? ""}(`,
+    )
+    .replace(
+      /\bexport\s+default\s+function\s*([A-Za-z_$][\w$]*)?\s*\(/,
+      (_match, name: string | undefined) => `const workflow = function ${name ?? ""}(`,
+    )
     .replace(/\bexport\s+default\s+/g, "const workflow = ");
   if (/\bexport\b/.test(transformed)) throw new Error("workflow.js may only export metadata and a default workflow function");
   return transformed;

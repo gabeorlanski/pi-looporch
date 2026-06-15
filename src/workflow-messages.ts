@@ -35,21 +35,27 @@ function newLogMessages(previous: WorkflowSnapshot | undefined, next: WorkflowSn
 function changedFanOutMessages(previous: WorkflowSnapshot | undefined, next: WorkflowSnapshot): string[] {
   return next.fanOuts.flatMap((fanOut) => {
     const before = previous?.fanOuts.find((candidate) => candidate.id === fanOut.id);
-    return fanOutChanged(before, fanOut) ? [`Workflow ${next.workflowName} fan-out ${fanOut.label}: ${fanOut.done}/${fanOut.total} done, ${fanOut.running} running, ${fanOut.error} errors`] : [];
+    return fanOutChanged(before, fanOut)
+      ? [
+          `Workflow ${next.workflowName} fan-out ${fanOut.label}: ${String(fanOut.done)}/${String(fanOut.total)} done, ${String(fanOut.running)} running, ${String(fanOut.error)} errors`,
+        ]
+      : [];
   });
 }
 
 function changedAgentMessages(previous: WorkflowSnapshot | undefined, next: WorkflowSnapshot): string[] {
   return next.agents.flatMap((agent) => {
     const before = previous?.agents.find((candidate) => candidate.id === agent.id);
-    return agentChanged(before, agent) ? [`Workflow ${next.workflowName} agent ${agent.label}: ${agent.status}${agent.message ? ` · ${agent.message}` : ""}`] : [];
+    return agentChanged(before, agent)
+      ? [`Workflow ${next.workflowName} agent ${agent.label}: ${agent.status}${agent.message ? ` · ${agent.message}` : ""}`]
+      : [];
   });
 }
 
 function fanOutChanged(previous: WorkflowFanOutSnapshot | undefined, next: WorkflowFanOutSnapshot): boolean {
-  return !previous || previous.running !== next.running || previous.done !== next.done || previous.error !== next.error;
+  return previous?.running !== next.running || previous.done !== next.done || previous.error !== next.error;
 }
 
 function agentChanged(previous: WorkflowAgentSnapshot | undefined, next: WorkflowAgentSnapshot): boolean {
-  return !previous || previous.status !== next.status || previous.message !== next.message;
+  return previous?.status !== next.status || previous.message !== next.message;
 }

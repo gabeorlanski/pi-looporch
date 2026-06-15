@@ -1,14 +1,22 @@
 import js from "@eslint/js";
+import eslintConfigPrettier from "eslint-config-prettier";
 import tseslint from "typescript-eslint";
+
+const tsFiles = ["**/*.ts"];
+const typeCheckedConfigs = [...tseslint.configs.strictTypeChecked, ...tseslint.configs.stylisticTypeChecked].map((config) => ({
+  ...config,
+  files: tsFiles,
+}));
 
 export default tseslint.config(
   {
-    ignores: ["node_modules/**", "coverage/**", "dist/**", ".pi/**"],
+    ignores: ["node_modules/**", "coverage/**", "dist/**", ".pi/**", ".husky/**"],
   },
   js.configs.recommended,
-  ...tseslint.configs.recommended,
+  ...typeCheckedConfigs,
+  eslintConfigPrettier,
   {
-    files: ["**/*.ts"],
+    files: tsFiles,
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -16,9 +24,12 @@ export default tseslint.config(
       },
     },
     rules: {
+      "@typescript-eslint/consistent-type-imports": "error",
+      "@typescript-eslint/no-confusing-void-expression": ["error", { ignoreArrowShorthand: true }],
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/no-floating-promises": "error",
-      "@typescript-eslint/consistent-type-imports": "error"
+      "@typescript-eslint/no-unnecessary-condition": "error",
+      "@typescript-eslint/prefer-nullish-coalescing": "error",
     },
   },
 );

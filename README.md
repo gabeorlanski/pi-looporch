@@ -47,23 +47,27 @@ Each entry is a workflow root containing `<workflow-name>/workflow.js` children.
 ```js
 export const metadata = {
   name: "review",
-  description: "Review a set of files in parallel and synthesize findings"
+  description: "Review a set of files in parallel and synthesize findings",
 };
 
 export default async function workflow() {
   phase("fanout");
-  const reviews = await parallel(args.files, async (file) => {
-    return agent(readText("prompts/review.txt") + "\n\nFile: " + file, {
-      label: file,
-      reasoning: "high",
-      taskFile: file
-    });
-  }, { label: "file reviews", reduction: "synthesize reviews" });
+  const reviews = await parallel(
+    args.files,
+    async (file) => {
+      return agent(readText("prompts/review.txt") + "\n\nFile: " + file, {
+        label: file,
+        reasoning: "high",
+        taskFile: file,
+      });
+    },
+    { label: "file reviews", reduction: "synthesize reviews" },
+  );
 
   phase("synthesis");
   return agent("Synthesize these reviews:\n" + reviews.join("\n\n"), {
     label: "synthesis",
-    reasoning: "medium"
+    reasoning: "medium",
   });
 }
 ```
@@ -95,11 +99,16 @@ While a workflow is running in the TUI, pi-workflow shows a compact panel with t
 ## Development
 
 ```bash
-npm run lint
-npm run typecheck
-npm test
-npm run loadcheck
-npm run check
+npm run lint          # strict ESLint
+npm run lint:fix      # auto-fix lint violations
+npm run format        # Prettier write
+npm run format:check  # Prettier check
+npm run typecheck     # TypeScript without emit
+npm test              # deterministic node:test suite
+npm run loadcheck     # verify pi can load the extension
+npm run check         # full gate
 ```
+
+Pre-commit hooks run `lint-staged` through Husky after `npm install`/`npm run prepare`.
 
 Tests use deterministic fake agents only; they do not call real models.

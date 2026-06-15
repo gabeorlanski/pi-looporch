@@ -37,7 +37,8 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       modelRegistry,
       sessionManager: SessionManager.inMemory(options.cwd),
       settingsManager: SettingsManager.create(options.cwd, agentDir),
-      customTools: options.tools ?? createPiWorkflowAgentTools(options.cwd, { agent: createPiWorkflowAgent(options), reviewer: options.reviewer }),
+      customTools:
+        options.tools ?? createPiWorkflowAgentTools(options.cwd, { agent: createPiWorkflowAgent(options), reviewer: options.reviewer }),
       ...options.session,
       thinkingLevel: agentOptions.reasoning ?? options.session?.thinkingLevel,
       ...(model ? { model } : {}),
@@ -91,9 +92,9 @@ function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress)
       if (!isEventObject(event)) return;
       if (event.type === "turn_start") reportProgress({ statusMessage: "thinking", tokenCount });
       if (event.type === "tool_execution_start" || event.type === "tool_execution_update") {
-        reportProgress({ statusMessage: `using ${String(event.toolName ?? "tool")}`, tokenCount });
+        reportProgress({ statusMessage: `using ${eventToolName(event)}`, tokenCount });
       }
-      if (event.type === "tool_execution_end") reportProgress({ statusMessage: `finished ${String(event.toolName ?? "tool")}`, tokenCount });
+      if (event.type === "tool_execution_end") reportProgress({ statusMessage: `finished ${eventToolName(event)}`, tokenCount });
       if (event.type === "message_end") {
         tokenCount += tokensFromMessage(event.message);
         reportProgress({ statusMessage: "thinking", tokenCount });
@@ -106,11 +107,20 @@ function isEventObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && typeof (value as { type?: unknown }).type === "string";
 }
 
+function eventToolName(event: Record<string, unknown>): string {
+  return typeof event.toolName === "string" && event.toolName.trim() ? event.toolName : "tool";
+}
+
 function tokensFromMessage(value: unknown): number {
   if (typeof value !== "object" || value === null) return 0;
   const usage = (value as { usage?: unknown }).usage;
   if (typeof usage !== "object" || usage === null) return 0;
-  return numericProperty(usage, "input") + numericProperty(usage, "output") + numericProperty(usage, "cacheRead") + numericProperty(usage, "cacheWrite");
+  return (
+    numericProperty(usage, "input") +
+    numericProperty(usage, "output") +
+    numericProperty(usage, "cacheRead") +
+    numericProperty(usage, "cacheWrite")
+  );
 }
 
 function numericProperty(value: object, key: string): number {

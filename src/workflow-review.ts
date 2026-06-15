@@ -11,7 +11,7 @@ export function workflowApprovalLines(draft: GeneratedWorkflowDraft): string[] {
     row("Goal"),
     row(`  ${draft.proposal.summary}`),
     row("Steps"),
-    ...draft.proposal.steps.map((step, index) => row(`  ${index + 1}. ${step}`)),
+    ...draft.proposal.steps.map((step, index) => row(`  ${String(index + 1)}. ${step}`)),
     row("What will run"),
     ...draft.proposal.willRun.map((step) => row(`  • ${step}`)),
     "├─ Decision ──────────────────────────────────────┤",

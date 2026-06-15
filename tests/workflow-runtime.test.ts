@@ -29,9 +29,9 @@ export default async function workflow() {
 }`,
     { "prompt.txt": "review " },
   );
-  const agent: WorkflowAgent = async (prompt, options, reportProgress) => {
+  const agent: WorkflowAgent = (prompt, options, reportProgress) => {
     reportProgress({ tokenCount: 7 });
-    return `${options.label}:${prompt}`;
+    return Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
   };
 
   const result = await runWorkflowFromDirectory({ cwd: project, workflowName: "review", input: { files: ["a.ts", "b.ts"] }, agent });
@@ -42,14 +42,20 @@ export default async function workflow() {
   ]);
   assert.deepEqual(result.snapshot.phases, ["fanout"]);
   assert.equal(result.snapshot.agents.length, 2);
-  assert.deepEqual(result.snapshot.agents.map((agentSnapshot) => agentSnapshot.tokenCount), [7, 7]);
-  assert.deepEqual(result.snapshot.agents.map((agentSnapshot) => agentSnapshot.fanOutId), [1, 1]);
+  assert.deepEqual(
+    result.snapshot.agents.map((agentSnapshot) => agentSnapshot.tokenCount),
+    [7, 7],
+  );
+  assert.deepEqual(
+    result.snapshot.agents.map((agentSnapshot) => agentSnapshot.fanOutId),
+    [1, 1],
+  );
   assert.deepEqual(result.snapshot.fanOuts, [{ id: 1, label: "file reviews", total: 2, running: 0, done: 2, error: 0 }]);
 });
 
 void test("workflow_sandbox_blocks_ambient_authority_and_file_escapes", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
-  const agent: WorkflowAgent = async () => "unused";
+  const agent: WorkflowAgent = () => Promise.resolve("unused");
   await writeWorkflow(
     project,
     "process",

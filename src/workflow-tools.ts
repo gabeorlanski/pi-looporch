@@ -59,7 +59,9 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
       request: Type.Optional(Type.String({ description: "Original user request this workflow satisfies" })),
       summary: Type.Optional(Type.String({ description: "Natural-language summary shown to the user before save" })),
       steps: Type.Optional(Type.Array(Type.String(), { description: "Natural-language steps the workflow will take" })),
-      willRun: Type.Optional(Type.Array(Type.String(), { description: "Commands, workflow calls, or agent tasks that will run after approval" })),
+      willRun: Type.Optional(
+        Type.Array(Type.String(), { description: "Commands, workflow calls, or agent tasks that will run after approval" }),
+      ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const cwd = options.cwd ?? ctx.cwd;
@@ -81,7 +83,10 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
   });
 }
 
-function workflowProposalFromParams(params: { request?: string; summary?: string; steps?: string[]; willRun?: string[] }, name: string): WorkflowProposal {
+function workflowProposalFromParams(
+  params: { request?: string; summary?: string; steps?: string[]; willRun?: string[] },
+  name: string,
+): WorkflowProposal {
   return {
     summary: params.summary ?? `Create workflow '${name}'${params.request ? ` for: ${params.request}` : ""}`,
     steps: params.steps ?? ["Save the reviewed workflow source under the project workflow directory."],

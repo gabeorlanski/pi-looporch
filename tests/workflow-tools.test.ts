@@ -11,9 +11,18 @@ import type { WorkflowAgent } from "../src/workflow-runtime.ts";
 void test("pi_workflow_agent_exposes_workflow_tools_by_default", () => {
   const tools = createPiWorkflowAgentTools(process.cwd());
 
-  assert.ok(tools.some((tool) => tool.name === "read"), "coding tools are still available");
-  assert.ok(tools.some((tool) => tool.name === "run_workflow"), "existing workflows can be called by agents");
-  assert.ok(tools.some((tool) => tool.name === "propose_workflow"), "new workflows can be proposed by agents");
+  assert.ok(
+    tools.some((tool) => tool.name === "read"),
+    "coding tools are still available",
+  );
+  assert.ok(
+    tools.some((tool) => tool.name === "run_workflow"),
+    "existing workflows can be called by agents",
+  );
+  assert.ok(
+    tools.some((tool) => tool.name === "propose_workflow"),
+    "new workflows can be proposed by agents",
+  );
 });
 
 void test("run_workflow_tool_runs_existing_workflow", async () => {
@@ -28,7 +37,7 @@ export default async function workflow() {
 }`,
     "utf8",
   );
-  const agent: WorkflowAgent = async (prompt, options) => `${options.label}:${prompt}`;
+  const agent: WorkflowAgent = (prompt, options) => Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
   const tool = createWorkflowTools({ cwd: project, agent }).find((candidate) => candidate.name === "run_workflow");
   assert.ok(tool);
 
@@ -56,9 +65,17 @@ export default async function workflow() {
   );
   assert.equal(existsSync(workflowFile), false);
 
-  const toolWithReviewer = createWorkflowTools({ cwd: project, reviewer: () => ({ action: "approve" }) }).find((candidate) => candidate.name === "propose_workflow");
+  const toolWithReviewer = createWorkflowTools({ cwd: project, reviewer: () => ({ action: "approve" }) }).find(
+    (candidate) => candidate.name === "propose_workflow",
+  );
   assert.ok(toolWithReviewer);
-  const result = await toolWithReviewer.execute("call-2", { name: "summarize", source, request: "summarize" }, undefined, undefined, {} as never);
+  const result = await toolWithReviewer.execute(
+    "call-2",
+    { name: "summarize", source, request: "summarize" },
+    undefined,
+    undefined,
+    {} as never,
+  );
 
   assert.deepEqual(result.details, { workflowName: "summarize", saved: true });
   assert.equal((await readFile(workflowFile, "utf8")).trim(), source);
@@ -123,7 +140,10 @@ export default async function workflow() {
   );
   assert.ok(tool);
 
-  await assert.rejects(tool.execute("call-1", { name: "summarize", source, request: "summarize" }, undefined, undefined, {} as never), /not useful/);
+  await assert.rejects(
+    tool.execute("call-1", { name: "summarize", source, request: "summarize" }, undefined, undefined, {} as never),
+    /not useful/,
+  );
 
   assert.equal(existsSync(workflowFile), false);
 });

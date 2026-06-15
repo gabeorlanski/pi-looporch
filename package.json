@@ -24,10 +24,15 @@
   },
   "scripts": {
     "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
     "loadcheck": "pi --no-extensions -e ./extensions/workflow.ts --list-models __pi_workflow_load_check__",
-    "check": "npm run lint && npm run typecheck && npm test && npm run loadcheck",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run loadcheck",
+    "precommit": "lint-staged",
+    "prepare": "husky",
     "dev": "pi -e ./extensions/workflow.ts",
     "pack:dry": "npm pack --dry-run"
   },
@@ -40,6 +45,10 @@
     "@earendil-works/pi-tui": "^0.79.0",
     "@types/node": "^24.0.0",
     "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
+    "prettier": "^3.8.4",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.0.0"
@@ -51,5 +60,14 @@
   "license": "MIT",
   "dependencies": {
     "typebox": "^1.2.8"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix --max-warnings=0",
+      "prettier --write"
+    ],
+    "*.{js,mjs,cjs,json,md}": [
+      "prettier --write"
+    ]
   }
 }

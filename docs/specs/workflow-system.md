@@ -61,8 +61,8 @@ Every `workflow.js` must export small metadata:
 
 ```js
 export const meta = {
-  name: 'review',
-  description: 'Review a set of files and synthesize findings',
+  name: "review",
+  description: "Review a set of files and synthesize findings",
 };
 ```
 
@@ -83,8 +83,8 @@ Each workflow gets a directory so it can include supporting files it needs, such
 Because workflows run sandboxed, support files are accessed through narrow runtime helpers instead of unrestricted imports or filesystem APIs:
 
 ```js
-const prompt = await readWorkflowFile('prompts/review.md');
-const schema = await readWorkflowJson('schemas/finding.schema.json');
+const prompt = await readWorkflowFile("prompts/review.md");
+const schema = await readWorkflowJson("schemas/finding.schema.json");
 ```
 
 A `WORKFLOW.md` file may be useful later, but it should not be required for the initial design.

@@ -1,13 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { discoverWorkflows, type WorkflowReference } from "./workflow-discovery.ts";
-import {
-  normalizeWorkflowName,
-  parseWorkflowSourceMetadata,
-  type WorkflowAgent,
-  type WorkflowAgentProgress,
-  type WorkflowMetadata,
-} from "./workflow-runtime.ts";
+import { selectionPrompt } from "./prompt-templates.ts";
+import { discoverWorkflows, type WorkflowReference } from "./discovery.ts";
+import { normalizeWorkflowName, parseWorkflowSourceMetadata, type WorkflowAgent, type WorkflowMetadata } from "./runtime.ts";
 
 export interface WorkflowSelectionRun {
   action: "run";
@@ -54,6 +49,13 @@ export interface ResolveWorkflowRequestOptions {
   reviewer?: WorkflowReviewer;
 }
 
+export interface ReviewAndSaveWorkflowDraftOptions {
+  cwd: string;
+  request: string;
+  draft: GeneratedWorkflowDraft;
+  reviewer?: WorkflowReviewer;
+}
+
 export type ResolvedWorkflowRequest =
   | { action: "run"; name: string; input: unknown }
   | { action: "created"; name: string; input: unknown; draft: GeneratedWorkflowDraft };
@@ -75,51 +77,49 @@ export async function resolveWorkflowRequest(options: ResolveWorkflowRequestOpti
     metadata,
     proposal: normalizeWorkflowProposal(selection.proposal, options.request, name),
   };
-  if (!options.reviewer) throw new Error("Generated workflows require review before they are saved or run");
-  const decision = await options.reviewer({ cwd: options.cwd, draft, request: options.request });
-  if (decision.action === "reject") throw new Error(decision.reason ?? "Generated workflow was rejected");
-  const approvedSource = decision.source ?? draft.source;
-  const approvedMetadata = parseWorkflowSourceMetadata(approvedSource, name);
-  const approvedDraft = { name, source: approvedSource, metadata: approvedMetadata, proposal: draft.proposal };
-  await saveWorkflowDraft(options.cwd, approvedDraft);
+  const approvedDraft = await reviewAndSaveWorkflowDraft({
+    cwd: options.cwd,
+    request: options.request,
+    draft,
+    reviewer: options.reviewer,
+  });
   return { action: "created", name, input: { prompt: options.request }, draft: approvedDraft };
 }
 
-export async function saveWorkflowDraft(cwd: string, draft: GeneratedWorkflowDraft): Promise<void> {
+export async function reviewAndSaveWorkflowDraft(options: ReviewAndSaveWorkflowDraftOptions): Promise<GeneratedWorkflowDraft> {
+  if (!options.reviewer) throw new Error("Generated workflows require review before they are saved or run");
+  const decision = await options.reviewer({ cwd: options.cwd, draft: options.draft, request: options.request });
+  if (decision.action === "reject") throw new Error(decision.reason ?? "Generated workflow was rejected");
+  const approvedSource = decision.source ?? options.draft.source;
+  validateGeneratedWorkflowDocstring(approvedSource);
+  const approvedMetadata = parseWorkflowSourceMetadata(approvedSource, options.draft.name);
+  const approvedDraft = { ...options.draft, source: approvedSource, metadata: approvedMetadata };
+  await writeDraftFile(options.cwd, approvedDraft);
+  return approvedDraft;
+}
+
+export function validateGeneratedWorkflowDocstring(source: string): void {
+  const trimmedSource = source.trimStart();
+  if (!trimmedSource.startsWith("/**"))
+    throw new Error("Generated workflow source must start with a JSDoc docstring before it can be saved");
+  const docstring = /\/\*\*([\s\S]*?)\*\//.exec(trimmedSource)?.[1];
+  if (!docstring) throw new Error("Generated workflow source must start with a JSDoc docstring before it can be saved");
+  const normalized = docstring.toLowerCase();
+  for (const requiredTopic of ["args", "phase", "agent", "result"]) {
+    if (!normalized.includes(requiredTopic))
+      throw new Error(`Generated workflow JSDoc must document ${requiredTopic} before the workflow can be saved`);
+  }
+}
+
+async function writeDraftFile(cwd: string, draft: GeneratedWorkflowDraft): Promise<void> {
   const workflowDir = path.join(path.resolve(cwd), ".pi", "workflows", draft.name);
   await mkdir(workflowDir, { recursive: true });
   await writeFile(path.join(workflowDir, "workflow.js"), `${draft.source.trim()}\n`, "utf8");
 }
 
 async function selectWorkflow(request: string, workflows: WorkflowReference[], agent: WorkflowAgent): Promise<WorkflowSelection> {
-  const response = await agent(selectionPrompt(request, workflows), { label: "select workflow", reasoning: "low" }, ignoreProgress);
+  const response = await agent(selectionPrompt(request, workflows), { label: "select workflow", reasoning: "low" }, () => undefined);
   return parseSelection(response);
-}
-
-function ignoreProgress(progress: WorkflowAgentProgress): void {
-  void progress;
-}
-
-function selectionPrompt(request: string, workflows: WorkflowReference[]): string {
-  return [
-    "Select an existing workflow or create a new workflow for this Pi request.",
-    "Return only JSON.",
-    'For an existing workflow: {"action":"run","name":"workflow-name","input":{...}}',
-    'For a new workflow: {"action":"create","name":"workflow-name","proposal":{"summary":"...","steps":["..."],"willRun":["..."]},"source":"export const metadata = ..."}',
-    "Generated workflow source must not import modules. It must export `metadata` and a default workflow function.",
-    "For new workflows, proposal.summary, proposal.steps, and proposal.willRun must explain in natural language what the user will review and what will run.",
-    "Available workflows:",
-    JSON.stringify(
-      workflows.map((workflow) => ({
-        name: workflow.name,
-        description: workflow.metadata.description,
-      })),
-      null,
-      2,
-    ),
-    "Request:",
-    request,
-  ].join("\n\n");
 }
 
 function parseSelection(value: unknown): WorkflowSelection {

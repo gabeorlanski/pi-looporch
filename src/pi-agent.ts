@@ -9,9 +9,10 @@ import {
   type CreateAgentSessionOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { WorkflowReviewer } from "./workflow-request.ts";
-import type { WorkflowAgent, WorkflowAgentOptions, WorkflowAgentProgress } from "./workflow-runtime.ts";
-import { createWorkflowTools, type WorkflowToolsOptions } from "./workflow-tools.ts";
+import type { WorkflowReviewer } from "./request.ts";
+import type { WorkflowAgent, WorkflowAgentProgress } from "./runtime.ts";
+import { createWorkflowTools, type WorkflowToolsOptions } from "./tools.ts";
+import { agentTaskPrompt } from "./prompt-templates.ts";
 
 export interface PiWorkflowAgentOptions {
   cwd: string;
@@ -58,7 +59,7 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
         removeAbortListener = () => agentOptions.signal?.removeEventListener("abort", abortSession);
       }
 
-      await session.prompt(buildAgentPrompt(prompt, agentOptions));
+      await session.prompt(agentTaskPrompt(prompt, agentOptions));
       if (agentOptions.signal?.aborted) throw new Error("Workflow agent aborted");
       return lastAssistantText(session.messages);
     } finally {
@@ -69,15 +70,6 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
   };
 }
 
-function buildAgentPrompt(prompt: string, options: WorkflowAgentOptions): string {
-  const parts = [
-    options.label ? `Workflow task label: ${options.label}` : undefined,
-    options.taskFile ? `Task file: ${options.taskFile}` : undefined,
-    prompt,
-  ];
-  return parts.filter((part): part is string => Boolean(part)).join("\n\n");
-}
-
 function resolveModel(modelRegistry: ModelRegistry, spec: string): ReturnType<ModelRegistry["find"]> {
   const modelSpec = spec.split(":", 1)[0] ?? spec;
   const slash = modelSpec.indexOf("/");
@@ -86,26 +78,33 @@ function resolveModel(modelRegistry: ModelRegistry, spec: string): ReturnType<Mo
 }
 
 function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress) => void) {
-  let tokenCount = 0;
+  let inputTokenCount = 0;
+  let outputTokenCount = 0;
+  let toolCallCount = 0;
   let lastStreamUpdate = 0;
   return {
     handleEvent(event: unknown): void {
       if (!isEventObject(event)) return;
-      if (event.type === "turn_start") reportProgress({ statusMessage: "thinking", tokenCount });
+      if (event.type === "turn_start") reportProgress(progressSnapshot("thinking", inputTokenCount, outputTokenCount, toolCallCount));
       if (event.type === "message_update") {
         const now = Date.now();
         if (now - lastStreamUpdate >= 250) {
           lastStreamUpdate = now;
-          reportProgress({ statusMessage: "streaming", tokenCount: tokenCount + estimatedTokensFromMessage(event.message) });
+          const streamingOutputTokenCount = outputTokenCount + estimatedTokensFromMessage(event.message);
+          reportProgress(progressSnapshot("streaming", inputTokenCount, streamingOutputTokenCount, toolCallCount));
         }
       }
       if (event.type === "tool_execution_start" || event.type === "tool_execution_update") {
-        reportProgress({ statusMessage: `using ${eventToolName(event)}`, tokenCount });
+        if (event.type === "tool_execution_start") toolCallCount++;
+        reportProgress(progressSnapshot(`using ${eventToolName(event)}`, inputTokenCount, outputTokenCount, toolCallCount));
       }
-      if (event.type === "tool_execution_end") reportProgress({ statusMessage: `finished ${eventToolName(event)}`, tokenCount });
+      if (event.type === "tool_execution_end")
+        reportProgress(progressSnapshot(`finished ${eventToolName(event)}`, inputTokenCount, outputTokenCount, toolCallCount));
       if (event.type === "message_end") {
-        tokenCount += workflowDisplayTokensFromMessage(event.message);
-        reportProgress({ statusMessage: "thinking", tokenCount });
+        const usage = workflowTokenUsageFromMessage(event.message);
+        inputTokenCount += usage.inputTokenCount;
+        outputTokenCount += usage.outputTokenCount;
+        reportProgress(progressSnapshot("thinking", inputTokenCount, outputTokenCount, toolCallCount));
       }
     },
   };
@@ -120,10 +119,29 @@ function eventToolName(event: Record<string, unknown>): string {
 }
 
 export function workflowDisplayTokensFromMessage(value: unknown): number {
-  if (typeof value !== "object" || value === null) return 0;
+  return workflowTokenUsageFromMessage(value).outputTokenCount;
+}
+
+function workflowTokenUsageFromMessage(value: unknown): { inputTokenCount: number; outputTokenCount: number } {
+  if (typeof value !== "object" || value === null) return { inputTokenCount: 0, outputTokenCount: 0 };
   const usage = (value as { usage?: unknown }).usage;
-  if (typeof usage !== "object" || usage === null) return estimatedTokensFromMessage(value);
-  return numericProperty(usage, "output");
+  if (typeof usage !== "object" || usage === null) return { inputTokenCount: 0, outputTokenCount: estimatedTokensFromMessage(value) };
+  return { inputTokenCount: numericProperty(usage, "input"), outputTokenCount: numericProperty(usage, "output") };
+}
+
+function progressSnapshot(
+  statusMessage: string,
+  inputTokenCount: number,
+  outputTokenCount: number,
+  toolCallCount: number,
+): WorkflowAgentProgress {
+  return {
+    statusMessage,
+    inputTokenCount,
+    outputTokenCount,
+    toolCallCount,
+    tokenCount: inputTokenCount + outputTokenCount,
+  };
 }
 
 function estimatedTokensFromMessage(value: unknown): number {

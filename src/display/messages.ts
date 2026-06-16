@@ -1,19 +1,19 @@
-import type { WorkflowAgentSnapshot, WorkflowFanOutSnapshot, WorkflowSnapshot } from "./workflow-runtime.ts";
+import type { WorkflowAgentSnapshot, WorkflowFanOutSnapshot, WorkflowSnapshot } from "../runtime.ts";
 
-export function workflowStartMessage(workflowName: string): string {
+export function startMessage(workflowName: string): string {
   return `Starting workflow '${workflowName}'...`;
 }
 
-export function workflowCompleteMessage(workflowName: string, result: unknown): string {
+export function completeMessage(workflowName: string, result: unknown): string {
   return `Workflow '${workflowName}' complete.\n\n${JSON.stringify(result, null, 2)}`;
 }
 
-export function workflowFailureMessage(workflowName: string | undefined, error: unknown): string {
+export function failureMessage(workflowName: string | undefined, error: unknown): string {
   const label = workflowName ? `Workflow '${workflowName}'` : "Workflow";
   return `${label} failed: ${error instanceof Error ? error.message : String(error)}`;
 }
 
-export function workflowSnapshotMessages(previous: WorkflowSnapshot | undefined, next: WorkflowSnapshot): string[] {
+export function snapshotMessages(previous: WorkflowSnapshot | undefined, next: WorkflowSnapshot): string[] {
   return [
     ...newPhaseMessages(previous, next),
     ...newLogMessages(previous, next),

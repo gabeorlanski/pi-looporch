@@ -2,7 +2,7 @@ import { appendFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import type { WorkflowEvent, WorkflowMetadata, WorkflowSnapshot } from "./workflow-runtime.ts";
+import type { WorkflowEvent, WorkflowMetadata, WorkflowSnapshot } from "./runtime.ts";
 
 export interface WorkflowRunLogOptions {
   cwd: string;

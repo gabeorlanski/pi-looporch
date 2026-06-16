@@ -10,7 +10,7 @@ npm run check
 
 ## Purpose
 
-`tests/` provides deterministic `node:test` coverage for workflow discovery, runtime, requests, review text, tools, and command messages.
+`tests/` provides deterministic `node:test` coverage for workflow discovery, runtime, requests, display rendering, prompt templates, and tools.
 
 ## Rules
 

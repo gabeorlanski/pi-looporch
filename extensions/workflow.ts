@@ -1,23 +1,18 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
-import { workflowNaturalLanguageRequestMessage } from "../src/workflow-command.ts";
-import { discoverWorkflows, workflowRootsForProject } from "../src/workflow-discovery.ts";
+import { Editor, Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { naturalLanguageRequestMessage } from "../src/prompt-templates.ts";
+import { discoverWorkflows, workflowRootsForProject } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
-import { type GeneratedWorkflowDraft, type WorkflowReviewer } from "../src/workflow-request.ts";
-import { createWorkflowRunLog, type WorkflowRunLog } from "../src/workflow-run-logs.ts";
-import { normalizeWorkflowName, runWorkflowFromDirectory, type WorkflowSnapshot } from "../src/workflow-runtime.ts";
-import { resolveWorkflowInput } from "../src/workflow-input.ts";
-import { workflowFailureMessage, workflowCompleteMessage } from "../src/workflow-messages.ts";
-import {
-  initialWorkflowProgressLines,
-  initialWorkflowProgressStatusLine,
-  workflowProgressLines,
-  workflowProgressStatusLine,
-} from "../src/workflow-progress.ts";
-import { workflowApprovalLines } from "../src/workflow-review.ts";
-import { createWorkflowTools } from "../src/workflow-tools.ts";
+import { type GeneratedWorkflowDraft, type WorkflowReviewer, type WorkflowReviewDecision } from "../src/request.ts";
+import { createWorkflowRunLog, type WorkflowRunLog } from "../src/run-logs.ts";
+import { normalizeWorkflowName, runWorkflowFromDirectory, type WorkflowSnapshot } from "../src/runtime.ts";
+import { resolveWorkflowInput } from "../src/input.ts";
+import { failureMessage, completeMessage } from "../src/display/messages.ts";
+import { initialProgressDisplay, progressDisplay, type ProgressDisplay, type ProgressTheme } from "../src/display/progress.ts";
+import { approvalLines } from "../src/display/approval.ts";
+import { createWorkflowTools } from "../src/tools.ts";
 
 const MESSAGE_TYPE = "pi-workflow-message";
 const RUNNING_WORKFLOW_WIDGET = "pi-workflow-running";
@@ -84,7 +79,7 @@ async function steerWorkflowCommand(
   }
 
   ctx.ui.notify("Workflow request sent to current session", "info");
-  sendWhenReady(pi, ctx, workflowNaturalLanguageRequestMessage(trimmed, names));
+  sendWhenReady(pi, ctx, naturalLanguageRequestMessage(trimmed, names));
 }
 
 async function runExistingWorkflowCommand(
@@ -125,7 +120,7 @@ async function runExistingWorkflowCommand(
       ctx.ui.notify(`Saving workflow log to ${relativeToProject(ctx.cwd, runLog.runDir)}`, "info");
     }
     ctx.ui.notify(`Running workflow '${workflowName}'`, "info");
-    updateRunningWorkflowUi(ctx, initialWorkflowProgressStatusLine(), initialWorkflowProgressLines(workflowName));
+    updateRunningWorkflowUi(ctx, (width, theme) => initialProgressDisplay(workflowName, width, theme));
     const result = await runWorkflowFromDirectory({
       cwd: ctx.cwd,
       workflowName,
@@ -136,21 +131,21 @@ async function runExistingWorkflowCommand(
       onEvent: (event) => runLog?.recordEvent(event),
       onSnapshot: (snapshot) => {
         lastSnapshot = snapshot;
-        updateRunningWorkflowUi(ctx, workflowProgressStatusLine(snapshot), workflowProgressLines(snapshot));
+        updateRunningWorkflowUi(ctx, (width, theme) => progressDisplay(snapshot, width, theme));
       },
     });
     await runLog?.complete(result.result, result.snapshot);
     const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
     pi.sendMessage({
       customType: MESSAGE_TYPE,
-      content: withWorkflowLogPath(workflowCompleteMessage(result.workflowName, result.result), logPath),
+      content: withWorkflowLogPath(completeMessage(result.workflowName, result.result), logPath),
       display: true,
       details: { workflowName: result.workflowName, result: result.result, logPath },
     });
   } catch (error) {
     await runLog?.fail(error, lastSnapshot);
     const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
-    const message = withWorkflowLogPath(workflowFailureMessage(workflowName, error), logPath);
+    const message = withWorkflowLogPath(failureMessage(workflowName, error), logPath);
     ctx.ui.notify(message, "error");
     pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName, logPath } });
   } finally {
@@ -158,9 +153,22 @@ async function runExistingWorkflowCommand(
   }
 }
 
-function updateRunningWorkflowUi(ctx: ExtensionCommandContext, statusLine: string, widgetLines: string[]): void {
+function updateRunningWorkflowUi(
+  ctx: ExtensionCommandContext,
+  displayForWidth: (width: number, theme?: ProgressTheme) => ProgressDisplay,
+): void {
+  const statusLine = displayForWidth(96).statusLine;
   ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, statusLine);
-  ctx.ui.setWidget(RUNNING_WORKFLOW_WIDGET, widgetLines, { placement: "aboveEditor" });
+  ctx.ui.setWidget(
+    RUNNING_WORKFLOW_WIDGET,
+    (_tui, theme) => ({
+      render: (width: number) => displayForWidth(width, theme).widgetLines,
+      invalidate: () => {
+        ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, displayForWidth(96).statusLine);
+      },
+    }),
+    { placement: "aboveEditor" },
+  );
 }
 
 function clearRunningWorkflowUi(ctx: ExtensionCommandContext): void {
@@ -201,34 +209,78 @@ function sendWhenReady(pi: ExtensionAPI, ctx: ExtensionCommandContext, message: 
 function createReviewer(ctx: ExtensionContext): WorkflowReviewer {
   return async ({ draft }) => {
     if (ctx.mode !== "tui") return { action: "reject", reason: "Generated workflows require TUI review before save or run" };
-    return (await reviewGeneratedWorkflow(ctx, draft))
-      ? { action: "approve" }
-      : { action: "reject", reason: "Generated workflow was rejected" };
+    return reviewGeneratedWorkflow(ctx, draft);
   };
 }
 
-async function reviewGeneratedWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft): Promise<boolean> {
-  return ctx.ui.custom<boolean>((tui, theme, _keybindings, done) => ({
-    render(width: number): string[] {
-      return workflowApprovalLines(draft).map((line) => {
-        const styled = line.includes("Workflow approval")
-          ? theme.fg("accent", theme.bold(line))
-          : line.includes("Decision") || line.includes("approve")
-            ? theme.fg("success", line)
-            : line.includes("Review") || line.includes("Goal") || line.includes("Steps") || line.includes("What will run")
-              ? theme.bold(line)
-              : line;
-        return truncateToWidth(styled, width);
-      });
-    },
-    handleInput(data: string): void {
-      if (data === "y" || data === "Y") done(true);
-      if (data === "n" || data === "N" || matchesKey(data, Key.escape)) done(false);
-    },
-    invalidate(): void {
-      tui.requestRender();
-    },
-  }));
+async function reviewGeneratedWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft): Promise<WorkflowReviewDecision> {
+  return ctx.ui.custom<WorkflowReviewDecision>((tui, theme, _keybindings, done) => {
+    let feedbackMode = false;
+    const editor = new Editor(
+      tui,
+      {
+        borderColor: (text) => theme.fg("borderMuted", text),
+        selectList: {
+          selectedPrefix: (text) => theme.fg("accent", text),
+          selectedText: (text) => theme.fg("accent", theme.bold(text)),
+          description: (text) => theme.fg("dim", text),
+          scrollInfo: (text) => theme.fg("dim", text),
+          noMatch: (text) => theme.fg("error", text),
+        },
+      },
+      { paddingX: 0 },
+    );
+    editor.onSubmit = (value) => {
+      const feedback = value.trim();
+      if (!feedback) {
+        feedbackMode = false;
+        tui.requestRender();
+        return;
+      }
+      done({ action: "reject", reason: `Reviewer feedback: ${feedback}` });
+    };
+    return {
+      render(width: number): string[] {
+        return approvalLines(draft, { feedbackMode, feedback: editor.getText() }).map((line) =>
+          truncateToWidth(styleApprovalLine(line, theme), width),
+        );
+      },
+      handleInput(data: string): void {
+        if (feedbackMode) {
+          if (matchesKey(data, Key.escape)) {
+            feedbackMode = false;
+            editor.setText("");
+            tui.requestRender();
+            return;
+          }
+          editor.handleInput(data);
+          tui.requestRender();
+          return;
+        }
+        if (matchesKey(data, Key.tab)) {
+          feedbackMode = true;
+          tui.requestRender();
+          return;
+        }
+        if (data === "y" || data === "Y") done({ action: "approve" });
+        if (data === "n" || data === "N" || matchesKey(data, Key.escape))
+          done({ action: "reject", reason: "Generated workflow was rejected" });
+      },
+      invalidate(): void {
+        tui.requestRender();
+      },
+    };
+  });
+}
+
+function styleApprovalLine(line: string, theme: ProgressTheme): string {
+  if (line.includes("Review generated workflow")) return theme.fg("accent", theme.bold(line));
+  if (line.includes("Decision") || line.includes("approve")) return theme.fg("success", line);
+  if (line.includes("Feedback") || line.includes("feedback")) return theme.fg("warning", line);
+  if (line.includes("Intent") || line.includes("Plan") || line.includes("Runtime Surface") || line.includes("Source Preview"))
+    return theme.bold(line);
+  if (line.includes("Source:")) return theme.fg("muted", line);
+  return line;
 }
 
 async function reviewWorkflowCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {

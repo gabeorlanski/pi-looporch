@@ -57,16 +57,23 @@ Initial global primitives should include at least:
 - `readWorkflowFile(relativePath)`
 - `readWorkflowJson(relativePath)`
 
-Every `workflow.js` must export small metadata:
+Every `workflow.js` must export small metadata. Agent-generated workflows must also start with a JSDoc block that documents purpose, expected `args`, phases, child agent usage, file reads, and result shape:
 
 ```js
-export const meta = {
+/**
+ * Purpose: review a set of files and synthesize findings.
+ * Args: expects { files: string[], prompt?: string }.
+ * Phase: fanout reviews each file, synthesis combines findings.
+ * Agent: launches child review agents and one synthesis agent.
+ * Result: returns the synthesis text.
+ */
+export const metadata = {
   name: "review",
   description: "Review a set of files and synthesize findings",
 };
 ```
 
-The workflow directory name is the command name. `meta.name` should match the directory name or be validated against it. `meta.description` is used for discovery, review UI, and display.
+The workflow directory name is the command name. `metadata.name` should match the directory name or be validated against it. `metadata.description` is used for discovery, review UI, and display.
 
 ## Storage Layout
 
@@ -83,8 +90,8 @@ Each workflow gets a directory so it can include supporting files it needs, such
 Because workflows run sandboxed, support files are accessed through narrow runtime helpers instead of unrestricted imports or filesystem APIs:
 
 ```js
-const prompt = await readWorkflowFile("prompts/review.md");
-const schema = await readWorkflowJson("schemas/finding.schema.json");
+const prompt = readText("prompts/review.md");
+const schema = readJson("schemas/finding.schema.json");
 ```
 
 A `WORKFLOW.md` file may be useful later, but it should not be required for the initial design.
@@ -95,7 +102,7 @@ Saved workflows should run sandboxed with restricted JavaScript because this is 
 
 The sandbox should preserve direct workflow primitives while limiting ambient authority. The first version should not simply execute saved workflows as unrestricted trusted project code.
 
-Workflow runs are live by default. Named slash-command runs may opt into persisted debugging logs with `--save-log`; saved logs live under `.pi/workflow-runs/<run-id>/` and include run metadata, normalized input, the workflow source, append-only `events.jsonl`, a final snapshot, and either `result.json` or `error.json`. Persisted logs are for inspection only and do not support resuming canceled or failed runs.
+Workflow runs are live by default. Named slash-command runs may opt into persisted debugging logs with `--save-log`; saved logs live under `.pi/workflow-runs/<run-id>/` and include run metadata, normalized input, the workflow source, append-only `events.jsonl`, a final snapshot, and either `result.json` or `error.json`. Persisted logs are for inspection only and do not support resuming canceled or failed runs. The TUI progress display keeps phase history visible, expands the active phase, collapses completed phase children, and shows model, thinking, input/output token, tool, and NET totals.
 
 ## Command Model
 

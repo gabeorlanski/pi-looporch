@@ -4,12 +4,21 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { resolveWorkflowRequest } from "../src/workflow-request.ts";
-import type { WorkflowAgent } from "../src/workflow-runtime.ts";
+import { resolveWorkflowRequest } from "../src/request.ts";
+import type { WorkflowAgent } from "../src/runtime.ts";
+
+const generatedWorkflowDocstring = `/**
+ * Purpose: generated test workflow.
+ * Args: expects a prompt-like input object from the user.
+ * Phase: single implicit phase for smoke coverage.
+ * Agent: no child agent is launched unless the body adds one.
+ * Result: returns a JSON-serializable smoke result.
+ */
+`;
 
 void test("generated_workflows_save_only_after_review", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-request-"));
-  const source = `export const metadata = { name: "summarize", description: "Summarize files" };
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files" };
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;
@@ -32,7 +41,7 @@ export default async function workflow() {
 
 void test("generated_workflows_pass_natural_language_proposal_to_review", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-request-"));
-  const source = `export const metadata = { name: "summarize", description: "Summarize files" };
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files" };
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;
@@ -61,11 +70,11 @@ export default async function workflow() {
 
 void test("generated_workflows_save_reviewer_updated_source", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-request-"));
-  const source = `export const metadata = { name: "summarize", description: "Summarize files" };
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files" };
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;
-  const updatedSource = `export const metadata = { name: "summarize", description: "Summarize files with edits" };
+  const updatedSource = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files with edits" };
 export default async function workflow() {
   return { prompt: args.prompt, reviewed: true };
 }`;

@@ -41,6 +41,9 @@ When the user gives coding guidance or pushes back on code, add a rule to `agent
 
 - `extensions/`: pi command, tool, and TUI wiring. Parse/coerce user input here.
 - `src/`: testable workflow orchestration logic. Accept normalized inputs here.
+- `src/display/`: every TUI or visible text renderer lives in a focused display module.
+- `src/authoring-guide.ts`: generated workflow source guidance rendered into prompt templates.
+- `src/prompts/`: raw prompt text files only; TypeScript interpolation lives outside this directory.
 - `tests/`: deterministic `node:test` coverage with fake agents only.
 - `docs/specs/`: workflow system design notes.
 - `agent_docs/INDEX.md`: agent-facing coding rules and repository map.
@@ -49,16 +52,20 @@ When the user gives coding guidance or pushes back on code, add a rule to `agent
 
 TypeScript interfaces/types are the source of truth:
 
-- `src/workflow-runtime.ts`: `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, `WorkflowRunResult`.
-- `src/workflow-request.ts`: `WorkflowSelection`, `GeneratedWorkflowDraft`, `WorkflowReviewer`, `ResolveWorkflowRequestOptions`, `ResolvedWorkflowRequest`.
-- `src/workflow-discovery.ts`: `WorkflowReference`.
-- `src/workflow-tools.ts`: `WorkflowToolsOptions`.
+- `src/runtime.ts`: `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, `WorkflowRunResult`.
+- `src/request.ts`: `WorkflowSelection`, `GeneratedWorkflowDraft`, `WorkflowReviewer`, `ResolveWorkflowRequestOptions`, `ResolvedWorkflowRequest`.
+- `src/discovery.ts`: `WorkflowReference`.
+- `src/tools.ts`: `WorkflowToolsOptions`.
 - `src/pi-agent.ts`: `PiWorkflowAgentOptions`.
 
 ## Coding standards
 
 - Keep the extension small and dependency-light.
 - Keep command/UI parsing at boundaries; keep core runtime strict.
+- Keep prompt copy in raw `.txt` files under `src/prompts/`.
+- Keep generated workflow authoring guidance in TypeScript and inject it into raw prompts through placeholders.
+- Agent-generated workflow source must start with JSDoc documenting purpose, args, phases, child agent usage, file reads, and result shape.
+- Give every function a clear job; inline short helpers that only hide one expression or rename a local concept.
 - Prefer simple functions over managers, frameworks, or class hierarchies.
 - Inject agents/reviewers; never call real models from tests.
 - Use deterministic fake agents in tests.

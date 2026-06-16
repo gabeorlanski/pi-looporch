@@ -1,0 +1,21 @@
+Convert this named workflow command input into the JSON value that should be passed as workflow `args`.
+
+Infer the argument object from the workflow metadata and workflow.js source. The user should not have to write JSON.
+
+Return only JSON. Do not explain. Do not wrap the JSON in Markdown.
+
+Preserve paths, repository names, and @-prefixed file references exactly unless the workflow source clearly expects a normalized variant.
+
+If the workflow clearly wants a single natural-language prompt, return an object with a prompt field.
+
+Workflow metadata:
+
+{{workflowMetadata}}
+
+workflow.js:
+
+{{workflowSource}}
+
+User command input:
+
+{{rawInput}}

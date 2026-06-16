@@ -1,16 +1,16 @@
 import { Type } from "typebox";
 import { defineTool, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { workflowRootsForProject } from "./workflow-discovery.ts";
+import { workflowRootsForProject } from "./discovery.ts";
 import {
-  parseWorkflowSourceMetadata,
   normalizeWorkflowName,
+  parseWorkflowSourceMetadata,
   runWorkflowFromDirectory,
   type WorkflowAgent,
   type WorkflowSnapshot,
-} from "./workflow-runtime.ts";
-import { workflowProgressText } from "./workflow-progress.ts";
-import { saveWorkflowDraft, type WorkflowProposal, type WorkflowReviewer } from "./workflow-request.ts";
+} from "./runtime.ts";
+import { progressDisplay } from "./display/progress.ts";
+import { reviewAndSaveWorkflowDraft, type WorkflowProposal, type WorkflowReviewer } from "./request.ts";
 
 export interface WorkflowToolsOptions {
   cwd?: string;
@@ -56,7 +56,7 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
         signal,
         onSnapshot: (snapshot) => {
           onUpdate?.({
-            content: [{ type: "text", text: workflowProgressText(snapshot) }],
+            content: [{ type: "text", text: progressDisplay(snapshot).text }],
             details: { workflowName, status: "running", snapshot },
           });
         },
@@ -68,7 +68,7 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
     },
     renderResult(result, _options, theme) {
       const details = result.details as RunWorkflowToolDetails;
-      return new Text(theme.fg(details.status === "complete" ? "success" : "accent", workflowProgressText(details.snapshot)), 0, 0);
+      return new Text(progressDisplay(details.snapshot, 96, theme).text, 0, 0);
     },
   });
 }
@@ -95,12 +95,7 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
       const name = normalizeWorkflowName(params.name);
       const metadata = parseWorkflowSourceMetadata(params.source, name);
       const draft = { name, source: params.source, metadata, proposal: workflowProposalFromParams(params, name) };
-      if (!reviewer) throw new Error("Generated workflows require review before they are saved or run");
-      const decision = await reviewer({ cwd, draft, request: params.request ?? name });
-      if (decision.action === "reject") throw new Error(decision.reason ?? "Generated workflow was rejected");
-      const approvedSource = decision.source ?? draft.source;
-      const approvedMetadata = parseWorkflowSourceMetadata(approvedSource, name);
-      await saveWorkflowDraft(cwd, { name, source: approvedSource, metadata: approvedMetadata, proposal: draft.proposal });
+      await reviewAndSaveWorkflowDraft({ cwd, request: params.request ?? name, draft, reviewer });
       return {
         content: [{ type: "text", text: `Saved reviewed workflow '${name}' to .pi/workflows/${name}/workflow.js.` }],
         details: { workflowName: name, saved: true },

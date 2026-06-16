@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseWorkflowInput, resolveWorkflowInput } from "../src/workflow-input.ts";
-import type { WorkflowAgent } from "../src/workflow-runtime.ts";
+import { parseWorkflowInput, resolveWorkflowInput } from "../src/input.ts";
+import type { WorkflowAgent } from "../src/runtime.ts";
 
 void test("workflow_input_uses_structured_json_without_agent_resolution", async () => {
   let called = false;

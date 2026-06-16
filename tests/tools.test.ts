@@ -5,8 +5,17 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { createPiWorkflowAgentTools } from "../src/pi-agent.ts";
-import { createWorkflowTools } from "../src/workflow-tools.ts";
-import type { WorkflowAgent } from "../src/workflow-runtime.ts";
+import { createWorkflowTools } from "../src/tools.ts";
+import type { WorkflowAgent } from "../src/runtime.ts";
+
+const generatedWorkflowDocstring = `/**
+ * Purpose: generated test workflow.
+ * Args: expects a prompt-like input object from the user.
+ * Phase: single implicit phase for smoke coverage.
+ * Agent: no child agent is launched unless the body adds one.
+ * Result: returns a JSON-serializable smoke result.
+ */
+`;
 
 void test("pi_workflow_agent_exposes_workflow_tools_by_default", () => {
   const tools = createPiWorkflowAgentTools(process.cwd());
@@ -58,19 +67,13 @@ export default async function workflow() {
   assert.equal(details.status, "complete");
   assert.deepEqual(details.result, { input: { message: "hello" }, agent: "helper:say hi" });
   assert.ok(
-    updates.includes(
-      "─── ◆ workflow: echo ────────────────────────────────────────────────────\n" +
-        "  Phase: starting  Progress: 0/1  Tokens: 0 tokens\n\n" +
-        "  phase             progress  tokens\n" +
-        "  ────────────────────────────────────────────────────────────────────\n" +
-        "  starting          0/1       0 tokens",
-    ),
+    updates.some((update) => update.includes("workflow echo") && update.includes("#1 helper") && update.includes("NET 0/1 agents")),
   );
 });
 
 void test("propose_workflow_tool_saves_only_after_review", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
-  const source = `export const metadata = { name: "summarize", description: "Summarize files" };
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files" };
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;
@@ -100,9 +103,26 @@ export default async function workflow() {
   assert.equal((await readFile(workflowFile, "utf8")).trim(), source);
 });
 
-void test("propose_workflow_tool_passes_natural_language_proposal_to_review", async () => {
+void test("propose_workflow_tool_rejects_approved_source_without_docstring", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const source = `export const metadata = { name: "summarize", description: "Summarize files" };
+export default async function workflow() {
+  return { prompt: args.prompt };
+}`;
+  const tool = createWorkflowTools({ cwd: project, reviewer: () => ({ action: "approve" }) }).find(
+    (candidate) => candidate.name === "propose_workflow",
+  );
+  assert.ok(tool);
+
+  await assert.rejects(
+    tool.execute("call-2", { name: "summarize", source, request: "summarize" }, undefined, undefined, {} as never),
+    /must start with a JSDoc docstring/,
+  );
+});
+
+void test("propose_workflow_tool_passes_natural_language_proposal_to_review", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files" };
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;
@@ -128,11 +148,11 @@ export default async function workflow() {
 
 void test("propose_workflow_tool_saves_reviewer_updated_source", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
-  const source = `export const metadata = { name: "summarize", description: "Summarize files" };
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files" };
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;
-  const updatedSource = `export const metadata = { name: "summarize", description: "Summarize files with edits" };
+  const updatedSource = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files with edits" };
 export default async function workflow() {
   return { prompt: args.prompt, reviewed: true };
 }`;
@@ -149,7 +169,7 @@ export default async function workflow() {
 
 void test("propose_workflow_tool_rejection_does_not_save", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
-  const source = `export const metadata = { name: "summarize", description: "Summarize files" };
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files" };
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;

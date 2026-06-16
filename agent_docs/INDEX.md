@@ -32,8 +32,12 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 ### Code Organization
 
 - Put pi command, TUI, and extension registration wiring in `extensions/`; put workflow orchestration logic in `src/`.
+- Put TUI and visible text rendering under `src/display/`, with one display concern per file.
+- Keep raw agent prompt text in `src/prompts/*.txt`; keep typed interpolation and domain shaping outside the prompt directory.
+- Keep rendered authoring guidance outside raw prompt files; raw prompts should receive generated guides through placeholders.
 - Parse and normalize at command/UI/tool boundaries; keep `src/` strict and already-normalized.
 - Prefer simple functions and direct data types over managers, class hierarchies, or premature abstractions.
+- Give every function a clear job; inline short helpers that only hide one expression or rename a local concept.
 - Keep dependencies minimal and justified for a pi extension.
 - Use strict ESLint for code quality and Prettier for formatting; do not mix formatting preferences into lint rules.
 
@@ -47,6 +51,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 - Inject `WorkflowAgent` and reviewers; never hardcode model or pi providers into core logic.
 - Keep generated workflows review-gated before save or run.
+- Require agent-generated workflow source to start with JSDoc that documents purpose, expected `args`, phases, child agent usage, file reads, and result shape.
 - Keep workflow file helpers sandboxed inside the workflow directory.
 - Throw actionable `Error` messages at boundaries when user input, metadata, or workflow config is invalid.
 - Named workflow commands must not require users to hand-write JSON; resolve freeform command input against the workflow metadata/source into the expected `args` shape.
@@ -66,17 +71,22 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 ## Key data shapes
 
-- Runtime: `src/workflow-runtime.ts` defines `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, and `WorkflowRunResult`.
-- Request resolution: `src/workflow-request.ts` defines `WorkflowSelection`, `GeneratedWorkflowDraft`, `WorkflowReviewer`, `ResolveWorkflowRequestOptions`, and `ResolvedWorkflowRequest`.
-- Discovery: `src/workflow-discovery.ts` defines `WorkflowReference` and workflow root handling.
-- Tools: `src/workflow-tools.ts` defines `WorkflowToolsOptions` and tool creation.
+- Runtime: `src/runtime.ts` defines `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, and `WorkflowRunResult`.
+- Request resolution: `src/request.ts` defines `WorkflowSelection`, `GeneratedWorkflowDraft`, `WorkflowReviewer`, `ResolveWorkflowRequestOptions`, and `ResolvedWorkflowRequest`.
+- Discovery: `src/discovery.ts` defines `WorkflowReference` and workflow root handling.
+- Tools: `src/tools.ts` defines `WorkflowToolsOptions` and tool creation.
 - Pi bridge: `src/pi-agent.ts` defines `PiWorkflowAgentOptions`.
+- Prompt templates: `src/prompts/*.txt` contains raw agent prompt copy; `src/prompt-templates.ts` binds typed data into those templates.
+- Authoring guide: `src/authoring-guide.ts` owns rendered workflow primitive documentation used inside prompt templates.
+- Display: `src/display/` contains progress, approval, and message renderers.
 
 ## Repository map
 
 - `extensions/workflow.ts`: pi extension entry, commands, aliases, TUI workflow approval.
-- `src/workflow-runtime.ts`: sandboxed workflow execution and progress snapshots.
-- `src/workflow-discovery.ts`: local and configured workflow root discovery.
-- `src/workflow-request.ts`: natural-language workflow selection/generation/review/save flow.
-- `src/workflow-tools.ts`: `run_workflow` and `propose_workflow` tool definitions.
+- `src/runtime.ts`: sandboxed workflow execution and progress snapshots.
+- `src/discovery.ts`: local and configured workflow root discovery.
+- `src/request.ts`: natural-language workflow selection/generation/review/save flow.
+- `src/tools.ts`: `run_workflow` and `propose_workflow` tool definitions.
+- `src/display/`: TUI progress, approval, and visible message rendering.
+- `src/prompts/`: raw prompt templates for agent-facing instructions.
 - `tests/`: deterministic coverage for each core module.

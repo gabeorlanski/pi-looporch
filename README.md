@@ -45,6 +45,13 @@ Each entry is a workflow root containing `<workflow-name>/workflow.js` children.
 `workflow.js` exports required metadata and a default function:
 
 ```js
+/**
+ * Purpose: review a set of files in parallel and synthesize findings.
+ * Args: expects { files: string[] } and an optional user focus prompt.
+ * Phase: fanout reviews each file, synthesis combines the findings.
+ * Agent: launches one child agent per file, then one synthesis agent.
+ * Result: returns the synthesis agent response.
+ */
 export const metadata = {
   name: "review",
   description: "Review a set of files in parallel and synthesize findings",
@@ -72,7 +79,7 @@ export default async function workflow() {
 }
 ```
 
-Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `phase`, `log`, `args`, `cwd`, `budget`, `readText`, and `readJson`. File helpers are constrained to the workflow directory.
+Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `phase`, `log`, `args`, `cwd`, `budget`, `readText`, and `readJson`. File helpers are constrained to the workflow directory. Agent-generated workflows must start with a JSDoc block that documents purpose, expected `args`, phases, child agent usage, and result shape before they can be saved.
 
 Agents spawned from workflows can call `run_workflow` to invoke an existing workflow, or `propose_workflow` to submit a new `.pi/workflows/<name>/workflow.js` draft. Generated workflows are review-gated. Pi shows a natural-language proposal before saving under `.pi/workflows/<name>/workflow.js` or running it, and reviewer-updated source is what gets saved.
 
@@ -95,7 +102,7 @@ Examples:
 /workflow-review review
 ```
 
-Named workflow commands (`/workflow <name>` and `/workflow:<name>`) run the saved workflow directly instead of asking the session agent to choose a tool. Manual calls do not require JSON: JSON and `key=value`/`--key value` are accepted directly, and freeform text is resolved by an agent against the workflow metadata/source into the `args` shape the workflow expects. Pass `--save-log` to save a debugging trajectory under `.pi/workflow-runs/<run-id>/` with `metadata.json`, `input.json`, `workflow.js`, `events.jsonl`, `final-snapshot.json`, and the final `result.json` or `error.json`. While a workflow is running in the TUI, pi-workflow shows a compact progress table with `Phase`, `Progress`, and `Tokens` columns. Agent outputs stay hidden from the running view.
+Named workflow commands (`/workflow <name>` and `/workflow:<name>`) run the saved workflow directly instead of asking the session agent to choose a tool. Manual calls do not require JSON: JSON and `key=value`/`--key value` are accepted directly, and freeform text is resolved by an agent against the workflow metadata/source into the `args` shape the workflow expects. Pass `--save-log` to save a debugging trajectory under `.pi/workflow-runs/<run-id>/` with `metadata.json`, `input.json`, `workflow.js`, `events.jsonl`, `final-snapshot.json`, and the final `result.json` or `error.json`. While a workflow is running in the TUI, pi-workflow shows phase history, expands active phase children, collapses completed phases, and summarizes model, thinking, input/output tokens, tool calls, and NET totals.
 
 ## Development
 

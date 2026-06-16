@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import piWorkflow from "../extensions/workflow.ts";
 
 interface RegisteredTestCommand {
@@ -15,6 +15,21 @@ interface SentMessage {
   content: string;
   display: boolean;
   details: unknown;
+}
+
+const plainTheme = {
+  fg: (_color: string, text: string) => text,
+  bold: (text: string) => text,
+};
+
+type TestWidgetFactory = (tui: { requestRender(): void }, theme: typeof plainTheme) => { render(width: number): string[] };
+
+function isTestWidgetFactory(content: unknown): content is TestWidgetFactory {
+  return typeof content === "function";
+}
+
+function requestRenderNoop(): void {
+  void plainTheme;
 }
 
 void test("existing_workflow_command_runs_directly_with_progress_updates", async () => {
@@ -72,8 +87,14 @@ export default async function workflow() {
       setStatus(key: string, text: string | undefined): void {
         if (key === "workflow") statusUpdates.push(text);
       },
-      setWidget(key: string, content: string[] | undefined): void {
-        if (key === "pi-workflow-running") widgetUpdates.push(content);
+      setWidget(key: string, content: unknown): void {
+        if (key !== "pi-workflow-running") return;
+        if (isTestWidgetFactory(content)) {
+          const component = content({ requestRender: requestRenderNoop }, plainTheme);
+          widgetUpdates.push(component.render(72));
+          return;
+        }
+        widgetUpdates.push(content as string[] | undefined);
       },
     },
   } as unknown as ExtensionCommandContext;
@@ -81,14 +102,15 @@ export default async function workflow() {
   await command.handler('echo message=hello count=10 debug=true files=src/index.ts,tests/index.test.ts note="hello world"', ctx);
 
   assert.deepEqual(sentUserMessages, []);
-  assert.ok(statusUpdates.includes("Phase: running  Progress: 0/0  Tokens: 0 tokens"));
+  assert.ok(statusUpdates.includes("echo: 0/0 agents · in 0 · out 0 · tools 0"));
   assert.deepEqual(statusUpdates.at(-1), undefined);
   assert.ok(
     widgetUpdates.some(
       (update) =>
-        update?.[0] === "─── ◆ workflow: echo ────────────────────────────────────────────────────" &&
-        update[1] === "  Phase: running  Progress: 0/0  Tokens: 0 tokens" &&
-        update[5] === "  running           0/0       0 tokens",
+        update?.[0].includes("workflow echo") &&
+        update.some((line) => line.includes("phase P1/1 running")) &&
+        update.some((line) => line.includes("P1 running")) &&
+        update.some((line) => line.includes("NET 0/0 agents")),
     ),
   );
   assert.deepEqual(
@@ -153,7 +175,7 @@ export default async function workflow() {
         void key;
         void text;
       },
-      setWidget(key: string, content: string[] | undefined): void {
+      setWidget(key: string, content: unknown): void {
         void key;
         void content;
       },
@@ -181,4 +203,62 @@ export default async function workflow() {
   );
   const finalSnapshot = JSON.parse(await readFile(path.join(runDir, "final-snapshot.json"), "utf8")) as { logs: string[] };
   assert.deepEqual(finalSnapshot.logs, ["about to return"]);
+});
+
+void test("workflow_proposal_review_supports_tab_feedback", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const registeredTools: ToolDefinition[] = [];
+  const pi = {
+    registerTool(tool: ToolDefinition): void {
+      registeredTools.push(tool);
+    },
+    registerCommand(name: string, command: RegisteredTestCommand): void {
+      void name;
+      void command;
+    },
+    on(event: string, handler: unknown): void {
+      void event;
+      void handler;
+    },
+    sendMessage(message: SentMessage): void {
+      void message;
+    },
+    sendUserMessage(message: unknown): void {
+      void message;
+    },
+  } as unknown as ExtensionAPI;
+  piWorkflow(pi);
+
+  const proposeWorkflow = registeredTools.find((tool) => tool.name === "propose_workflow");
+  assert.ok(proposeWorkflow);
+  const source = `export const metadata = { name: "summarize", description: "Summarize files" };
+export default async function workflow() {
+  return args;
+}`;
+  const ctx = {
+    cwd: project,
+    mode: "tui",
+    ui: {
+      custom<T>(
+        factory: (
+          tui: { requestRender(): void },
+          theme: typeof plainTheme,
+          keybindings: unknown,
+          done: (value: T) => void,
+        ) => { handleInput(data: string): void },
+      ): Promise<T> {
+        return new Promise((resolve) => {
+          const component = factory({ requestRender: requestRenderNoop }, plainTheme, undefined, resolve);
+          component.handleInput("\t");
+          for (const character of "Use gpt-5-mini for the cheap scan.") component.handleInput(character);
+          component.handleInput("\r");
+        });
+      },
+    },
+  };
+
+  await assert.rejects(
+    proposeWorkflow.execute("call-1", { name: "summarize", source, request: "summarize files" }, undefined, undefined, ctx as never),
+    /Reviewer feedback: Use gpt-5-mini for the cheap scan\./,
+  );
 });

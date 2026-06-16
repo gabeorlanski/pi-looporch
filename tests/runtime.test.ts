@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { runWorkflowFromDirectory, type WorkflowAgent } from "../src/workflow-runtime.ts";
+import { runWorkflowFromDirectory, type WorkflowAgent } from "../src/runtime.ts";
 
 async function writeWorkflow(project: string, name: string, source: string, files: Record<string, string> = {}): Promise<void> {
   const workflowDir = path.join(project, ".pi", "workflows", name);
@@ -51,6 +51,10 @@ export default async function workflow() {
   assert.equal(result.snapshot.agents.length, 2);
   assert.deepEqual(
     result.snapshot.agents.map((agentSnapshot) => agentSnapshot.tokenCount),
+    [7, 7],
+  );
+  assert.deepEqual(
+    result.snapshot.agents.map((agentSnapshot) => agentSnapshot.outputTokenCount),
     [7, 7],
   );
   assert.deepEqual(

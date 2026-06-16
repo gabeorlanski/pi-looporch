@@ -1,4 +1,5 @@
-import type { WorkflowAgent, WorkflowAgentProgress, WorkflowMetadata } from "./workflow-runtime.ts";
+import { inputResolutionPrompt } from "./prompt-templates.ts";
+import type { WorkflowAgent, WorkflowMetadata } from "./runtime.ts";
 
 export interface ResolveWorkflowInputOptions {
   rawInput: string;
@@ -12,9 +13,9 @@ export async function resolveWorkflowInput(options: ResolveWorkflowInputOptions)
   const parsed = parseWorkflowInput(options.rawInput);
   if (parsed.action === "use") return parsed.input;
   const response = await options.agent(
-    inputResolutionPrompt(options, parsed.rawInput),
+    inputResolutionPrompt({ ...options, rawInput: parsed.rawInput }),
     { label: `resolve ${options.workflowName} input`, reasoning: "low" },
-    ignoreProgress,
+    () => undefined,
   );
   return parseResolvedInput(response);
 }
@@ -27,22 +28,6 @@ export function parseWorkflowInput(text: string): { action: "use"; input: unknow
   const keyValueInput = parseKeyValueInput(trimmed);
   if (keyValueInput) return { action: "use", input: keyValueInput };
   return { action: "resolve", rawInput: trimmed };
-}
-
-function inputResolutionPrompt(options: ResolveWorkflowInputOptions, rawInput: string): string {
-  return [
-    "Convert this named workflow command input into the JSON value that should be passed as workflow `args`.",
-    "Infer the argument object from the workflow metadata and workflow.js source. The user should not have to write JSON.",
-    "Return only JSON. Do not explain. Do not wrap the JSON in Markdown.",
-    "Preserve paths, repository names, and @-prefixed file references exactly unless the workflow source clearly expects a normalized variant.",
-    "If the workflow clearly wants a single natural-language prompt, return an object with a prompt field.",
-    "Workflow metadata:",
-    JSON.stringify({ name: options.workflowName, description: options.metadata.description }, null, 2),
-    "workflow.js:",
-    options.source,
-    "User command input:",
-    rawInput,
-  ].join("\n\n");
 }
 
 function parseResolvedInput(value: unknown): unknown {
@@ -165,8 +150,4 @@ function coerceInputValue(value: string): unknown {
   const json = parseJsonInput(value);
   if (json.ok) return json.value;
   return value;
-}
-
-function ignoreProgress(progress: WorkflowAgentProgress): void {
-  void progress;
 }

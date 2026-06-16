@@ -1,5 +1,5 @@
 import { inputResolutionPrompt } from "./prompt-templates.ts";
-import type { WorkflowAgent, WorkflowMetadata } from "./runtime.ts";
+import type { WorkflowAgent, WorkflowAgentProgress, WorkflowAgentSessionLog, WorkflowMetadata } from "./runtime.ts";
 
 export interface ResolveWorkflowInputOptions {
   rawInput: string;
@@ -7,6 +7,9 @@ export interface ResolveWorkflowInputOptions {
   metadata: WorkflowMetadata;
   source: string;
   agent: WorkflowAgent;
+  signal?: AbortSignal;
+  sessionLog?: WorkflowAgentSessionLog;
+  onProgress?: (progress: WorkflowAgentProgress) => void;
 }
 
 export async function resolveWorkflowInput(options: ResolveWorkflowInputOptions): Promise<unknown> {
@@ -14,8 +17,13 @@ export async function resolveWorkflowInput(options: ResolveWorkflowInputOptions)
   if (parsed.action === "use") return parsed.input;
   const response = await options.agent(
     inputResolutionPrompt({ ...options, rawInput: parsed.rawInput }),
-    { label: `resolve ${options.workflowName} input`, reasoning: "low" },
-    () => undefined,
+    {
+      label: `resolve ${options.workflowName} input`,
+      reasoning: "low",
+      ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.sessionLog ? { sessionLog: options.sessionLog } : {}),
+    },
+    options.onProgress ?? (() => undefined),
   );
   return parseResolvedInput(response);
 }

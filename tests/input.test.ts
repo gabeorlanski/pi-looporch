@@ -59,3 +59,59 @@ void test("workflow_input_uses_agent_to_resolve_freeform_named_workflow_input", 
     prompt: "is the problem.",
   });
 });
+
+void test("workflow_input_forwards_resolver_agent_progress", async () => {
+  const progressMessages: string[] = [];
+  const agent: WorkflowAgent = (_agentPrompt, _options, reportProgress) => {
+    reportProgress({ statusMessage: "thinking", inputTokenCount: 120, outputTokenCount: 8, toolCallCount: 1 });
+    reportProgress({ statusMessage: "finished readJson", inputTokenCount: 120, outputTokenCount: 16, toolCallCount: 1 });
+    return Promise.resolve('{"prompt":"summarize the repo"}');
+  };
+
+  const input = await resolveWorkflowInput({
+    rawInput: "summarize the repo",
+    workflowName: "summarize",
+    metadata: { name: "summarize", description: "Summarize files" },
+    source: "export default async function workflow() { return args; }",
+    agent,
+    onProgress: (progress) => {
+      if (progress.statusMessage) progressMessages.push(progress.statusMessage);
+    },
+  });
+
+  assert.deepEqual(input, { prompt: "summarize the repo" });
+  assert.deepEqual(progressMessages, ["thinking", "finished readJson"]);
+});
+
+void test("workflow_input_forwards_resolver_session_log_context", async () => {
+  let sessionLog: unknown;
+  const agent: WorkflowAgent = (_agentPrompt, options) => {
+    sessionLog = options.sessionLog;
+    return Promise.resolve('{"prompt":"summarize the repo"}');
+  };
+
+  await resolveWorkflowInput({
+    rawInput: "summarize the repo",
+    workflowName: "summarize",
+    metadata: { name: "summarize", description: "Summarize files" },
+    source: "export default async function workflow() { return args; }",
+    agent,
+    sessionLog: {
+      parentId: "parent-1",
+      agentId: 0,
+      agentKey: "agent-000-input-resolution",
+      workflowName: "summarize",
+      label: "resolve summarize input",
+      phaseIndex: 0,
+    },
+  });
+
+  assert.deepEqual(sessionLog, {
+    parentId: "parent-1",
+    agentId: 0,
+    agentKey: "agent-000-input-resolution",
+    workflowName: "summarize",
+    label: "resolve summarize input",
+    phaseIndex: 0,
+  });
+});

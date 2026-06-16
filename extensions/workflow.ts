@@ -6,8 +6,14 @@ import { naturalLanguageRequestMessage } from "../src/prompt-templates.ts";
 import { discoverWorkflows, workflowRootsForProject } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
 import { type GeneratedWorkflowDraft, type WorkflowReviewer, type WorkflowReviewDecision } from "../src/request.ts";
-import { createWorkflowRunLog, type WorkflowRunLog } from "../src/run-logs.ts";
-import { normalizeWorkflowName, runWorkflowFromDirectory, type WorkflowSnapshot } from "../src/runtime.ts";
+import { createWorkflowRunId, createWorkflowRunLog, type WorkflowRunLog } from "../src/run-logs.ts";
+import {
+  normalizeWorkflowName,
+  runWorkflowFromDirectory,
+  type WorkflowAgentProgress,
+  type WorkflowAgentSnapshot,
+  type WorkflowSnapshot,
+} from "../src/runtime.ts";
 import { resolveWorkflowInput } from "../src/input.ts";
 import { failureMessage, completeMessage } from "../src/display/messages.ts";
 import { initialProgressDisplay, progressDisplay, type ProgressDisplay, type ProgressTheme } from "../src/display/progress.ts";
@@ -96,17 +102,30 @@ async function runExistingWorkflowCommand(
   }
   let runLog: WorkflowRunLog | undefined;
   let lastSnapshot: WorkflowSnapshot | undefined;
+  const abortControls = createWorkflowAbortControls(ctx);
   try {
     ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, "resolving input");
     const commandOptions = parseWorkflowCommandOptions(rawInput);
     const source = await readFile(workflow.entryFile, "utf8");
+    const parentRunId = createWorkflowRunId(workflowName);
     const agent = createPiWorkflowAgent({ cwd: ctx.cwd, reviewer });
+    const reportInputResolutionProgress = createInputResolutionProgressUi(ctx, workflowName);
     const input = await resolveWorkflowInput({
       rawInput: commandOptions.rawInput,
       workflowName,
       metadata: workflow.metadata,
       source,
       agent: createPiWorkflowAgent({ cwd: ctx.cwd, reviewer, tools: [] }),
+      signal: abortControls.signal,
+      sessionLog: {
+        parentId: parentRunId,
+        agentId: 0,
+        agentKey: "agent-000-input-resolution",
+        workflowName,
+        label: `resolve ${workflowName} input`,
+        phaseIndex: 0,
+      },
+      onProgress: reportInputResolutionProgress,
     });
     if (commandOptions.saveLog) {
       runLog = await createWorkflowRunLog({
@@ -116,6 +135,7 @@ async function runExistingWorkflowCommand(
         metadata: workflow.metadata,
         source,
         input,
+        runId: parentRunId,
       });
       ctx.ui.notify(`Saving workflow log to ${relativeToProject(ctx.cwd, runLog.runDir)}`, "info");
     }
@@ -127,7 +147,8 @@ async function runExistingWorkflowCommand(
       input,
       agent,
       workflowRoots: await workflowRootsForProject(ctx.cwd),
-      signal: ctx.signal,
+      agentLogParentId: parentRunId,
+      signal: abortControls.signal,
       onEvent: (event) => runLog?.recordEvent(event),
       onSnapshot: (snapshot) => {
         lastSnapshot = snapshot;
@@ -149,8 +170,37 @@ async function runExistingWorkflowCommand(
     ctx.ui.notify(message, "error");
     pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName, logPath } });
   } finally {
+    abortControls.dispose();
     clearRunningWorkflowUi(ctx);
   }
+}
+
+function createWorkflowAbortControls(ctx: ExtensionCommandContext): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController();
+  const abortWorkflow = () => {
+    if (controller.signal.aborted) return;
+    controller.abort();
+  };
+  const removeHostAbortListener = ctx.signal
+    ? (() => {
+        ctx.signal.addEventListener("abort", abortWorkflow, { once: true });
+        return () => ctx.signal?.removeEventListener("abort", abortWorkflow);
+      })()
+    : () => undefined;
+  const unsubscribeInput = ctx.ui.onTerminalInput((data) => {
+    if (!matchesKey(data, Key.escape)) return undefined;
+    abortWorkflow();
+    ctx.abort();
+    ctx.ui.notify("Aborting workflow run", "warning");
+    return { consume: true };
+  });
+  return {
+    signal: controller.signal,
+    dispose() {
+      unsubscribeInput();
+      removeHostAbortListener();
+    },
+  };
 }
 
 function updateRunningWorkflowUi(
@@ -169,6 +219,50 @@ function updateRunningWorkflowUi(
     }),
     { placement: "aboveEditor" },
   );
+}
+
+function createInputResolutionProgressUi(ctx: ExtensionCommandContext, workflowName: string): (progress: WorkflowAgentProgress) => void {
+  const agent: WorkflowAgentSnapshot = {
+    id: 1,
+    label: `resolve ${workflowName} input`,
+    phaseIndex: 0,
+    status: "running",
+    startedAt: Date.now(),
+    tokenCount: 0,
+    inputTokenCount: 0,
+    outputTokenCount: 0,
+    toolCallCount: 0,
+    message: "starting",
+  };
+  const snapshot: WorkflowSnapshot = {
+    workflowName: `${workflowName} input`,
+    description: "Resolve workflow input",
+    phases: [],
+    logs: [],
+    agents: [agent],
+    fanOuts: [],
+  };
+  updateRunningWorkflowUi(ctx, (width, theme) => progressDisplay(snapshot, width, theme));
+  return (progress) => {
+    applyAgentProgress(agent, progress);
+    updateRunningWorkflowUi(ctx, (width, theme) => progressDisplay(snapshot, width, theme));
+  };
+}
+
+function applyAgentProgress(agent: WorkflowAgentSnapshot, progress: WorkflowAgentProgress): void {
+  agent.message = progress.statusMessage;
+  const reportsStructuredTokens = progress.inputTokenCount !== undefined || progress.outputTokenCount !== undefined;
+  if (progress.inputTokenCount !== undefined) agent.inputTokenCount = progress.inputTokenCount;
+  if (progress.outputTokenCount !== undefined) agent.outputTokenCount = progress.outputTokenCount;
+  if (progress.toolCallCount !== undefined) agent.toolCallCount = progress.toolCallCount;
+  if (progress.tokenCount === undefined) {
+    agent.tokenCount = agent.inputTokenCount + agent.outputTokenCount;
+    return;
+  }
+  agent.tokenCount = progress.tokenCount;
+  if (!reportsStructuredTokens) agent.outputTokenCount = progress.tokenCount;
+  if (reportsStructuredTokens && progress.outputTokenCount === undefined)
+    agent.outputTokenCount = Math.max(0, progress.tokenCount - agent.inputTokenCount);
 }
 
 function clearRunningWorkflowUi(ctx: ExtensionCommandContext): void {

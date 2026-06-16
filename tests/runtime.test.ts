@@ -104,6 +104,54 @@ export default async function workflow() {
   assert.ok(snapshots >= 4);
 });
 
+void test("workflow_passes_session_log_context_to_each_launched_agent", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "logged",
+    `export const metadata = { name: "logged", description: "Logged agents" };
+export default async function workflow() {
+  phase("scan");
+  await agent("first", { label: "Review src/index.ts" });
+  return agent("second", { label: "synthesis", reasoning: "medium" });
+}`,
+  );
+  const sessionLogs: unknown[] = [];
+  const agent: WorkflowAgent = (_prompt, options) => {
+    sessionLogs.push(options.sessionLog);
+    return Promise.resolve("ok");
+  };
+
+  await runWorkflowFromDirectory({
+    cwd: project,
+    workflowName: "logged",
+    input: {},
+    agent,
+    agentLogParentId: "parent-1",
+  });
+
+  assert.deepEqual(sessionLogs, [
+    {
+      parentId: "parent-1",
+      agentId: 1,
+      agentKey: "agent-001-review-src-index.ts",
+      workflowName: "logged",
+      label: "Review src/index.ts",
+      phaseIndex: 1,
+      phase: "scan",
+    },
+    {
+      parentId: "parent-1",
+      agentId: 2,
+      agentKey: "agent-002-synthesis",
+      workflowName: "logged",
+      label: "synthesis",
+      phaseIndex: 1,
+      phase: "scan",
+    },
+  ]);
+});
+
 void test("workflow_sandbox_blocks_ambient_authority_and_file_escapes", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   const agent: WorkflowAgent = () => Promise.resolve("unused");

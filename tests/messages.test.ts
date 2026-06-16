@@ -9,6 +9,13 @@ void test("workflow_boundary_messages_are_visible_text", () => {
   assert.equal(failureMessage("review", new Error("boom")), "Workflow 'review' failed: boom");
 });
 
+void test("workflow_complete_message_renders_string_results_without_json_escaping", () => {
+  assert.equal(
+    completeMessage("review", "Summary\n\n```bash\nnpm test\n```"),
+    "Workflow 'review' complete.\n\nSummary\n\n```bash\nnpm test\n```",
+  );
+});
+
 void test("workflow_snapshot_messages_report_new_phases_logs_and_agent_status", () => {
   const previous: WorkflowSnapshot = {
     workflowName: "review",

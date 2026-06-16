@@ -17,6 +17,18 @@ export interface WorkflowAgentOptions {
   model?: string;
   taskFile?: string;
   signal?: AbortSignal;
+  sessionLog?: WorkflowAgentSessionLog;
+}
+
+export interface WorkflowAgentSessionLog {
+  parentId: string;
+  agentId: number;
+  agentKey: string;
+  workflowName: string;
+  label: string;
+  phaseIndex: number;
+  phase?: string;
+  fanOutId?: number;
 }
 
 export interface WorkflowAgentProgress {
@@ -98,6 +110,7 @@ export interface RunWorkflowOptions {
   input: unknown;
   agent: WorkflowAgent;
   workflowRoots?: string[];
+  agentLogParentId?: string;
   signal?: AbortSignal;
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
   onEvent?: (event: WorkflowEvent) => void;
@@ -301,35 +314,31 @@ async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOpt
     const heartbeat = setInterval(runtime.emit, 1000);
     let result: unknown;
     try {
-      result = await runtime.options.agent(
-        prompt,
-        runtime.options.signal ? { ...agentOptions, signal: runtime.options.signal } : agentOptions,
-        (progress) => {
-          agent.message = progress.statusMessage;
-          const reportsStructuredTokens = progress.inputTokenCount !== undefined || progress.outputTokenCount !== undefined;
-          if (progress.inputTokenCount !== undefined) agent.inputTokenCount = progress.inputTokenCount;
-          if (progress.outputTokenCount !== undefined) agent.outputTokenCount = progress.outputTokenCount;
-          if (progress.toolCallCount !== undefined) agent.toolCallCount = progress.toolCallCount;
-          if (progress.tokenCount !== undefined) {
-            agent.tokenCount = progress.tokenCount;
-            if (!reportsStructuredTokens) agent.outputTokenCount = progress.tokenCount;
-            if (reportsStructuredTokens && progress.outputTokenCount === undefined)
-              agent.outputTokenCount = Math.max(0, progress.tokenCount - agent.inputTokenCount);
-          } else {
-            agent.tokenCount = agent.inputTokenCount + agent.outputTokenCount;
-          }
-          runtime.emitEvent({
-            type: "agent_progress",
-            agentId: agent.id,
-            message: agent.message,
-            tokenCount: agent.tokenCount,
-            inputTokenCount: agent.inputTokenCount,
-            outputTokenCount: agent.outputTokenCount,
-            toolCallCount: agent.toolCallCount,
-          });
-          runtime.emit();
-        },
-      );
+      result = await runtime.options.agent(prompt, workflowAgentOptionsForLaunch(runtime, agent, agentOptions), (progress) => {
+        agent.message = progress.statusMessage;
+        const reportsStructuredTokens = progress.inputTokenCount !== undefined || progress.outputTokenCount !== undefined;
+        if (progress.inputTokenCount !== undefined) agent.inputTokenCount = progress.inputTokenCount;
+        if (progress.outputTokenCount !== undefined) agent.outputTokenCount = progress.outputTokenCount;
+        if (progress.toolCallCount !== undefined) agent.toolCallCount = progress.toolCallCount;
+        if (progress.tokenCount !== undefined) {
+          agent.tokenCount = progress.tokenCount;
+          if (!reportsStructuredTokens) agent.outputTokenCount = progress.tokenCount;
+          if (reportsStructuredTokens && progress.outputTokenCount === undefined)
+            agent.outputTokenCount = Math.max(0, progress.tokenCount - agent.inputTokenCount);
+        } else {
+          agent.tokenCount = agent.inputTokenCount + agent.outputTokenCount;
+        }
+        runtime.emitEvent({
+          type: "agent_progress",
+          agentId: agent.id,
+          message: agent.message,
+          tokenCount: agent.tokenCount,
+          inputTokenCount: agent.inputTokenCount,
+          outputTokenCount: agent.outputTokenCount,
+          toolCallCount: agent.toolCallCount,
+        });
+        runtime.emit();
+      });
     } finally {
       clearInterval(heartbeat);
     }
@@ -347,6 +356,38 @@ async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOpt
     runtime.emit();
     throw error;
   }
+}
+
+function workflowAgentOptionsForLaunch(
+  runtime: ActiveWorkflowRuntime,
+  agent: WorkflowAgentSnapshot,
+  agentOptions: WorkflowAgentOptions,
+): WorkflowAgentOptions {
+  return {
+    ...agentOptions,
+    ...(runtime.options.signal ? { signal: runtime.options.signal } : {}),
+    ...(runtime.options.agentLogParentId
+      ? {
+          sessionLog: {
+            parentId: runtime.options.agentLogParentId,
+            agentId: agent.id,
+            agentKey: `agent-${String(agent.id).padStart(3, "0")}-${
+              agent.label
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9._-]+/g, "-")
+                .replace(/^-+|-+$/g, "")
+                .slice(0, 48) || "unlabeled"
+            }`,
+            workflowName: runtime.snapshot.workflowName,
+            label: agent.label,
+            phaseIndex: agent.phaseIndex,
+            ...(agent.phase ? { phase: agent.phase } : {}),
+            ...(agent.fanOutId !== undefined ? { fanOutId: agent.fanOutId } : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 async function runPipelineItem<T>(item: T, index: number, stages: PipelineStage<T>[]): Promise<T> {

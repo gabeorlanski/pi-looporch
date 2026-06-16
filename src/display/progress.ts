@@ -46,10 +46,10 @@ export function initialProgressDisplay(
   theme: ProgressTheme = plainTheme,
 ): ProgressDisplay {
   const safeWidth = Math.max(MIN_WIDTH, width);
-  const statusLine = `${workflowName}: starting · 0/0 agents · in 0 · out 0 · tools 0`;
+  const statusLine = `${workflowName}: STARTING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort`;
   const widgetLines = [
     titleLine(`workflow ${workflowName}`, safeWidth, theme),
-    theme.fg("dim", fit(`  waiting for workflow runtime events`, safeWidth)),
+    theme.fg("warning", fit(`  STARTING · waiting for workflow runtime events · Esc abort`, safeWidth)),
     "",
     theme.fg("muted", fit(`  NET 0/0 agents · in 0 · out 0 · total 0 · tools 0`, safeWidth)),
   ];
@@ -59,10 +59,11 @@ export function initialProgressDisplay(
 export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDTH, theme: ProgressTheme = plainTheme): ProgressDisplay {
   const safeWidth = Math.max(MIN_WIDTH, width);
   const stats = netStats(snapshot);
-  const statusLine = `${snapshot.workflowName}: ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · in ${formatTokenCount(stats.inputTokenCount)} · out ${formatTokenCount(stats.outputTokenCount)} · tools ${String(stats.toolCallCount)}`;
+  const state = workflowState(snapshot, stats);
+  const statusLine = `${snapshot.workflowName}: ${state.label} · ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · in ${formatTokenCount(stats.inputTokenCount)} · out ${formatTokenCount(stats.outputTokenCount)} · tools ${String(stats.toolCallCount)}${state.kind === "running" ? " · Esc abort" : ""}`;
   const widgetLines = [
     titleLine(`workflow ${snapshot.workflowName}`, safeWidth, theme),
-    summaryLine(snapshot, stats, safeWidth, theme),
+    summaryLine(snapshot, stats, state, safeWidth, theme),
     "",
     tableHeader(safeWidth, theme),
     theme.fg("borderMuted", fit(`  ${"-".repeat(Math.max(0, safeWidth - 4))}`, safeWidth)),
@@ -89,14 +90,23 @@ function titleLine(title: string, width: number, theme: ProgressTheme): string {
   );
 }
 
-function summaryLine(snapshot: WorkflowSnapshot, stats: NetStats, width: number, theme: ProgressTheme): string {
+function summaryLine(
+  snapshot: WorkflowSnapshot,
+  stats: NetStats,
+  state: WorkflowDisplayState,
+  width: number,
+  theme: ProgressTheme,
+): string {
   const phase = currentPhaseLabel(snapshot);
   const errors = stats.erroredAgents > 0 ? theme.fg("error", ` · ${String(stats.erroredAgents)} errors`) : "";
+  const abortHint = state.kind === "running" ? theme.fg("warning", " · Esc abort") : "";
   return fit(
-    `  ${theme.fg("muted", "phase")} ${theme.fg("accent", phase)} ` +
+    `  ${theme.fg(state.color, state.label)} ` +
+      `${theme.fg("muted", "· phase")} ${theme.fg("accent", phase)} ` +
       `${theme.fg("muted", "· agents")} ${theme.fg("success", `${String(stats.completedAgents)}/${String(stats.totalAgents)}`)} ` +
       `${theme.fg("muted", "· running")} ${theme.fg(stats.runningAgents > 0 ? "warning" : "dim", String(stats.runningAgents))}` +
-      errors,
+      errors +
+      abortHint,
     width,
   );
 }
@@ -123,10 +133,11 @@ function renderPhaseSection(section: PhaseSection, width: number, theme: Progres
     section.agents.length === 0
       ? "no agents yet"
       : `${String(section.agents.filter((agent) => agent.status !== "running").length)}/${String(section.agents.length)} agents`;
+  const runningElapsed = section.isExpanded ? "" : runningElapsedText(section.agents);
   const phaseLine = fit(
     `  ${theme.fg(phaseStatus.color, phaseStatus.label)} ${theme.fg("muted", `${phaseLabel} `)}` +
       theme.fg(section.isCurrent ? "accent" : "text", phaseTitle) +
-      theme.fg("dim", `${phaseCount}${phaseStats}`),
+      theme.fg("dim", `${phaseCount}${phaseStats}${runningElapsed}`),
     width,
   );
   if (section.agents.length === 0 || !section.isExpanded) return [phaseLine];
@@ -140,7 +151,8 @@ function renderAgentRow(agent: WorkflowAgentSnapshot, width: number, theme: Prog
   const model = fitCell(agent.model ?? "default", columns.model);
   const reasoning = fitCell(agent.reasoning ?? "default", columns.reasoning);
   const tokens = fitCell(`${formatTokenCount(agent.inputTokenCount)} in / ${formatTokenCount(agent.outputTokenCount)} out`, columns.tokens);
-  const message = agent.error ?? agent.message ?? "";
+  const elapsed = agent.status === "running" && agent.startedAt > 0 ? `${formatDuration(Date.now() - agent.startedAt)} ` : "";
+  const message = agent.error ?? `${elapsed}${agent.message ?? ""}`;
   return fit(
     `  ${theme.fg("text", label)}` +
       theme.fg(status.color, fitCell(status.label, columns.status)) +
@@ -217,13 +229,33 @@ function phaseElapsedMs(agents: WorkflowAgentSnapshot[]): number | undefined {
   return Math.max(0, endedAt - startedAt);
 }
 
+function runningElapsedText(agents: WorkflowAgentSnapshot[]): string {
+  const runningAgents = agents.filter((agent) => agent.status === "running" && agent.startedAt > 0);
+  if (!runningAgents.length) return "";
+  const startedAt = Math.min(...runningAgents.map((agent) => agent.startedAt));
+  return ` · running ${formatDuration(Date.now() - startedAt)}`;
+}
+
 function formatDuration(ms: number): string {
-  if (ms < 1000) return `${String(ms)}ms`;
-  const seconds = ms / 1000;
+  const safeMs = Math.max(0, ms);
+  if (safeMs < 1000) return `${String(safeMs)}ms`;
+  const seconds = safeMs / 1000;
   if (seconds < 60) return `${trimFixed(seconds)}s`;
   const wholeSeconds = Math.round(seconds);
   const minutes = Math.floor(wholeSeconds / 60);
   return `${String(minutes)}m ${String(wholeSeconds % 60).padStart(2, "0")}s`;
+}
+
+interface WorkflowDisplayState {
+  kind: "running" | "complete" | "error";
+  label: string;
+  color: DisplayColor;
+}
+
+function workflowState(snapshot: WorkflowSnapshot, stats: NetStats): WorkflowDisplayState {
+  if (stats.erroredAgents > 0) return { kind: "error", label: "ERROR", color: "error" };
+  if (snapshot.result !== undefined) return { kind: "complete", label: "DONE", color: "success" };
+  return { kind: "running", label: "RUNNING", color: "warning" };
 }
 
 function phaseStatusText(section: PhaseSection): { label: string; color: DisplayColor } {

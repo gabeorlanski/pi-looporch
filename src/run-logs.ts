@@ -11,6 +11,7 @@ export interface WorkflowRunLogOptions {
   metadata: WorkflowMetadata;
   source: string;
   input: unknown;
+  runId?: string;
 }
 
 export interface WorkflowRunLog {
@@ -28,7 +29,7 @@ interface WorkflowRunLogEnvelope {
 
 export async function createWorkflowRunLog(options: WorkflowRunLogOptions): Promise<WorkflowRunLog> {
   const startedAt = new Date();
-  const runId = `${timestampSlug(startedAt)}-${options.workflowName}-${randomUUID().slice(0, 8)}`;
+  const runId = options.runId ?? createWorkflowRunId(options.workflowName, startedAt);
   const runDir = path.join(path.resolve(options.cwd), ".pi", "workflow-runs", runId);
   const eventsFile = path.join(runDir, "events.jsonl");
   let seq = 0;
@@ -68,8 +69,8 @@ export async function createWorkflowRunLog(options: WorkflowRunLogOptions): Prom
   };
 }
 
-function timestampSlug(date: Date): string {
-  return date.toISOString().replace(/[:.]/g, "-");
+export function createWorkflowRunId(workflowName: string, startedAt = new Date()): string {
+  return `${startedAt.toISOString().replace(/[:.]/g, "-")}-${workflowName}-${randomUUID().slice(0, 8)}`;
 }
 
 async function writeJson(filePath: string, value: unknown): Promise<void> {

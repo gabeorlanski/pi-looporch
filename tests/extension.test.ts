@@ -78,6 +78,9 @@ export default async function workflow() {
     mode: "tui",
     hasUI: true,
     signal: undefined,
+    abort(): void {
+      void project;
+    },
     isIdle: () => true,
     ui: {
       notify(message: string, type?: "info" | "warning" | "error"): void {
@@ -96,13 +99,16 @@ export default async function workflow() {
         }
         widgetUpdates.push(content as string[] | undefined);
       },
+      onTerminalInput(): () => void {
+        return () => undefined;
+      },
     },
   } as unknown as ExtensionCommandContext;
 
   await command.handler('echo message=hello count=10 debug=true files=src/index.ts,tests/index.test.ts note="hello world"', ctx);
 
   assert.deepEqual(sentUserMessages, []);
-  assert.ok(statusUpdates.includes("echo: 0/0 agents · in 0 · out 0 · tools 0"));
+  assert.ok(statusUpdates.includes("echo: RUNNING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort"));
   assert.deepEqual(statusUpdates.at(-1), undefined);
   assert.ok(
     widgetUpdates.some(
@@ -165,6 +171,9 @@ export default async function workflow() {
     mode: "tui",
     hasUI: true,
     signal: undefined,
+    abort(): void {
+      void project;
+    },
     isIdle: () => true,
     ui: {
       notify(message: string, type?: "info" | "warning" | "error"): void {
@@ -178,6 +187,9 @@ export default async function workflow() {
       setWidget(key: string, content: unknown): void {
         void key;
         void content;
+      },
+      onTerminalInput(): () => void {
+        return () => undefined;
       },
     },
   } as unknown as ExtensionCommandContext;

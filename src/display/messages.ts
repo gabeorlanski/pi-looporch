@@ -5,7 +5,7 @@ export function startMessage(workflowName: string): string {
 }
 
 export function completeMessage(workflowName: string, result: unknown): string {
-  return `Workflow '${workflowName}' complete.\n\n${JSON.stringify(result, null, 2)}`;
+  return `Workflow '${workflowName}' complete.\n\n${workflowResultText(result)}`;
 }
 
 export function failureMessage(workflowName: string | undefined, error: unknown): string {
@@ -58,4 +58,10 @@ function fanOutChanged(previous: WorkflowFanOutSnapshot | undefined, next: Workf
 
 function agentChanged(previous: WorkflowAgentSnapshot | undefined, next: WorkflowAgentSnapshot): boolean {
   return previous?.status !== next.status || previous.message !== next.message;
+}
+
+function workflowResultText(result: unknown): string {
+  if (typeof result === "string") return result;
+  if (result === undefined) return "undefined";
+  return JSON.stringify(result, null, 2);
 }

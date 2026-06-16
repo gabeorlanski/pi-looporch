@@ -11,6 +11,7 @@ import {
 } from "./runtime.ts";
 import { progressDisplay } from "./display/progress.ts";
 import { reviewAndSaveWorkflowDraft, type WorkflowProposal, type WorkflowReviewer } from "./request.ts";
+import { createWorkflowRunId } from "./run-logs.ts";
 
 export interface WorkflowToolsOptions {
   cwd?: string;
@@ -47,12 +48,14 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
       const agent = options.agent ?? options.agentForContext?.(ctx);
       if (!agent) throw new Error("run_workflow requires a workflow agent");
       const workflowName = normalizeWorkflowName(params.name);
+      const parentRunId = createWorkflowRunId(workflowName);
       const result = await runWorkflowFromDirectory({
         cwd,
         workflowName,
         input: params.input ?? {},
         agent,
         workflowRoots: await workflowRootsForProject(cwd),
+        agentLogParentId: parentRunId,
         signal,
         onSnapshot: (snapshot) => {
           onUpdate?.({

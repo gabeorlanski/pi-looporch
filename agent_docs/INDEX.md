@@ -49,6 +49,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Keep generated workflows review-gated before save or run.
 - Keep workflow file helpers sandboxed inside the workflow directory.
 - Throw actionable `Error` messages at boundaries when user input, metadata, or workflow config is invalid.
+- Named workflow commands must not require users to hand-write JSON; resolve freeform command input against the workflow metadata/source into the expected `args` shape.
 
 ### Testing
 

@@ -87,16 +87,24 @@ function resolveModel(modelRegistry: ModelRegistry, spec: string): ReturnType<Mo
 
 function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress) => void) {
   let tokenCount = 0;
+  let lastStreamUpdate = 0;
   return {
     handleEvent(event: unknown): void {
       if (!isEventObject(event)) return;
       if (event.type === "turn_start") reportProgress({ statusMessage: "thinking", tokenCount });
+      if (event.type === "message_update") {
+        const now = Date.now();
+        if (now - lastStreamUpdate >= 250) {
+          lastStreamUpdate = now;
+          reportProgress({ statusMessage: "streaming", tokenCount: tokenCount + estimatedTokensFromMessage(event.message) });
+        }
+      }
       if (event.type === "tool_execution_start" || event.type === "tool_execution_update") {
         reportProgress({ statusMessage: `using ${eventToolName(event)}`, tokenCount });
       }
       if (event.type === "tool_execution_end") reportProgress({ statusMessage: `finished ${eventToolName(event)}`, tokenCount });
       if (event.type === "message_end") {
-        tokenCount += tokensFromMessage(event.message);
+        tokenCount += workflowDisplayTokensFromMessage(event.message);
         reportProgress({ statusMessage: "thinking", tokenCount });
       }
     },
@@ -111,16 +119,21 @@ function eventToolName(event: Record<string, unknown>): string {
   return typeof event.toolName === "string" && event.toolName.trim() ? event.toolName : "tool";
 }
 
-function tokensFromMessage(value: unknown): number {
+export function workflowDisplayTokensFromMessage(value: unknown): number {
   if (typeof value !== "object" || value === null) return 0;
   const usage = (value as { usage?: unknown }).usage;
-  if (typeof usage !== "object" || usage === null) return 0;
-  return (
-    numericProperty(usage, "input") +
-    numericProperty(usage, "output") +
-    numericProperty(usage, "cacheRead") +
-    numericProperty(usage, "cacheWrite")
-  );
+  if (typeof usage !== "object" || usage === null) return estimatedTokensFromMessage(value);
+  return numericProperty(usage, "output");
+}
+
+function estimatedTokensFromMessage(value: unknown): number {
+  if (typeof value !== "object" || value === null) return 0;
+  const content = (value as { content?: unknown }).content;
+  if (!Array.isArray(content)) return 0;
+  const characters = content
+    .filter((part): part is TextContentLike => isTextContent(part))
+    .reduce((total, part) => total + String(part.text).length, 0);
+  return Math.ceil(characters / 4);
 }
 
 function numericProperty(value: object, key: string): number {

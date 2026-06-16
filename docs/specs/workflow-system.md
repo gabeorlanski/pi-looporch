@@ -34,7 +34,7 @@ The replacement should make workflows simple to author, inspect, and modify dire
 - Do not introduce a declarative YAML/JSON workflow DSL for the first version.
 - Do not require a separate markdown metadata file for every workflow.
 - Do not force authors to write workflows through a heavy `ctx` object if simpler primitives are available.
-- Do not implement persisted or resumable workflow runs in v1.
+- Do not implement resumable workflow runs in v1. Persisted run logs are optional debugging artifacts, not the default execution mode.
 
 ## Authoring Model
 
@@ -95,17 +95,19 @@ Saved workflows should run sandboxed with restricted JavaScript because this is 
 
 The sandbox should preserve direct workflow primitives while limiting ambient authority. The first version should not simply execute saved workflows as unrestricted trusted project code.
 
-Workflow runs should be live-only in v1. The runtime does not need to persist event logs or support resuming canceled/failed runs in the first implementation.
+Workflow runs are live by default. Named slash-command runs may opt into persisted debugging logs with `--save-log`; saved logs live under `.pi/workflow-runs/<run-id>/` and include run metadata, normalized input, the workflow source, append-only `events.jsonl`, a final snapshot, and either `result.json` or `error.json`. Persisted logs are for inspection only and do not support resuming canceled or failed runs.
 
 ## Command Model
 
 The extension should cut over from `/loop` to `/workflow`.
 
-Named workflow invocation should use colon syntax:
+Named workflow invocation should use colon syntax and accept ergonomic non-JSON input:
 
 ```text
-/workflow:review <input>
+/workflow:review files=src/index.ts,tests/index.test.ts prompt="focus on auth"
 ```
+
+Manual input handling should support JSON, `key=value`, `--key value`, and comma-separated lists directly. The named-command flag `--save-log` is reserved by the slash command and stripped before workflow input parsing. Freeform text should be resolved by an agent against the named workflow metadata/source into the `args` shape the workflow expects, so users do not have to hand-write JSON.
 
 A generic workflow invocation should let the agent decide how to handle the request:
 
@@ -127,7 +129,7 @@ This command should open a Glimpse/browser-style UI for inspecting or monitoring
 
 ## Runtime UI
 
-Normal TUI execution should stay lean. It should clearly show fan-out and reduction progress without exposing excessive internal noise.
+Normal TUI execution should stay lean. Named workflow commands should execute saved workflows directly rather than routing through a session-agent `run_workflow` tool call. While a workflow runs, show a compact table with `Phase`, `Progress`, and `Tokens` columns. Do not expose child agent output in the running view.
 
 The richer browser/Glimpse UI is for review and debugging, especially through `/workflow-review:<workflow-name>` and new workflow approval.
 

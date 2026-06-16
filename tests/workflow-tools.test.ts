@@ -41,12 +41,31 @@ export default async function workflow() {
   const tool = createWorkflowTools({ cwd: project, agent }).find((candidate) => candidate.name === "run_workflow");
   assert.ok(tool);
 
-  const result = await tool.execute("call-1", { name: "echo", input: { message: "hello" } }, undefined, undefined, {} as never);
+  const updates: string[] = [];
+  const result = await tool.execute(
+    "call-1",
+    { name: "echo", input: { message: "hello" } },
+    undefined,
+    (partial) => {
+      const content = partial.content[0];
+      if (content.type === "text") updates.push(content.text);
+    },
+    {} as never,
+  );
 
-  assert.deepEqual(result.details, {
-    workflowName: "echo",
-    result: { input: { message: "hello" }, agent: "helper:say hi" },
-  });
+  const details = result.details as { workflowName: string; result: unknown; status: string };
+  assert.equal(details.workflowName, "echo");
+  assert.equal(details.status, "complete");
+  assert.deepEqual(details.result, { input: { message: "hello" }, agent: "helper:say hi" });
+  assert.ok(
+    updates.includes(
+      "─── ◆ workflow: echo ────────────────────────────────────────────────────\n" +
+        "  Phase: starting  Progress: 0/1  Tokens: 0 tokens\n\n" +
+        "  phase             progress  tokens\n" +
+        "  ────────────────────────────────────────────────────────────────────\n" +
+        "  starting          0/1       0 tokens",
+    ),
+  );
 });
 
 void test("propose_workflow_tool_saves_only_after_review", async () => {

@@ -34,7 +34,14 @@ export default async function workflow() {
     return Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
   };
 
-  const result = await runWorkflowFromDirectory({ cwd: project, workflowName: "review", input: { files: ["a.ts", "b.ts"] }, agent });
+  const events: string[] = [];
+  const result = await runWorkflowFromDirectory({
+    cwd: project,
+    workflowName: "review",
+    input: { files: ["a.ts", "b.ts"] },
+    agent,
+    onEvent: (event) => events.push(event.type),
+  });
 
   assert.deepEqual(result.result, [
     { item: "a.ts:review a.ts", cwd: project },
@@ -51,6 +58,46 @@ export default async function workflow() {
     [1, 1],
   );
   assert.deepEqual(result.snapshot.fanOuts, [{ id: 1, label: "file reviews", total: 2, running: 0, done: 2, error: 0 }]);
+  assert.deepEqual(events, [
+    "run_started",
+    "phase",
+    "fanout_started",
+    "agent_started",
+    "agent_progress",
+    "agent_started",
+    "agent_progress",
+    "agent_done",
+    "agent_done",
+    "fanout_progress",
+    "fanout_progress",
+    "run_completed",
+  ]);
+});
+
+void test("workflow_emits_heartbeat_snapshots_while_agent_is_running", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "heartbeat",
+    `export const metadata = { name: "heartbeat", description: "Heartbeat" };
+export default async function workflow() {
+  return agent("wait", { label: "slow" });
+}`,
+  );
+  const agent: WorkflowAgent = () => new Promise((resolve) => setTimeout(() => resolve("done"), 1100));
+  let snapshots = 0;
+
+  await runWorkflowFromDirectory({
+    cwd: project,
+    workflowName: "heartbeat",
+    input: {},
+    agent,
+    onSnapshot: () => {
+      snapshots++;
+    },
+  });
+
+  assert.ok(snapshots >= 4);
 });
 
 void test("workflow_sandbox_blocks_ambient_authority_and_file_escapes", async () => {

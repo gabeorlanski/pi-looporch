@@ -1,7 +1,15 @@
 import { Type } from "typebox";
 import { defineTool, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { workflowRootsForProject } from "./workflow-discovery.ts";
-import { parseWorkflowSourceMetadata, normalizeWorkflowName, runWorkflowFromDirectory, type WorkflowAgent } from "./workflow-runtime.ts";
+import {
+  parseWorkflowSourceMetadata,
+  normalizeWorkflowName,
+  runWorkflowFromDirectory,
+  type WorkflowAgent,
+  type WorkflowSnapshot,
+} from "./workflow-runtime.ts";
+import { workflowProgressText } from "./workflow-progress.ts";
 import { saveWorkflowDraft, type WorkflowProposal, type WorkflowReviewer } from "./workflow-request.ts";
 
 export interface WorkflowToolsOptions {
@@ -16,6 +24,13 @@ export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefiniti
   return [createRunWorkflowTool(options), createProposeWorkflowTool(options)];
 }
 
+interface RunWorkflowToolDetails {
+  workflowName: string;
+  status: "running" | "complete";
+  snapshot: WorkflowSnapshot;
+  result?: unknown;
+}
+
 function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
   return defineTool({
     name: "run_workflow",
@@ -26,7 +41,8 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
       name: Type.String({ description: "Existing workflow name to run" }),
       input: Type.Optional(Type.Any({ description: "JSON-serializable workflow input" })),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    renderShell: "self",
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const cwd = options.cwd ?? ctx.cwd;
       const agent = options.agent ?? options.agentForContext?.(ctx);
       if (!agent) throw new Error("run_workflow requires a workflow agent");
@@ -38,11 +54,21 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
         agent,
         workflowRoots: await workflowRootsForProject(cwd),
         signal,
+        onSnapshot: (snapshot) => {
+          onUpdate?.({
+            content: [{ type: "text", text: workflowProgressText(snapshot) }],
+            details: { workflowName, status: "running", snapshot },
+          });
+        },
       });
       return {
         content: [{ type: "text", text: `Workflow ${result.workflowName} complete.\n\n${JSON.stringify(result.result, null, 2)}` }],
-        details: { workflowName: result.workflowName, result: result.result },
+        details: { workflowName: result.workflowName, status: "complete", snapshot: result.snapshot, result: result.result },
       };
+    },
+    renderResult(result, _options, theme) {
+      const details = result.details as RunWorkflowToolDetails;
+      return new Text(theme.fg(details.status === "complete" ? "success" : "accent", workflowProgressText(details.snapshot)), 0, 0);
     },
   });
 }

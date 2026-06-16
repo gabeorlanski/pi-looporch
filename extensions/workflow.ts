@@ -1,15 +1,27 @@
+import path from "node:path";
 import { readFile } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
-import { workflowNaturalLanguageRequestMessage, workflowRunRequestMessage } from "../src/workflow-command.ts";
-import { discoverWorkflows } from "../src/workflow-discovery.ts";
+import { workflowNaturalLanguageRequestMessage } from "../src/workflow-command.ts";
+import { discoverWorkflows, workflowRootsForProject } from "../src/workflow-discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
 import { type GeneratedWorkflowDraft, type WorkflowReviewer } from "../src/workflow-request.ts";
-import { normalizeWorkflowName } from "../src/workflow-runtime.ts";
+import { createWorkflowRunLog, type WorkflowRunLog } from "../src/workflow-run-logs.ts";
+import { normalizeWorkflowName, runWorkflowFromDirectory, type WorkflowSnapshot } from "../src/workflow-runtime.ts";
+import { resolveWorkflowInput } from "../src/workflow-input.ts";
+import { workflowFailureMessage, workflowCompleteMessage } from "../src/workflow-messages.ts";
+import {
+  initialWorkflowProgressLines,
+  initialWorkflowProgressStatusLine,
+  workflowProgressLines,
+  workflowProgressStatusLine,
+} from "../src/workflow-progress.ts";
 import { workflowApprovalLines } from "../src/workflow-review.ts";
 import { createWorkflowTools } from "../src/workflow-tools.ts";
 
 const MESSAGE_TYPE = "pi-workflow-message";
+const RUNNING_WORKFLOW_WIDGET = "pi-workflow-running";
+const RUNNING_WORKFLOW_STATUS = "workflow";
 
 export default function piWorkflow(pi: ExtensionAPI) {
   const aliases = new Set<string>();
@@ -52,33 +64,130 @@ async function steerWorkflowCommand(
   fixedWorkflowName: string | undefined,
   args: string,
 ): Promise<void> {
-  const message = await workflowSteerMessage(ctx, fixedWorkflowName, args);
-  if (!message.ok) {
-    ctx.ui.notify(message.message, "warning");
+  if (fixedWorkflowName) {
+    await runExistingWorkflowCommand(pi, ctx, normalizeWorkflowName(fixedWorkflowName), args);
     return;
   }
-  ctx.ui.notify("Workflow request sent to current session", "info");
-  sendWhenReady(pi, ctx, message.message);
-}
-
-async function workflowSteerMessage(
-  ctx: ExtensionCommandContext,
-  fixedWorkflowName: string | undefined,
-  args: string,
-): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
-  if (fixedWorkflowName)
-    return { ok: true, message: workflowRunRequestMessage(normalizeWorkflowName(fixedWorkflowName), parseWorkflowInput(args)) };
 
   const workflows = await discoverWorkflows(ctx.cwd);
   const names = workflows.map((workflow) => workflow.name);
   const trimmed = args.trim();
-  if (!trimmed)
-    return { ok: false, message: names.length ? `Usage: /workflow <name> [input]. Available: ${names.join(", ")}` : "No workflows found." };
+  if (!trimmed) {
+    ctx.ui.notify(names.length ? `Usage: /workflow <name> [input]. Available: ${names.join(", ")}` : "No workflows found.", "warning");
+    return;
+  }
 
   const [first, rest] = splitFirstWord(trimmed);
-  if (names.includes(first)) return { ok: true, message: workflowRunRequestMessage(first, parseWorkflowInput(rest)) };
+  if (names.includes(first)) {
+    await runExistingWorkflowCommand(pi, ctx, first, rest);
+    return;
+  }
 
-  return { ok: true, message: workflowNaturalLanguageRequestMessage(trimmed, names) };
+  ctx.ui.notify("Workflow request sent to current session", "info");
+  sendWhenReady(pi, ctx, workflowNaturalLanguageRequestMessage(trimmed, names));
+}
+
+async function runExistingWorkflowCommand(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  workflowName: string,
+  rawInput: string,
+): Promise<void> {
+  const reviewer = createReviewer(ctx);
+  const workflow = (await discoverWorkflows(ctx.cwd)).find((candidate) => candidate.name === workflowName);
+  if (!workflow) {
+    ctx.ui.notify(`Workflow '${workflowName}' not found.`, "warning");
+    return;
+  }
+  let runLog: WorkflowRunLog | undefined;
+  let lastSnapshot: WorkflowSnapshot | undefined;
+  try {
+    ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, "resolving input");
+    const commandOptions = parseWorkflowCommandOptions(rawInput);
+    const source = await readFile(workflow.entryFile, "utf8");
+    const agent = createPiWorkflowAgent({ cwd: ctx.cwd, reviewer });
+    const input = await resolveWorkflowInput({
+      rawInput: commandOptions.rawInput,
+      workflowName,
+      metadata: workflow.metadata,
+      source,
+      agent: createPiWorkflowAgent({ cwd: ctx.cwd, reviewer, tools: [] }),
+    });
+    if (commandOptions.saveLog) {
+      runLog = await createWorkflowRunLog({
+        cwd: ctx.cwd,
+        workflowName,
+        workflowDir: workflow.dir,
+        metadata: workflow.metadata,
+        source,
+        input,
+      });
+      ctx.ui.notify(`Saving workflow log to ${relativeToProject(ctx.cwd, runLog.runDir)}`, "info");
+    }
+    ctx.ui.notify(`Running workflow '${workflowName}'`, "info");
+    updateRunningWorkflowUi(ctx, initialWorkflowProgressStatusLine(), initialWorkflowProgressLines(workflowName));
+    const result = await runWorkflowFromDirectory({
+      cwd: ctx.cwd,
+      workflowName,
+      input,
+      agent,
+      workflowRoots: await workflowRootsForProject(ctx.cwd),
+      signal: ctx.signal,
+      onEvent: (event) => runLog?.recordEvent(event),
+      onSnapshot: (snapshot) => {
+        lastSnapshot = snapshot;
+        updateRunningWorkflowUi(ctx, workflowProgressStatusLine(snapshot), workflowProgressLines(snapshot));
+      },
+    });
+    await runLog?.complete(result.result, result.snapshot);
+    const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
+    pi.sendMessage({
+      customType: MESSAGE_TYPE,
+      content: withWorkflowLogPath(workflowCompleteMessage(result.workflowName, result.result), logPath),
+      display: true,
+      details: { workflowName: result.workflowName, result: result.result, logPath },
+    });
+  } catch (error) {
+    await runLog?.fail(error, lastSnapshot);
+    const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
+    const message = withWorkflowLogPath(workflowFailureMessage(workflowName, error), logPath);
+    ctx.ui.notify(message, "error");
+    pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName, logPath } });
+  } finally {
+    clearRunningWorkflowUi(ctx);
+  }
+}
+
+function updateRunningWorkflowUi(ctx: ExtensionCommandContext, statusLine: string, widgetLines: string[]): void {
+  ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, statusLine);
+  ctx.ui.setWidget(RUNNING_WORKFLOW_WIDGET, widgetLines, { placement: "aboveEditor" });
+}
+
+function clearRunningWorkflowUi(ctx: ExtensionCommandContext): void {
+  ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, undefined);
+  ctx.ui.setWidget(RUNNING_WORKFLOW_WIDGET, undefined);
+}
+
+function parseWorkflowCommandOptions(rawInput: string): { rawInput: string; saveLog: boolean } {
+  const tokens = rawInput.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+  let saveLog = false;
+  const inputTokens: string[] = [];
+  for (const token of tokens) {
+    if (token === "--save-log") {
+      saveLog = true;
+      continue;
+    }
+    inputTokens.push(token);
+  }
+  return { rawInput: inputTokens.join(" "), saveLog };
+}
+
+function withWorkflowLogPath(message: string, logPath: string | undefined): string {
+  return logPath ? `${message}\n\nSaved workflow log: ${logPath}` : message;
+}
+
+function relativeToProject(cwd: string, target: string): string {
+  return path.relative(cwd, target) || ".";
 }
 
 function sendWhenReady(pi: ExtensionAPI, ctx: ExtensionCommandContext, message: string): void {
@@ -106,7 +215,7 @@ async function reviewGeneratedWorkflow(ctx: ExtensionContext, draft: GeneratedWo
           ? theme.fg("accent", theme.bold(line))
           : line.includes("Decision") || line.includes("approve")
             ? theme.fg("success", line)
-            : line.includes("Review checklist") || line.includes("Goal") || line.includes("Steps") || line.includes("What will run")
+            : line.includes("Review") || line.includes("Goal") || line.includes("Steps") || line.includes("What will run")
               ? theme.bold(line)
               : line;
         return truncateToWidth(styled, width);
@@ -130,16 +239,6 @@ async function reviewWorkflowCommand(pi: ExtensionAPI, ctx: ExtensionCommandCont
     return;
   }
   pi.sendMessage({ customType: MESSAGE_TYPE, content: await readFile(workflow.entryFile, "utf8"), display: true, details: undefined });
-}
-
-function parseWorkflowInput(text: string): unknown {
-  const trimmed = text.trim();
-  if (!trimmed) return {};
-  try {
-    return JSON.parse(trimmed) as unknown;
-  } catch {
-    return { prompt: trimmed };
-  }
 }
 
 function splitFirstWord(text: string): [string, string] {

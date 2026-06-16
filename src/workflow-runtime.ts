@@ -59,6 +59,19 @@ export interface WorkflowSnapshot {
   result?: unknown;
 }
 
+export type WorkflowEvent =
+  | { type: "run_started"; workflowName: string; description: string }
+  | { type: "phase"; title: string }
+  | { type: "log"; message: string }
+  | { type: "fanout_started"; fanOut: WorkflowFanOutSnapshot }
+  | { type: "fanout_progress"; fanOut: WorkflowFanOutSnapshot }
+  | { type: "agent_started"; agent: WorkflowAgentSnapshot }
+  | { type: "agent_progress"; agentId: number; message?: string; tokenCount: number }
+  | { type: "agent_done"; agentId: number }
+  | { type: "agent_error"; agentId: number; error: string }
+  | { type: "run_completed"; result: unknown }
+  | { type: "run_failed"; error: string };
+
 export interface RunWorkflowOptions {
   cwd: string;
   workflowName: string;
@@ -67,6 +80,7 @@ export interface RunWorkflowOptions {
   workflowRoots?: string[];
   signal?: AbortSignal;
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
+  onEvent?: (event: WorkflowEvent) => void;
 }
 
 export interface WorkflowRunResult {
@@ -91,13 +105,21 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
 
   const snapshot: WorkflowSnapshot = { workflowName, description: metadata.description, phases: [], logs: [], agents: [], fanOuts: [] };
   const emit = () => options.onSnapshot?.(cloneSnapshot(snapshot));
-  const runtime = compileWorkflow(source, entryFile, workflowGlobals(options, workflowDir, snapshot, emit));
+  const emitEvent = (event: WorkflowEvent) => options.onEvent?.(cloneSerializable(event) as WorkflowEvent);
+  const runtime = compileWorkflow(source, entryFile, workflowGlobals(options, workflowDir, snapshot, emit, emitEvent));
   validateWorkflowMetadata(runtime.metadata, workflowName);
+  emitEvent({ type: "run_started", workflowName, description: metadata.description });
   emit();
-  const result = cloneSerializable(await runtime.workflow());
-  snapshot.result = result;
-  emit();
-  return { workflowName, workflowDir, metadata, result, snapshot: cloneSnapshot(snapshot) };
+  try {
+    const result = cloneSerializable(await runtime.workflow());
+    snapshot.result = result;
+    emitEvent({ type: "run_completed", result });
+    emit();
+    return { workflowName, workflowDir, metadata, result, snapshot: cloneSnapshot(snapshot) };
+  } catch (error) {
+    emitEvent({ type: "run_failed", error: error instanceof Error ? error.message : String(error) });
+    throw error;
+  }
 }
 
 export function parseWorkflowSourceMetadata(source: string, workflowName: string, filePath = "workflow.js"): WorkflowMetadata {
@@ -141,6 +163,7 @@ function workflowGlobals(
   workflowDir: string,
   snapshot?: WorkflowSnapshot,
   emit?: () => void,
+  emitEvent?: (event: WorkflowEvent) => void,
 ): Record<string, unknown> {
   return {
     args: options.input,
@@ -153,21 +176,23 @@ function workflowGlobals(
         return snapshot?.agents.reduce((total, agent) => total + agent.tokenCount, 0) ?? 0;
       },
     },
-    agent: (prompt: string, agentOptions: WorkflowAgentOptions = {}) => runAgent(options, snapshot, emit, prompt, agentOptions),
+    agent: (prompt: string, agentOptions: WorkflowAgentOptions = {}) => runAgent(options, snapshot, emit, emitEvent, prompt, agentOptions),
     phase: (title: string) => {
       if (!snapshot || !emit) throw new Error("Workflow phase primitive is not available during metadata loading");
       snapshot.phases.push(title);
+      emitEvent?.({ type: "phase", title });
       emit();
     },
     log: (message: string) => {
       if (!snapshot || !emit) throw new Error("Workflow log primitive is not available during metadata loading");
       snapshot.logs.push(message);
+      emitEvent?.({ type: "log", message });
       emit();
     },
     readText: (relativePath: string) => readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8"),
     readJson: (relativePath: string) => JSON.parse(readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8")) as unknown,
     parallel: <T, R>(items: readonly T[], worker: (item: T, index: number) => Promise<R> | R, fanOutOptions: { label?: string } = {}) =>
-      runParallel(snapshot, emit, items, worker, fanOutOptions.label),
+      runParallel(snapshot, emit, emitEvent, items, worker, fanOutOptions.label),
     pipeline: <T>(items: readonly T[], stages: PipelineStage<T>[]) =>
       Promise.all(items.map((item, index) => runPipelineItem(item, index, stages))),
   };
@@ -176,6 +201,7 @@ function workflowGlobals(
 async function runParallel<T, R>(
   snapshot: WorkflowSnapshot | undefined,
   emit: (() => void) | undefined,
+  emitEvent: ((event: WorkflowEvent) => void) | undefined,
   items: readonly T[],
   worker: (item: T, index: number) => Promise<R> | R,
   label: string | undefined,
@@ -190,6 +216,7 @@ async function runParallel<T, R>(
     error: 0,
   };
   snapshot.fanOuts.push(fanOut);
+  emitEvent?.({ type: "fanout_started", fanOut: { ...fanOut } });
   emit();
   return Promise.all(
     items.map(async (item, index) => {
@@ -202,6 +229,7 @@ async function runParallel<T, R>(
         throw error;
       } finally {
         fanOut.running = Math.max(0, fanOut.running - 1);
+        emitEvent?.({ type: "fanout_progress", fanOut: { ...fanOut } });
         emit();
       }
     }),
@@ -212,6 +240,7 @@ async function runAgent(
   options: RunWorkflowOptions,
   snapshot: WorkflowSnapshot | undefined,
   emit: (() => void) | undefined,
+  emitEvent: ((event: WorkflowEvent) => void) | undefined,
   prompt: string,
   agentOptions: WorkflowAgentOptions,
 ): Promise<unknown> {
@@ -225,20 +254,30 @@ async function runAgent(
     fanOutId: fanOutScope.getStore(),
   };
   snapshot.agents.push(agent);
+  emitEvent?.({ type: "agent_started", agent: { ...agent } });
   emit();
   try {
-    const result = await options.agent(prompt, options.signal ? { ...agentOptions, signal: options.signal } : agentOptions, (progress) => {
-      agent.message = progress.statusMessage;
-      if (progress.tokenCount !== undefined) agent.tokenCount = progress.tokenCount;
-      emit();
-    });
+    const heartbeat = setInterval(emit, 1000);
+    let result: unknown;
+    try {
+      result = await options.agent(prompt, options.signal ? { ...agentOptions, signal: options.signal } : agentOptions, (progress) => {
+        agent.message = progress.statusMessage;
+        if (progress.tokenCount !== undefined) agent.tokenCount = progress.tokenCount;
+        emitEvent?.({ type: "agent_progress", agentId: agent.id, message: agent.message, tokenCount: agent.tokenCount });
+        emit();
+      });
+    } finally {
+      clearInterval(heartbeat);
+    }
     if (options.signal?.aborted) throw new Error("Workflow aborted");
     agent.status = "done";
+    emitEvent?.({ type: "agent_done", agentId: agent.id });
     emit();
     return result;
   } catch (error) {
     agent.status = "error";
     agent.error = error instanceof Error ? error.message : String(error);
+    emitEvent?.({ type: "agent_error", agentId: agent.id, error: agent.error });
     emit();
     throw error;
   }

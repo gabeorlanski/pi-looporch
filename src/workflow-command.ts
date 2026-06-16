@@ -1,9 +1,3 @@
-export function workflowRunRequestMessage(workflowName: string, input: unknown): string {
-  return [`Use the run_workflow tool in this current session with name "${workflowName}" and input:`, JSON.stringify(input, null, 2)].join(
-    "\n",
-  );
-}
-
 export function workflowNaturalLanguageRequestMessage(request: string, availableWorkflowNames: string[]): string {
   return [
     "Handle this workflow request in the current session.",

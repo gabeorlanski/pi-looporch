@@ -50,7 +50,6 @@
     "lint-staged": "^17.0.7",
     "prettier": "^3.8.4",
     "tsx": "^4.0.0",
-    "typescript": "^5.0.0",
     "typescript-eslint": "^8.0.0"
   },
   "repository": {
@@ -59,7 +58,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "typebox": "^1.2.8"
+    "typebox": "^1.2.8",
+    "typescript": "^5.0.0"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import vm from "node:vm";
+import * as ts from "typescript";
 import { Value } from "typebox/value";
 import type { TSchema } from "typebox";
 
@@ -228,10 +229,7 @@ export function resolveWorkflowDirectory(cwd: string, workflowName: string, work
 }
 
 export function resolveInsideWorkflow(workflowDir: string, relativePath: string): string {
-  const target = path.resolve(workflowDir, relativePath.replace(/^@/, ""));
-  const relative = path.relative(workflowDir, target);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`Workflow file escapes workflow directory: ${relativePath}`);
-  return target;
+  return resolveInsideRoot(workflowDir, relativePath, "Workflow file escapes workflow directory");
 }
 
 export function validateWorkflowMetadata(metadata: unknown, workflowName: string): asserts metadata is WorkflowMetadata {
@@ -252,6 +250,7 @@ function metadataGlobals(options: RunWorkflowOptions, workflowDir: string): Reco
     log: unavailableMetadataPrimitive("log"),
     readText: (relativePath: string) => readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8"),
     readJson: (relativePath: string) => JSON.parse(readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8")) as unknown,
+    renderPrompt: (templatePath: string, values: unknown) => renderWorkflowPrompt(workflowDir, templatePath, values),
     parallel: unavailableMetadataPrimitive("parallel"),
     pipeline: unavailableMetadataPrimitive("pipeline"),
     coerce: unavailableMetadataPrimitive("coerce"),
@@ -291,6 +290,7 @@ function workflowGlobals(runtime: ActiveWorkflowRuntime, workflowDir: string): R
     },
     readText: (relativePath: string) => readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8"),
     readJson: (relativePath: string) => JSON.parse(readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8")) as unknown,
+    renderPrompt: (templatePath: string, values: unknown) => renderWorkflowPrompt(workflowDir, templatePath, values),
     parallel: <T, R>(items: readonly T[], worker: (item: T, index: number) => Promise<R> | R, fanOutOptions: { label?: string } = {}) =>
       runParallel(runtime, items, worker, fanOutOptions.label),
     pipeline: <T>(items: readonly T[], stages: PipelineStage<T>[]) =>
@@ -421,6 +421,30 @@ const mapReduceInputSchema = {
 
 function renderPromptTemplate(template: string, context: Record<string, unknown>): string {
   return template.replace(/{{\s*([A-Za-z_$][\w$]*)\s*}}/g, (_match, key: string) => promptTemplateValue(context[key]));
+}
+
+function renderWorkflowPrompt(workflowDir: string, templatePath: string, values: unknown): string {
+  if (typeof templatePath !== "string" || !templatePath.trim()) throw new Error("renderPrompt templatePath must be non-empty");
+  if (typeof values !== "object" || values === null || Array.isArray(values)) throw new Error("renderPrompt values must be an object");
+  const resolvedTemplate = resolvePromptTemplate(workflowPromptDirectory(workflowDir), templatePath);
+  return renderPromptTemplate(readFileSync(resolvedTemplate, "utf8"), values as Record<string, unknown>);
+}
+
+function workflowPromptDirectory(workflowDir: string): string {
+  return path.join(path.dirname(workflowDir), `${path.basename(workflowDir)}.prompts`);
+}
+
+function resolvePromptTemplate(promptDir: string, templatePath: string): string {
+  const resolved = resolveInsideRoot(promptDir, templatePath, "Prompt template escapes workflow prompt directory");
+  if (existsSync(resolved)) return resolved;
+  throw new Error(`Prompt template not found: ${templatePath}`);
+}
+
+function resolveInsideRoot(root: string, relativePath: string, escapeMessage: string): string {
+  const target = path.resolve(root, relativePath.replace(/^@/, ""));
+  const relative = path.relative(root, target);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`${escapeMessage}: ${relativePath}`);
+  return target;
 }
 
 function promptTemplateValue(value: unknown): string {
@@ -584,20 +608,75 @@ function compileWorkflow(
 }
 
 function transformWorkflowModule(source: string): string {
-  if (/\bimport\b/.test(source)) throw new Error("workflow.js cannot import modules");
-  const transformed = source
-    .replace(/\bexport\s+const\s+metadata\s*=/g, "const metadata =")
-    .replace(
-      /\bexport\s+default\s+async\s+function\s*([A-Za-z_$][\w$]*)?\s*\(/,
-      (_match, name: string | undefined) => `const workflow = async function ${name ?? ""}(`,
-    )
-    .replace(
-      /\bexport\s+default\s+function\s*([A-Za-z_$][\w$]*)?\s*\(/,
-      (_match, name: string | undefined) => `const workflow = function ${name ?? ""}(`,
-    )
-    .replace(/\bexport\s+default\s+/g, "const workflow = ");
-  if (/\bexport\b/.test(transformed)) throw new Error("workflow.js may only export metadata and a default workflow function");
-  return transformed;
+  const sourceFile = ts.createSourceFile("workflow.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const edits = workflowModuleEdits(sourceFile);
+  return applySourceEdits(source, edits);
+}
+
+interface SourceEdit {
+  start: number;
+  end: number;
+  replacement: string;
+}
+
+function workflowModuleEdits(sourceFile: ts.SourceFile): SourceEdit[] {
+  const edits: SourceEdit[] = [];
+  for (const statement of sourceFile.statements) {
+    if (ts.isImportDeclaration(statement) || ts.isImportEqualsDeclaration(statement)) throw new Error("workflow.js cannot import modules");
+    if (ts.isExportDeclaration(statement)) throw new Error("workflow.js may only export metadata and a default workflow function");
+    if (ts.isExportAssignment(statement)) {
+      if (statement.isExportEquals) throw new Error("workflow.js may only export metadata and a default workflow function");
+      edits.push({
+        start: statement.getStart(sourceFile),
+        end: statement.expression.getStart(sourceFile),
+        replacement: "const workflow = ",
+      });
+      continue;
+    }
+    const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
+    const exportModifier = modifiers?.find((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+    if (!exportModifier) continue;
+    const defaultModifier = modifiers?.find((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
+    if (defaultModifier) {
+      edits.push({ start: exportModifier.getStart(sourceFile), end: defaultModifier.getEnd(), replacement: "const workflow =" });
+      continue;
+    }
+    if (ts.isVariableStatement(statement) && exportsOnlyMetadata(statement)) {
+      edits.push({ start: exportModifier.getStart(sourceFile), end: exportModifier.getEnd(), replacement: "" });
+      continue;
+    }
+    throw new Error("workflow.js may only export metadata and a default workflow function");
+  }
+  assertNoModuleLoadCalls(sourceFile);
+  return edits;
+}
+
+function exportsOnlyMetadata(statement: ts.VariableStatement): boolean {
+  const declarations = statement.declarationList.declarations;
+  if (declarations.length !== 1) return false;
+  const declaration = declarations[0];
+  return (
+    (statement.declarationList.flags & ts.NodeFlags.Const) !== 0 &&
+    ts.isIdentifier(declaration.name) &&
+    declaration.name.text === "metadata"
+  );
+}
+
+function assertNoModuleLoadCalls(sourceFile: ts.SourceFile): void {
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) throw new Error("workflow.js cannot import modules");
+      if (ts.isIdentifier(node.expression) && node.expression.text === "require") throw new Error("workflow.js cannot use require()");
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+}
+
+function applySourceEdits(source: string, edits: SourceEdit[]): string {
+  return [...edits]
+    .sort((left, right) => right.start - left.start)
+    .reduce((updated, edit) => `${updated.slice(0, edit.start)}${edit.replacement}${updated.slice(edit.end)}`, source);
 }
 
 function cloneSnapshot(snapshot: WorkflowSnapshot): WorkflowSnapshot {

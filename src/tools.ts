@@ -141,7 +141,8 @@ function createWorkflowPrimitivesTool(): ToolDefinition {
     name: "workflow_primitives",
     label: "Workflow Primitives",
     description: "Show workflow authoring primitive documentation and examples.",
-    promptSnippet: "workflow_primitives: Look up workflow globals such as agent, parallel, coerce, mapreduce, verifier, readText.",
+    promptSnippet:
+      "workflow_primitives: Look up workflow globals such as agent, parallel, coerce, mapreduce, verifier, readText, renderPrompt.",
     parameters: Type.Object({
       primitive: Type.Optional(Type.String({ description: "Optional primitive name such as agent, coerce, mapreduce, or verifier" })),
     }),

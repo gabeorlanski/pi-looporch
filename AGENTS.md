@@ -24,7 +24,7 @@ npm run pack:dry      # inspect published package contents
 
 ## Repository goal
 
-`pi-workflow` is a small pi extension that lets projects run, review, and generate code-first workflows. Workflows live under `.pi/workflows/<name>/workflow.js` and use simple orchestration primitives such as `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `args`, `cwd`, `budget`, `readText`, and `readJson`.
+`pi-workflow` is a small pi extension that lets projects run, review, and generate code-first workflows. Workflows live under `.pi/workflows/<name>/workflow.js` and use simple orchestration primitives such as `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `args`, `cwd`, `budget`, `readText`, `readJson`, and `renderPrompt`.
 
 ## Documentation standard
 
@@ -64,6 +64,7 @@ TypeScript interfaces/types are the source of truth:
 - Keep command/UI parsing at boundaries; keep core runtime strict.
 - Keep prompt copy in raw `.txt` files under `src/prompts/`.
 - Keep generated workflow authoring guidance in TypeScript and inject it into raw prompts through placeholders.
+- Keep workflow-local file reads in `readText`/`readJson`; use `renderPrompt` for prompt templates under the workflow's sibling `<workflow-name>.prompts/` directory.
 - Agent-generated workflow source must start with JSDoc documenting purpose, args, phases, child agent usage, file reads, and result shape.
 - Give every function a clear job; inline short helpers that only hide one expression or rename a local concept.
 - Prefer simple functions over managers, frameworks, or class hierarchies.

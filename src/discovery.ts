@@ -60,7 +60,10 @@ async function discoverWorkflowsInRoot(root: string): Promise<WorkflowReference[
     if (!entry.isDirectory() || !isValidWorkflowName(entry.name)) continue;
     const name = normalizeWorkflowName(entry.name);
     const dir = path.join(absoluteRoot, name);
-    if (hasWorkflowEntry(dir)) workflows.push(await readWorkflowReference(dir, name));
+    if (hasWorkflowEntry(dir)) {
+      const workflow = await readWorkflowReferenceIfValid(dir, name);
+      if (workflow) workflows.push(workflow);
+    }
   }
   return workflows;
 }
@@ -73,6 +76,14 @@ async function readWorkflowReference(dir: string, name: string): Promise<Workflo
   const entryFile = path.join(dir, "workflow.js");
   const source = await readFile(entryFile, "utf8");
   return { name, dir, entryFile, metadata: parseWorkflowSourceMetadata(source, name, entryFile) };
+}
+
+async function readWorkflowReferenceIfValid(dir: string, name: string): Promise<WorkflowReference | undefined> {
+  try {
+    return await readWorkflowReference(dir, name);
+  } catch {
+    return undefined;
+  }
 }
 
 function hasWorkflowEntry(workflowDir: string): boolean {

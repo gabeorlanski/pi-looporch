@@ -95,6 +95,7 @@ void test("workflow_primitives_tool_returns_docs_and_examples", async () => {
   const all = await tool.execute("call-1", {}, undefined, undefined, {} as never);
   assert.match(all.content[0]?.type === "text" ? all.content[0].text : "", /Available workflow globals/);
   assert.match(all.content[0]?.type === "text" ? all.content[0].text : "", /debugging tip/i);
+  assert.match(all.content[0]?.type === "text" ? all.content[0].text : "", /does not pass prior agent responses/i);
 
   const coerce = await tool.execute("call-2", { primitive: "coerce" }, undefined, undefined, {} as never);
   const text = coerce.content[0]?.type === "text" ? coerce.content[0].text : "";

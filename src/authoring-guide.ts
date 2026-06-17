@@ -10,6 +10,7 @@ const workflowSourceRequirements = [
   "Do not import modules or use require().",
   "Export `metadata` and one default workflow function.",
   "Keep runtime logic explicit; use local helpers only when they remove real duplication or clarify a multi-step transformation.",
+  "Phases are progress markers, not shared memory; pass data between phases by storing agent results and rendering them into later prompts.",
 ];
 
 const workflowPrimitiveExamples: Record<string, string> = {
@@ -35,6 +36,18 @@ const workflowPrimitiveExamples: Record<string, string> = {
   label: "verify answer",
   reasoning: "minimal",
 });`,
+  renderPrompt: `const prompt = renderPrompt("review/base.txt", {
+  file: args.file,
+  focus: args.focus,
+});
+return agent(prompt, { label: "review", reasoning: "medium" });`,
+  dataflow: `phase("research");
+const research = await agent("Research " + args.topic, { label: "research" });
+
+phase("synthesis");
+return agent("Use this research:\\n\\n" + research + "\\n\\nWrite the final answer.", {
+  label: "synthesis",
+});`,
   debug:
     "Use debug_workflow only for small workflow snippets or simple draft checks. Prefer fake agentResponses, minimal reasoning, and cheap/low-thinking model labels.",
 };
@@ -53,7 +66,8 @@ const workflowPrimitiveDocs: AuthoringDoc[] = [
   {
     name: "phase",
     signature: "phase(title: string): void",
-    docstring: "Marks a visible progress phase. Call before each major stage so users can follow history.",
+    docstring:
+      "Marks a visible progress phase. It does not pass prior agent responses to later agents; store results and include them in later prompts explicitly.",
   },
   {
     name: "log",
@@ -64,7 +78,8 @@ const workflowPrimitiveDocs: AuthoringDoc[] = [
     name: "agent",
     signature:
       "agent(prompt: string, options?: { label?: string, model?: string, reasoning?: string, taskFile?: string }): Promise<unknown>",
-    docstring: "Launches a child agent. Always provide a meaningful label; set model/reasoning when the phase needs a specific tradeoff.",
+    docstring:
+      "Launches a child agent with only the prompt you provide and launch metadata. Always pass needed prior results in the prompt.",
   },
   {
     name: "parallel",
@@ -99,6 +114,12 @@ const workflowPrimitiveDocs: AuthoringDoc[] = [
     name: "readText / readJson",
     signature: "readText(relativePath: string): string; readJson(relativePath: string): unknown",
     docstring: "Reads supporting files inside the workflow directory. Paths are sandboxed to the workflow directory.",
+  },
+  {
+    name: "renderPrompt",
+    signature: "renderPrompt(templatePath: string, values: object): string",
+    docstring:
+      "Reads a prompt template from the workflow's sibling <workflow-name>.prompts directory and substitutes {{name}} placeholders with provided values.",
   },
   {
     name: "args / cwd / budget",

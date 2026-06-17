@@ -53,6 +53,9 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Keep generated workflows review-gated before save or run.
 - Require agent-generated workflow source to start with JSDoc that documents purpose, expected `args`, phases, child agent usage, file reads, and result shape.
 - Keep workflow file helpers sandboxed inside the workflow directory.
+- Keep prompt templates behind `renderPrompt` and the workflow's sibling prompt directory; do not expand workflow-local file helpers to read arbitrary shared files.
+- Keep workflow dataflow explicit: `phase()` is a progress marker, not shared memory, and later agents should receive earlier results only when the workflow renders those results into their prompts.
+- Keep workflow discovery resilient: startup, autocomplete, and listing paths must skip one invalid workflow definition instead of crashing pi.
 - Throw actionable `Error` messages at boundaries when user input, metadata, or workflow config is invalid.
 - Never estimate token counts. Use provider usage from pi events/session JSONL, or show zero/unknown when actual usage is unavailable.
 - Named workflow commands must not require users to hand-write JSON; resolve freeform command input against the workflow metadata/source into the expected `args` shape.

@@ -79,7 +79,35 @@ export default async function workflow() {
 }
 ```
 
-Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `args`, `cwd`, `budget`, `readText`, and `readJson`. File helpers are constrained to the workflow directory. Agent-generated workflows must start with a JSDoc block that documents purpose, expected `args`, phases, child agent usage, and result shape before they can be saved.
+Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `args`, `cwd`, `budget`, `readText`, `readJson`, and `renderPrompt`. Workflow-local file helpers are constrained to the workflow directory. Agent-generated workflows must start with a JSDoc block that documents purpose, expected `args`, phases, child agent usage, and result shape before they can be saved.
+
+Workflow discovery skips invalid workflow definitions so one broken `.pi/workflows/<name>/workflow.js` cannot prevent pi startup or command completion registration. Fix or remove the invalid workflow file to make it appear in `/workflow` suggestions again.
+
+Phases are progress markers, not shared memory. Agents do not automatically receive earlier phase responses, so workflows should keep dataflow visible by storing results and rendering them into later prompts:
+
+```js
+phase("research");
+const research = await agent("Research " + args.topic, { label: "research" });
+
+phase("synthesis");
+return agent("Use this research:\n\n" + research + "\n\nWrite the final answer.", {
+  label: "synthesis",
+});
+```
+
+`renderPrompt(templatePath, values)` reads a prompt template from the workflow's sibling prompt directory and replaces simple `{{name}}` placeholders with values. For `.pi/workflows/review/workflow.js`, templates live under `.pi/workflows/review.prompts/`:
+
+```txt
+Review {{file}}.
+
+Focus: {{focus}}
+```
+
+```js
+const prompt = renderPrompt("review/base.txt", { file: args.file, focus: args.focus });
+```
+
+Use `readText` and `readJson` for files inside the workflow directory. Use `renderPrompt` for prompt templates owned by the workflow but stored outside that directory.
 
 ### Structured primitives
 

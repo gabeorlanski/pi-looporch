@@ -122,6 +122,58 @@ export default async function workflow() {
   );
 });
 
+void test("workflow_renders_project_prompt_template", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await mkdir(path.join(project, ".pi", "workflows", "templated.prompts"), { recursive: true });
+  await writeFile(path.join(project, ".pi", "workflows", "templated.prompts", "review.txt"), "Review {{file}} for {{focus}}.", "utf8");
+  await writeWorkflow(
+    project,
+    "templated",
+    `export const metadata = { name: "templated", description: "Templated prompt" };
+export default async function workflow() {
+  return agent(renderPrompt("review.txt", { file: args.file, focus: args.focus }), { label: "review" });
+}`,
+  );
+  const agent: WorkflowAgent = (prompt, options) => Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
+
+  const result = await runWorkflowFromDirectory({
+    cwd: project,
+    workflowName: "templated",
+    input: { file: "src/index.ts", focus: "edge cases" },
+    agent,
+  });
+
+  assert.equal(result.result, "review:Review src/index.ts for edge cases.");
+});
+
+void test("workflow_renders_prompt_template_from_external_workflow_root_sibling", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  const workflowRoot = await mkdtemp(path.join(tmpdir(), "pi-workflow-root-"));
+  const workflowDir = path.join(workflowRoot, "external-prompt");
+  await mkdir(workflowDir, { recursive: true });
+  await mkdir(path.join(workflowRoot, "external-prompt.prompts", "review"), { recursive: true });
+  await writeFile(
+    path.join(workflowDir, "workflow.js"),
+    `export const metadata = { name: "external-prompt", description: "External prompt" };
+export default async function workflow() {
+  return renderPrompt("review/base.txt", { topic: args.topic });
+}`,
+    "utf8",
+  );
+  await writeFile(path.join(workflowRoot, "external-prompt.prompts", "review", "base.txt"), "External {{topic}} prompt.", "utf8");
+  const agent: WorkflowAgent = () => Promise.resolve("unused");
+
+  const result = await runWorkflowFromDirectory({
+    cwd: project,
+    workflowName: "external-prompt",
+    input: { topic: "template" },
+    agent,
+    workflowRoots: [workflowRoot],
+  });
+
+  assert.equal(result.result, "External template prompt.");
+});
+
 void test("workflow_mapreduce_coerces_items_maps_them_and_reduces_results", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
@@ -299,4 +351,75 @@ export default async function workflow() {
 }`,
   );
   await assert.rejects(runWorkflowFromDirectory({ cwd: project, workflowName: "escape", input: {}, agent }), /escapes workflow directory/);
+
+  await writeWorkflow(
+    project,
+    "prompt-escape",
+    `export const metadata = { name: "prompt-escape", description: "Prompt escape" };
+export default async function workflow() {
+  return renderPrompt("../secret.txt", {});
+}`,
+  );
+  await assert.rejects(
+    runWorkflowFromDirectory({ cwd: project, workflowName: "prompt-escape", input: {}, agent }),
+    /escapes workflow prompt directory/,
+  );
+});
+
+void test("workflow_module_syntax_check_ignores_prompt_text", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  const agent: WorkflowAgent = (prompt) => Promise.resolve(prompt);
+  await writeWorkflow(
+    project,
+    "prompt-text",
+    `export const metadata = { name: "prompt-text", description: "Prompt text" };
+export default async function workflow() {
+  return agent("Do not import the agent's code or write export default examples.", { label: "prompt text" });
+}`,
+  );
+
+  const result = await runWorkflowFromDirectory({ cwd: project, workflowName: "prompt-text", input: {}, agent });
+
+  assert.equal(result.result, "Do not import the agent's code or write export default examples.");
+});
+
+void test("workflow_module_syntax_check_blocks_actual_module_loads", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  const agent: WorkflowAgent = () => Promise.resolve("unused");
+  await writeWorkflow(
+    project,
+    "static-import",
+    `import fs from "node:fs";
+export const metadata = { name: "static-import", description: "Static import" };
+export default async function workflow() {
+  return fs.existsSync(".");
+}`,
+  );
+  await assert.rejects(
+    runWorkflowFromDirectory({ cwd: project, workflowName: "static-import", input: {}, agent }),
+    /cannot import modules/,
+  );
+
+  await writeWorkflow(
+    project,
+    "dynamic-import",
+    `export const metadata = { name: "dynamic-import", description: "Dynamic import" };
+export default async function workflow() {
+  return import("node:fs");
+}`,
+  );
+  await assert.rejects(
+    runWorkflowFromDirectory({ cwd: project, workflowName: "dynamic-import", input: {}, agent }),
+    /cannot import modules/,
+  );
+
+  await writeWorkflow(
+    project,
+    "require",
+    `export const metadata = { name: "require", description: "Require" };
+export default async function workflow() {
+  return require("node:fs");
+}`,
+  );
+  await assert.rejects(runWorkflowFromDirectory({ cwd: project, workflowName: "require", input: {}, agent }), /cannot use require/);
 });

@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { test } from "node:test";
+import { discoverWorkflows } from "../src/discovery.ts";
+
+async function writeWorkflow(project: string, name: string, source: string): Promise<void> {
+  const workflowDir = path.join(project, ".pi", "workflows", name);
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(path.join(workflowDir, "workflow.js"), source, "utf8");
+}
+
+void test("discover_workflows_skips_invalid_workflow_sources", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-discovery-"));
+  await writeWorkflow(
+    project,
+    "valid",
+    `export const metadata = { name: "valid", description: "Valid workflow" };
+export default async function workflow() {
+  return "ok";
+}`,
+  );
+  await writeWorkflow(
+    project,
+    "invalid",
+    `import fs from "node:fs";
+export const metadata = { name: "invalid", description: "Invalid workflow" };
+export default async function workflow() {
+  return fs.existsSync(".");
+}`,
+  );
+
+  const workflows = await discoverWorkflows(project);
+
+  assert.deepEqual(
+    workflows.map((workflow) => workflow.name),
+    ["valid"],
+  );
+});

@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import vm from "node:vm";
+import { Value } from "typebox/value";
+import type { TSchema } from "typebox";
 
 export type ReasoningLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -18,6 +20,7 @@ export interface WorkflowAgentOptions {
   taskFile?: string;
   signal?: AbortSignal;
   sessionLog?: WorkflowAgentSessionLog;
+  tools?: boolean;
 }
 
 export interface WorkflowAgentSessionLog {
@@ -126,6 +129,43 @@ export interface WorkflowRunResult {
 
 type WorkflowFunction = () => unknown;
 type PipelineStage<T> = ((item: T, index: number) => Promise<T> | T) | { run: (item: T, index: number) => Promise<T> | T };
+
+interface CoerceOptions {
+  schema: unknown;
+  prompt: string;
+  label?: string;
+  reasoning?: ReasoningLevel;
+  model?: string;
+  maxAttempts?: number;
+}
+
+interface MapReduceOptions extends Record<string, unknown> {
+  inputPrompt: string;
+  mapPrompt: string;
+  reducePrompt: string;
+  label?: string;
+  reasoning?: ReasoningLevel;
+  model?: string;
+  maxAttempts?: number;
+}
+
+interface VerifierOptions extends Record<string, unknown> {
+  criteria: unknown;
+  criteriaPrompt: string;
+  reducePrompt: string;
+  label?: string;
+  reasoning?: ReasoningLevel;
+  model?: string;
+}
+
+interface VerifierCriterion extends Record<string, unknown> {
+  name: string;
+  description: string;
+  guidelines: string;
+  reasoning: string;
+  voters: number;
+}
+
 const fanOutScope = new AsyncLocalStorage<number>();
 
 interface ActiveWorkflowRuntime {
@@ -214,6 +254,9 @@ function metadataGlobals(options: RunWorkflowOptions, workflowDir: string): Reco
     readJson: (relativePath: string) => JSON.parse(readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8")) as unknown,
     parallel: unavailableMetadataPrimitive("parallel"),
     pipeline: unavailableMetadataPrimitive("pipeline"),
+    coerce: unavailableMetadataPrimitive("coerce"),
+    mapreduce: unavailableMetadataPrimitive("mapreduce"),
+    verifier: unavailableMetadataPrimitive("verifier"),
   };
 }
 
@@ -252,6 +295,9 @@ function workflowGlobals(runtime: ActiveWorkflowRuntime, workflowDir: string): R
       runParallel(runtime, items, worker, fanOutOptions.label),
     pipeline: <T>(items: readonly T[], stages: PipelineStage<T>[]) =>
       Promise.all(items.map((item, index) => runPipelineItem(item, index, stages))),
+    coerce: (options: CoerceOptions) => coerceWithAgent(runtime, options),
+    mapreduce: (options: MapReduceOptions) => mapReduceWithAgents(runtime, options),
+    verifier: (options: VerifierOptions) => verifyWithAgents(runtime, options),
   };
 }
 
@@ -288,6 +334,140 @@ async function runParallel<T, R>(
       }
     }),
   );
+}
+
+async function coerceWithAgent(runtime: ActiveWorkflowRuntime, options: CoerceOptions): Promise<unknown> {
+  if (typeof options.prompt !== "string" || !options.prompt.trim()) throw new Error("coerce prompt must be non-empty");
+  const maxAttempts = normalizeAttemptCount(options.maxAttempts);
+  let validationFailure: string | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const response = await runAgent(runtime, coercePrompt(options.prompt, options.schema, validationFailure), {
+      label: options.label ?? "coerce",
+      model: options.model,
+      reasoning: options.reasoning,
+      tools: false,
+    });
+    const parsed = parseJsonResponse(response);
+    if (!parsed.ok) validationFailure = parsed.error;
+    else if (Value.Check(options.schema as TSchema, parsed.value)) return parsed.value;
+    else validationFailure = "response did not match schema";
+  }
+  throw new Error(`coerce failed schema validation after ${String(maxAttempts)} attempts: ${validationFailure ?? "unknown error"}`);
+}
+
+function normalizeAttemptCount(maxAttempts: number | undefined): number {
+  if (maxAttempts === undefined) return 3;
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) throw new Error("coerce maxAttempts must be a positive integer");
+  return maxAttempts;
+}
+
+function coercePrompt(prompt: string, schema: unknown, validationFailure: string | undefined): string {
+  return [
+    "Return only JSON that validates against this JSON Schema. Do not include markdown fences, commentary, or extra text.",
+    `Schema:\n${JSON.stringify(schema, null, 2)}`,
+    `Task:\n${prompt}`,
+    ...(validationFailure ? [`Previous response failed validation:\n${validationFailure}\nReturn corrected JSON only.`] : []),
+  ].join("\n\n");
+}
+
+function parseJsonResponse(response: unknown): { ok: true; value: unknown } | { ok: false; error: string } {
+  if (response !== null && typeof response === "object") return { ok: true, value: response };
+  if (typeof response !== "string") return { ok: false, error: `response was ${typeof response}, not JSON text` };
+  const trimmed = response.trim();
+  const fenced = /^```(?:json)?\s*\n([\s\S]*?)\n```$/i.exec(trimmed);
+  try {
+    return { ok: true, value: JSON.parse(fenced?.[1] ?? trimmed) as unknown };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function mapReduceWithAgents(runtime: ActiveWorkflowRuntime, options: MapReduceOptions): Promise<unknown> {
+  const { inputPrompt, mapPrompt, reducePrompt, label: labelOption, model, reasoning, maxAttempts, ...context } = options;
+  const label = typeof labelOption === "string" && labelOption.trim() ? labelOption : "mapreduce";
+  const input = await coerceWithAgent(runtime, {
+    schema: mapReduceInputSchema,
+    prompt: renderPromptTemplate(inputPrompt, context),
+    label: `${label} input`,
+    model,
+    reasoning,
+    maxAttempts,
+  });
+  const items = (input as { items: unknown[] }).items;
+  const mapped = await runParallel(
+    runtime,
+    items,
+    (item, index) =>
+      runAgent(runtime, renderPromptTemplate(mapPrompt, { ...context, item, index, items }), {
+        label: `${label} map ${String(index + 1)}`,
+        model,
+        reasoning,
+      }),
+    `${label} map`,
+  );
+  return runAgent(runtime, renderPromptTemplate(reducePrompt, { ...context, items, results: mapped }), {
+    label: `${label} reduce`,
+    model,
+    reasoning,
+  });
+}
+
+const mapReduceInputSchema = {
+  type: "object",
+  properties: { items: { type: "array", items: {} } },
+  required: ["items"],
+  additionalProperties: true,
+};
+
+function renderPromptTemplate(template: string, context: Record<string, unknown>): string {
+  return template.replace(/{{\s*([A-Za-z_$][\w$]*)\s*}}/g, (_match, key: string) => promptTemplateValue(context[key]));
+}
+
+function promptTemplateValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === undefined) return "";
+  return JSON.stringify(value);
+}
+
+async function verifyWithAgents(runtime: ActiveWorkflowRuntime, options: VerifierOptions): Promise<unknown> {
+  const { criteria: rawCriteria, criteriaPrompt, reducePrompt, label: labelOption, model, reasoning, ...context } = options;
+  const label = typeof labelOption === "string" && labelOption.trim() ? labelOption : "verifier";
+  const criteria = normalizeVerifierCriteria(rawCriteria);
+  const voterInputs = criteria.flatMap((criterion) =>
+    Array.from({ length: criterion.voters }, (_value, voterIndex) => ({ criterion, voter: voterIndex + 1 })),
+  );
+  const votes = await runParallel(
+    runtime,
+    voterInputs,
+    ({ criterion, voter }) =>
+      runAgent(runtime, renderPromptTemplate(criteriaPrompt, { ...context, ...criterion, criterion, voter, criteria }), {
+        label: `${label} ${criterion.name} voter ${String(voter)}`,
+        model,
+        reasoning,
+      }),
+    `${label} voters`,
+  );
+  return runAgent(runtime, renderPromptTemplate(reducePrompt, { ...context, criteria, votes }), {
+    label: `${label} reduce`,
+    model,
+    reasoning,
+  });
+}
+
+function normalizeVerifierCriteria(criteria: unknown): VerifierCriterion[] {
+  if (!Array.isArray(criteria) || criteria.length === 0) throw new Error("verifier criteria must be a non-empty array");
+  return criteria.map((criterion, index) => {
+    if (typeof criterion !== "object" || criterion === null) throw new Error(`verifier criteria[${String(index)}] must be an object`);
+    const candidate = criterion as Record<string, unknown>;
+    const voters = candidate.voters ?? 1;
+    for (const key of ["name", "description", "guidelines", "reasoning"]) {
+      if (typeof candidate[key] !== "string" || !candidate[key].trim())
+        throw new Error(`verifier criteria[${String(index)}].${key} must be a non-empty string`);
+    }
+    if (typeof voters !== "number" || !Number.isInteger(voters) || voters < 1)
+      throw new Error(`verifier criteria[${String(index)}].voters must be a positive integer`);
+    return { ...candidate, voters } as VerifierCriterion;
+  });
 }
 
 async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {

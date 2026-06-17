@@ -79,7 +79,15 @@ export default async function workflow() {
 }
 ```
 
-Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `phase`, `log`, `args`, `cwd`, `budget`, `readText`, and `readJson`. File helpers are constrained to the workflow directory. Agent-generated workflows must start with a JSDoc block that documents purpose, expected `args`, phases, child agent usage, and result shape before they can be saved.
+Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `args`, `cwd`, `budget`, `readText`, and `readJson`. File helpers are constrained to the workflow directory. Agent-generated workflows must start with a JSDoc block that documents purpose, expected `args`, phases, child agent usage, and result shape before they can be saved.
+
+### Structured primitives
+
+`coerce({ schema, prompt, label?, model?, reasoning?, maxAttempts? })` runs a no-tools child agent until its response parses as JSON and validates against the JSON Schema.
+
+`mapreduce({ inputPrompt, mapPrompt, reducePrompt, label?, model?, reasoning?, maxAttempts?, ...templateValues })` coerces `inputPrompt` into `{ items: [...] }`, runs one map agent per item, then runs one reduce agent. String prompts can use `{{item}}`, `{{index}}`, `{{results}}`, and any extra template values.
+
+`verifier({ criteria, criteriaPrompt, reducePrompt, label?, model?, reasoning?, ...templateValues })` runs one voter agent per criterion voter and then reduces the votes. Each criterion must include `name`, `description`, `guidelines`, `reasoning`, and optional `voters`.
 
 Agents spawned from workflows can call `run_workflow` to invoke an existing workflow, or `propose_workflow` to submit a new `.pi/workflows/<name>/workflow.js` draft. Generated workflows are review-gated. Pi shows a natural-language proposal before saving under `.pi/workflows/<name>/workflow.js` or running it, and reviewer-updated source is what gets saved.
 

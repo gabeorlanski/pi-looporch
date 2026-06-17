@@ -50,6 +50,25 @@ const workflowPrimitiveDocs: AuthoringDoc[] = [
     docstring: "Runs each item through ordered stages. Use when every item follows the same sequence.",
   },
   {
+    name: "coerce",
+    signature: "coerce({ schema, prompt, label?, model?, reasoning?, maxAttempts? }): Promise<unknown>",
+    docstring:
+      "Runs a no-tools agent call until the response is JSON that validates against the provided JSON Schema. Use for structured extraction.",
+  },
+  {
+    name: "mapreduce",
+    signature:
+      "mapreduce({ inputPrompt, mapPrompt, reducePrompt, label?, model?, reasoning?, maxAttempts?, ...templateValues }): Promise<unknown>",
+    docstring:
+      "Coerces inputPrompt into { items: [] }, maps one agent per item, then runs one reduce agent. String prompts can use {{item}}, {{index}}, {{results}}, and extra template values.",
+  },
+  {
+    name: "verifier",
+    signature: "verifier({ criteria, criteriaPrompt, reducePrompt, label?, model?, reasoning?, ...templateValues }): Promise<unknown>",
+    docstring:
+      "Runs one voter agent for each criterion voter and one reduction agent. Each criterion needs name, description, guidelines, reasoning, and optional voters.",
+  },
+  {
     name: "readText / readJson",
     signature: "readText(relativePath: string): string; readJson(relativePath: string): unknown",
     docstring: "Reads supporting files inside the workflow directory. Paths are sandboxed to the workflow directory.",

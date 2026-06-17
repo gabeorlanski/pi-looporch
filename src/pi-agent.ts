@@ -36,6 +36,10 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
     const model = agentOptions.model ? resolveModel(modelRegistry, agentOptions.model) : undefined;
     const loggedSession = agentOptions.sessionLog ? await createLoggedSessionManager(options.cwd, agentOptions.sessionLog) : undefined;
     const sessionManager = options.session?.sessionManager ?? loggedSession?.sessionManager;
+    const customTools =
+      agentOptions.tools === false
+        ? []
+        : (options.tools ?? createPiWorkflowAgentTools(options.cwd, { agent: createPiWorkflowAgent(options), reviewer: options.reviewer }));
     const { session } = await createAgentSession({
       cwd: options.cwd,
       agentDir,
@@ -43,8 +47,7 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       modelRegistry,
       sessionManager: sessionManager ?? SessionManager.inMemory(options.cwd),
       settingsManager: SettingsManager.create(options.cwd, agentDir),
-      customTools:
-        options.tools ?? createPiWorkflowAgentTools(options.cwd, { agent: createPiWorkflowAgent(options), reviewer: options.reviewer }),
+      customTools,
       ...options.session,
       thinkingLevel: agentOptions.reasoning ?? options.session?.thinkingLevel,
       ...(model ? { model } : {}),

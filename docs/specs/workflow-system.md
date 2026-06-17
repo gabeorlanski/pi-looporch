@@ -27,7 +27,7 @@ The replacement should make workflows simple to author, inspect, and modify dire
 - Let an agent generate workflow code from user instructions, then save that code so users can inspect and edit it.
 - Replace loop terminology and commands with first-class workflow terminology and commands.
 - Make debugging and review explicit without making normal workflow execution noisy.
-- Preserve the good parts of `pi-dynamic-workflows`: small, direct workflow primitives for agents, parallelism, pipelines, phases, logs, arguments, working directory access, and budget visibility.
+- Preserve the good parts of `pi-dynamic-workflows`: small, direct workflow primitives for agents, parallelism, pipelines, structured coercion, map/reduce, verification, phases, logs, arguments, working directory access, and budget visibility.
 
 ## Non-Goals
 
@@ -51,6 +51,9 @@ Initial global primitives should include at least:
 - `pipeline(items, ...stages)`
 - `phase(title)`
 - `log(message)`
+- `coerce({ schema, prompt, ...opts })`
+- `mapreduce({ inputPrompt, mapPrompt, reducePrompt, ...opts })`
+- `verifier({ criteria, criteriaPrompt, reducePrompt, ...opts })`
 - `args`
 - `cwd`
 - `budget`
@@ -93,6 +96,8 @@ Because workflows run sandboxed, support files are accessed through narrow runti
 const prompt = readText("prompts/review.md");
 const schema = readJson("schemas/finding.schema.json");
 ```
+
+Structured agent helpers stay inside the same sandbox. `coerce` uses a no-tools child agent and JSON Schema validation retries for extraction. `mapreduce` first coerces an input prompt into a bare `{ items: [...] }` shape before map fan-out and reduction. `verifier` validates criteria objects with `name`, `description`, `guidelines`, `reasoning`, and optional `voters`, then runs criterion voter agents before a reduction agent.
 
 A `WORKFLOW.md` file may be useful later, but it should not be required for the initial design.
 

@@ -55,7 +55,7 @@ export default async function workflow() {
   );
   assert.deepEqual(
     result.snapshot.agents.map((agentSnapshot) => agentSnapshot.outputTokenCount),
-    [7, 7],
+    [0, 0],
   );
   assert.deepEqual(
     result.snapshot.agents.map((agentSnapshot) => agentSnapshot.fanOutId),

@@ -496,18 +496,10 @@ async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOpt
     try {
       result = await runtime.options.agent(prompt, workflowAgentOptionsForLaunch(runtime, agent, agentOptions), (progress) => {
         agent.message = progress.statusMessage;
-        const reportsStructuredTokens = progress.inputTokenCount !== undefined || progress.outputTokenCount !== undefined;
         if (progress.inputTokenCount !== undefined) agent.inputTokenCount = progress.inputTokenCount;
         if (progress.outputTokenCount !== undefined) agent.outputTokenCount = progress.outputTokenCount;
         if (progress.toolCallCount !== undefined) agent.toolCallCount = progress.toolCallCount;
-        if (progress.tokenCount !== undefined) {
-          agent.tokenCount = progress.tokenCount;
-          if (!reportsStructuredTokens) agent.outputTokenCount = progress.tokenCount;
-          if (reportsStructuredTokens && progress.outputTokenCount === undefined)
-            agent.outputTokenCount = Math.max(0, progress.tokenCount - agent.inputTokenCount);
-        } else {
-          agent.tokenCount = agent.inputTokenCount + agent.outputTokenCount;
-        }
+        agent.tokenCount = progress.tokenCount ?? agent.inputTokenCount + agent.outputTokenCount;
         runtime.emitEvent({
           type: "agent_progress",
           agentId: agent.id,

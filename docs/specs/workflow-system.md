@@ -99,6 +99,8 @@ const schema = readJson("schemas/finding.schema.json");
 
 Structured agent helpers stay inside the same sandbox. `coerce` uses a no-tools child agent and JSON Schema validation retries for extraction. `mapreduce` first coerces an input prompt into a bare `{ items: [...] }` shape before map fan-out and reduction. `verifier` validates criteria objects with `name`, `description`, `guidelines`, `reasoning`, and optional `voters`, then runs criterion voter agents before a reduction agent.
 
+Agent-facing helper tools support workflow authoring. `workflow_primitives` returns canonical primitive documentation and examples for workflow authors. `debug_workflow` runs a supplied workflow source in a temporary workflow root with fake child-agent responses, returning results, token counts, launched-agent prompts, snapshots, and errors without saving the workflow. Agents should use it only for small snippets/simple tasks with minimal or low-thinking model labels.
+
 A `WORKFLOW.md` file may be useful later, but it should not be required for the initial design.
 
 ## Execution Model
@@ -107,7 +109,7 @@ Saved workflows should run sandboxed with restricted JavaScript because this is 
 
 The sandbox should preserve direct workflow primitives while limiting ambient authority. The first version should not simply execute saved workflows as unrestricted trusted project code.
 
-Workflow runs are live by default, but every resolver or child agent launched for a workflow persists logs under `~/.pi/agent/sessions/<project-key>/<parent-run-id>/<agent-key>/`. The project key matches pi's encoded session directory naming for the current project, the parent run id is shared by all agents in the workflow run, and each agent directory includes `metadata.json`, append-only `events.jsonl`, and the pi session JSONL when conversation history is flushed.
+Workflow runs are live by default, but every resolver or child agent launched for a workflow persists logs under `~/.pi/agent/sessions/<project-key>/<parent-run-id>/<agent-key>/`. The project key matches pi's encoded session directory naming for the current project, the parent run id is shared by all agents in the workflow run, and each agent directory includes `metadata.json`, append-only in-flight `events.jsonl`, and the pi session JSONL. Token counts must never be estimated; workflow progress uses provider usage from events/session JSONL when available and otherwise leaves actual usage at zero/unknown.
 
 Named slash-command runs may opt into additional workflow-level debugging logs with `--save-log`; saved logs live under `.pi/workflow-runs/<parent-run-id>/` and include run metadata, normalized input, the workflow source, append-only `events.jsonl`, a final snapshot, and either `result.json` or `error.json`. Persisted workflow logs are for inspection only and do not support resuming canceled or failed runs. The TUI progress display keeps phase history visible, expands the active phase, collapses completed phase children, and shows model, thinking, provider input tokens, assistant output tokens, tool calls, and NET totals.
 

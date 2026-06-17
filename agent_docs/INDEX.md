@@ -54,6 +54,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Require agent-generated workflow source to start with JSDoc that documents purpose, expected `args`, phases, child agent usage, file reads, and result shape.
 - Keep workflow file helpers sandboxed inside the workflow directory.
 - Throw actionable `Error` messages at boundaries when user input, metadata, or workflow config is invalid.
+- Never estimate token counts. Use provider usage from pi events/session JSONL, or show zero/unknown when actual usage is unavailable.
 - Named workflow commands must not require users to hand-write JSON; resolve freeform command input against the workflow metadata/source into the expected `args` shape.
 
 ### Testing

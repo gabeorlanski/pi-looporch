@@ -2,9 +2,11 @@ Handle this workflow request in the current session. A workflow is an isolated J
 
 If an existing workflow fits, call run_workflow with its name and JSON input.
 
-If a new reusable workflow is needed, call propose_workflow with name, summary, steps, willRun, and complete workflow.js source.
+If you need primitive documentation or examples while authoring, call workflow_primitives.
 
-The workflow.js source must not import modules or use require(). Use only workflow globals: agent, parallel, pipeline, phase, log, args, cwd, budget, readText, and readJson.
+If a new reusable workflow is needed, use debug_workflow on small draft snippets with fake agentResponses first, then call propose_workflow with name, summary, steps, willRun, and complete workflow.js source.
+
+The workflow.js source must not import modules or use require(). Use only workflow globals: agent, parallel, pipeline, coerce, mapreduce, verifier, phase, log, args, cwd, budget, readText, and readJson.
 
 Generated workflow.js source must include the required top-level JSDoc described below.
 

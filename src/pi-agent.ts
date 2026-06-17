@@ -1,5 +1,5 @@
 import path from "node:path";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import {
   AuthStorage,
@@ -69,6 +69,9 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       }
 
       await session.prompt(agentTaskPrompt(prompt, agentOptions));
+      const usage = loggedSession ? parseSessionTokens(loggedSession.sessionManager.getSessionDir()) : null;
+      if (usage)
+        reportProgress({ statusMessage: "done", inputTokenCount: usage.input, outputTokenCount: usage.output, tokenCount: usage.total });
       if (agentOptions.signal?.aborted) throw new Error("Workflow agent aborted");
       return lastAssistantText(session.messages);
     } finally {
@@ -141,19 +144,10 @@ function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress)
   let inputTokenCount = 0;
   let outputTokenCount = 0;
   let toolCallCount = 0;
-  let lastStreamUpdate = 0;
   return {
     handleEvent(event: unknown): void {
       if (!isEventObject(event)) return;
       if (event.type === "turn_start") reportProgress(progressSnapshot("thinking", inputTokenCount, outputTokenCount, toolCallCount));
-      if (event.type === "message_update") {
-        const now = Date.now();
-        if (now - lastStreamUpdate >= 250) {
-          lastStreamUpdate = now;
-          const streamingOutputTokenCount = outputTokenCount + estimatedAssistantOutputTokensFromMessage(event.message);
-          reportProgress(progressSnapshot("streaming", inputTokenCount, streamingOutputTokenCount, toolCallCount));
-        }
-      }
       if (event.type === "tool_execution_start" || event.type === "tool_execution_update") {
         if (event.type === "tool_execution_start") toolCallCount++;
         reportProgress(progressSnapshot(`using ${eventToolName(event)}`, inputTokenCount, outputTokenCount, toolCallCount));
@@ -182,13 +176,43 @@ export function workflowDisplayTokensFromMessage(value: unknown): number {
   return workflowTokenUsageFromMessage(value).outputTokenCount;
 }
 
+export interface TokenUsage {
+  input: number;
+  output: number;
+  total: number;
+}
+
+export function parseSessionTokens(sessionDir: string): TokenUsage | null {
+  const sessionFile = findLatestSessionFile(sessionDir);
+  if (!sessionFile) return null;
+  try {
+    let input = 0;
+    let output = 0;
+    for (const line of readFileSync(sessionFile, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line) as { usage?: unknown; message?: { usage?: unknown } };
+        const usage = entry.usage ?? entry.message?.usage;
+        if (typeof usage === "object" && usage !== null) {
+          input += tokenProperty(usage, "input");
+          output += tokenProperty(usage, "output");
+        }
+      } catch {
+        // Ignore malformed lines while scanning usage entries.
+      }
+    }
+    return { input, output, total: input + output };
+  } catch {
+    return null;
+  }
+}
+
 function workflowTokenUsageFromMessage(value: unknown): { inputTokenCount: number; outputTokenCount: number } {
   if (typeof value !== "object" || value === null) return { inputTokenCount: 0, outputTokenCount: 0 };
   const usage = (value as { usage?: unknown }).usage;
-  return {
-    inputTokenCount: typeof usage === "object" && usage !== null ? numericProperty(usage, "input") : 0,
-    outputTokenCount: estimatedAssistantOutputTokensFromMessage(value),
-  };
+  return typeof usage === "object" && usage !== null
+    ? { inputTokenCount: tokenProperty(usage, "input"), outputTokenCount: tokenProperty(usage, "output") }
+    : { inputTokenCount: 0, outputTokenCount: 0 };
 }
 
 function progressSnapshot(
@@ -206,19 +230,18 @@ function progressSnapshot(
   };
 }
 
-function estimatedAssistantOutputTokensFromMessage(value: unknown): number {
-  if (typeof value !== "object" || value === null) return 0;
-  const content = (value as { content?: unknown }).content;
-  if (!Array.isArray(content)) return 0;
-  const characters = content
-    .filter((part): part is TextContentLike | ThinkingContentLike => isTextContent(part) || isThinkingContent(part))
-    .reduce((total, part) => total + outputContentText(part).length, 0);
-  return Math.ceil(characters / 4);
+function tokenProperty(value: object, key: "input" | "output"): number {
+  const properties = value as Record<string, unknown>;
+  const tokenValue = properties[`${key}Tokens`] ?? properties[key];
+  return typeof tokenValue === "number" && Number.isFinite(tokenValue) ? tokenValue : 0;
 }
 
-function numericProperty(value: object, key: string): number {
-  const property = (value as Record<string, unknown>)[key];
-  return typeof property === "number" && Number.isFinite(property) ? property : 0;
+function findLatestSessionFile(sessionDir: string): string | undefined {
+  if (!existsSync(sessionDir)) return undefined;
+  return readdirSync(sessionDir)
+    .filter((file) => file.endsWith(".jsonl") && file !== "events.jsonl")
+    .map((file) => path.join(sessionDir, file))
+    .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs)[0];
 }
 
 interface AssistantMessageLike {
@@ -229,11 +252,6 @@ interface AssistantMessageLike {
 interface TextContentLike {
   type?: string;
   text?: unknown;
-}
-
-interface ThinkingContentLike {
-  type?: string;
-  thinking?: unknown;
 }
 
 function lastAssistantText(messages: unknown[]): string {
@@ -251,12 +269,4 @@ function lastAssistantText(messages: unknown[]): string {
 
 function isTextContent(value: unknown): value is TextContentLike {
   return typeof value === "object" && value !== null && (value as TextContentLike).type === "text";
-}
-
-function isThinkingContent(value: unknown): value is ThinkingContentLike {
-  return typeof value === "object" && value !== null && (value as ThinkingContentLike).type === "thinking";
-}
-
-function outputContentText(value: TextContentLike | ThinkingContentLike): string {
-  return isTextContent(value) ? String(value.text) : String(value.thinking);
 }

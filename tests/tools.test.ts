@@ -34,6 +34,74 @@ void test("pi_workflow_agent_exposes_workflow_tools_by_default", () => {
   );
 });
 
+void test("workflow_helper_tools_are_exposed_by_default", () => {
+  const tools = createPiWorkflowAgentTools(process.cwd());
+
+  assert.ok(
+    tools.some((tool) => tool.name === "debug_workflow"),
+    "workflow drafts can be debugged by agents",
+  );
+  assert.ok(
+    tools.some((tool) => tool.name === "workflow_primitives"),
+    "workflow primitive docs are available to agents",
+  );
+});
+
+void test("debug_workflow_tool_runs_source_with_fake_agent_responses", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
+  const source = `export const metadata = { name: "draft", description: "Debug draft" };
+export default async function workflow() {
+  phase("debug");
+  const answer = await agent("summarize " + args.topic, { label: "summary", reasoning: "minimal", model: "cheap" });
+  return { answer, topic: args.topic };
+}`;
+  const tool = createWorkflowTools({ cwd: project }).find((candidate) => candidate.name === "debug_workflow");
+  assert.ok(tool);
+
+  const result = await tool.execute(
+    "call-1",
+    { name: "draft", source, input: { topic: "docs" }, agentResponses: ["fake summary"] },
+    undefined,
+    undefined,
+    {} as never,
+  );
+
+  const details = result.details as { status: string; result: unknown; agents: { prompt: string; response: unknown }[] };
+  assert.equal(details.status, "complete");
+  assert.deepEqual(details.result, { answer: "fake summary", topic: "docs" });
+  assert.deepEqual(details.agents, [{ prompt: "summarize docs", response: "fake summary" }]);
+  assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /Actual tokens used: 0/);
+});
+
+void test("debug_workflow_tool_returns_errors_without_throwing", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
+  const source = `export const metadata = { name: "broken", description: "Broken draft" };
+export default async function workflow() {
+  return missingGlobal;
+}`;
+  const tool = createWorkflowTools({ cwd: project }).find((candidate) => candidate.name === "debug_workflow");
+  assert.ok(tool);
+
+  const result = await tool.execute("call-1", { name: "broken", source }, undefined, undefined, {} as never);
+
+  assert.equal((result.details as { status: string }).status, "error");
+  assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /missingGlobal is not defined/);
+});
+
+void test("workflow_primitives_tool_returns_docs_and_examples", async () => {
+  const tool = createWorkflowTools({ cwd: process.cwd() }).find((candidate) => candidate.name === "workflow_primitives");
+  assert.ok(tool);
+
+  const all = await tool.execute("call-1", {}, undefined, undefined, {} as never);
+  assert.match(all.content[0]?.type === "text" ? all.content[0].text : "", /Available workflow globals/);
+  assert.match(all.content[0]?.type === "text" ? all.content[0].text : "", /debugging tip/i);
+
+  const coerce = await tool.execute("call-2", { primitive: "coerce" }, undefined, undefined, {} as never);
+  const text = coerce.content[0]?.type === "text" ? coerce.content[0].text : "";
+  assert.match(text, /coerce\(/);
+  assert.doesNotMatch(text, /verifier\(/);
+});
+
 void test("run_workflow_tool_runs_existing_workflow", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const workflowDir = path.join(project, ".pi", "workflows", "echo");

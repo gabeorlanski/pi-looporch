@@ -12,6 +12,33 @@ const workflowSourceRequirements = [
   "Keep runtime logic explicit; use local helpers only when they remove real duplication or clarify a multi-step transformation.",
 ];
 
+const workflowPrimitiveExamples: Record<string, string> = {
+  coerce: `const data = await coerce({
+  schema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
+  prompt: "Extract a title from: " + args.text,
+  label: "extract title",
+  reasoning: "minimal",
+});`,
+  mapreduce: `return mapreduce({
+  inputPrompt: "Split this into reviewable chunks: {{text}}",
+  mapPrompt: "Review chunk {{index}}: {{item}}",
+  reducePrompt: "Summarize these reviews: {{results}}",
+  text: args.text,
+  label: "review chunks",
+  reasoning: "minimal",
+});`,
+  verifier: `return verifier({
+  criteria: [{ name: "accuracy", description: "Check facts", guidelines: "Quote evidence", reasoning: "Compare claims", voters: 1 }],
+  criteriaPrompt: "Evaluate {{name}} for {{artifact}} using {{guidelines}}",
+  reducePrompt: "Summarize these votes: {{votes}}",
+  artifact: args.answer,
+  label: "verify answer",
+  reasoning: "minimal",
+});`,
+  debug:
+    "Use debug_workflow only for small workflow snippets or simple draft checks. Prefer fake agentResponses, minimal reasoning, and cheap/low-thinking model labels.",
+};
+
 const workflowPrimitiveDocs: AuthoringDoc[] = [
   {
     name: "metadata",
@@ -82,11 +109,35 @@ const workflowPrimitiveDocs: AuthoringDoc[] = [
 ];
 
 export function workflowAuthoringGuide(): string {
-  const requirementLines = workflowSourceRequirements.map((requirement) => `- ${requirement}`);
-  const primitiveLines = workflowPrimitiveDocs.flatMap((doc) => [
-    `- ${doc.name}`,
-    `  Signature: ${doc.signature}`,
-    `  Docstring: ${doc.docstring}`,
-  ]);
-  return ["Workflow source requirements:", ...requirementLines, "", "Available workflow globals:", ...primitiveLines].join("\n");
+  return [
+    "Workflow source requirements:",
+    ...workflowSourceRequirements.map((requirement) => `- ${requirement}`),
+    "",
+    workflowPrimitiveDocsText(),
+  ].join("\n");
+}
+
+export function workflowPrimitiveGuide(primitive?: string): string {
+  const selected = primitive
+    ? workflowPrimitiveDocs.filter((doc) => doc.name.split(" / ").includes(primitive) || doc.signature.startsWith(`${primitive}(`))
+    : workflowPrimitiveDocs;
+  if (!selected.length) throw new Error(`Unknown workflow primitive: ${primitive ?? ""}`);
+  return [
+    "Workflow primitive documentation for workflow authors.",
+    "Debugging tip: use debug_workflow only for small snippets/simple tasks, with fake agentResponses and minimal/low-thinking model labels.",
+    "",
+    workflowPrimitiveDocsText(selected),
+    "",
+    "Examples:",
+    ...Object.entries(workflowPrimitiveExamples)
+      .filter(([name]) => !primitive || name === primitive || name === "debug")
+      .map(([name, example]) => `- ${name}:\n${example}`),
+  ].join("\n");
+}
+
+function workflowPrimitiveDocsText(docs = workflowPrimitiveDocs): string {
+  return [
+    "Available workflow globals:",
+    ...docs.flatMap((doc) => [`- ${doc.name}`, `  Signature: ${doc.signature}`, `  Docstring: ${doc.docstring}`]),
+  ].join("\n");
 }

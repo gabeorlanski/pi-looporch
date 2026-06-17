@@ -25,6 +25,7 @@ npm run check
 - Require generated workflow source to start with JSDoc documenting args, phases, child agents, file reads, and result shape.
 - Keep helpers purposeful; inline short functions that only obscure flow.
 - Preserve workflow sandbox constraints: workflow file reads must stay inside the workflow directory.
+- Never estimate token counts; only report provider/session usage or zero/unknown when actual usage is unavailable.
 - Update tests and docs when exported behavior or workflow primitives change.
 
 ## Key types

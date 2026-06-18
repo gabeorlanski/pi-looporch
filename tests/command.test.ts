@@ -11,6 +11,7 @@ void test("natural_language_workflow_command_steers_current_session_to_tools", (
   assert.match(message, /must not import modules/);
   assert.match(message, /JSDoc/);
   assert.match(message, /Available workflow globals/);
+  assert.match(message, /phase, log, trace, args/);
   assert.match(message, /echo/);
 });
 

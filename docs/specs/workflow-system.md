@@ -58,8 +58,8 @@ Initial global primitives should include at least:
 - `args`
 - `cwd`
 - `budget`
-- `readWorkflowFile(relativePath)`
-- `readWorkflowJson(relativePath)`
+- `readText(relativePath)`
+- `readJson(relativePath)`
 - `renderPrompt(templatePath, values)`
 
 Every `workflow.js` must export metadata with a planned phase outline. `metadata.inputInstructions` gives the resolver workflow-specific guidance without duplicating the argument list, and required `metadata.phases` makes the runbook shape visible before execution. The authoring model intentionally favors power-user/agent-authored runbooks over package-like shareability: inline schemas, prompt builders, top-level constants, and local paths are acceptable when they improve observability and ease of tweaking. Agent-generated workflows must document the default workflow function with JSDoc that covers purpose, input fields/defaults, phases, child agent usage, file reads, and result shape:

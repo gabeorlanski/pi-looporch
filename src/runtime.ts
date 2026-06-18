@@ -221,10 +221,11 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
   const { metadata } = compileWorkflow(source, entryFile, metadataGlobals(options, workflowDir));
   validateWorkflowMetadata(metadata, workflowName);
 
+  const plannedPhases = cloneSerializable(metadata.phases) as WorkflowPhaseMetadata[];
   const snapshot: WorkflowSnapshot = {
     workflowName,
     description: metadata.description,
-    plannedPhases: cloneSerializable(metadata.phases) as WorkflowPhaseMetadata[],
+    plannedPhases,
     phases: [],
     logs: [],
     traces: [],
@@ -245,7 +246,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     type: "run_started",
     workflowName,
     description: metadata.description,
-    plannedPhases: cloneSerializable(metadata.phases) as WorkflowPhaseMetadata[],
+    plannedPhases,
   });
   activeRuntime.emit();
   try {
@@ -370,10 +371,11 @@ function workflowGlobals(runtime: ActiveWorkflowRuntime, workflowDir: string): R
 
 function recordTrace(runtime: ActiveWorkflowRuntime, label: string, value?: unknown): void {
   if (typeof label !== "string" || !label.trim()) throw new Error("trace label must be non-empty");
+  const phase = runtime.snapshot.phases.at(-1);
   const trace: WorkflowTraceSnapshot = {
     label,
     phaseIndex: runtime.snapshot.phases.length,
-    ...(runtime.snapshot.phases.at(-1) ? { phase: runtime.snapshot.phases.at(-1) } : {}),
+    ...(phase ? { phase } : {}),
     ...(value !== undefined ? { value: traceValue(value) } : {}),
   };
   runtime.snapshot.traces.push(trace);
@@ -527,10 +529,9 @@ async function coerceWithAgent(runtime: ActiveWorkflowRuntime, options: CoerceOp
       reasoning: options.reasoning,
       tools: false,
     });
-    const parsed = parseJsonResponse(response);
-    if (!parsed.ok) validationFailure = parsed.error;
-    else if (Value.Check(options.schema as TSchema, parsed.value)) return parsed.value;
-    else validationFailure = schemaValidationFailure(options.schema, parsed.value);
+    const validation = parseAndValidateJsonResponse(response, options.schema);
+    if (validation.ok) return validation.value;
+    validationFailure = validation.error;
   }
   throw new Error(`coerce failed schema validation after ${String(maxAttempts)} attempts: ${validationFailure ?? "unknown error"}`);
 }
@@ -542,15 +543,24 @@ function normalizeAttemptCount(maxAttempts: number | undefined, primitive: strin
 }
 
 function coercePrompt(prompt: string, schema: unknown, validationFailure: string | undefined): string {
-  return [
+  return jsonSchemaPrompt(
     "Return only JSON that validates against this JSON Schema. Do not include markdown fences, commentary, or extra text.",
-    `Schema:\n${JSON.stringify(schema, null, 2)}`,
-    `Task:\n${prompt}`,
-    ...(validationFailure ? [`Previous response failed validation:\n${validationFailure}\nReturn corrected JSON only.`] : []),
-  ].join("\n\n");
+    prompt,
+    schema,
+    validationFailure,
+  );
 }
 
-function parseJsonResponse(response: unknown): { ok: true; value: unknown } | { ok: false; error: string } {
+type JsonResponseResult = { ok: true; value: unknown } | { ok: false; error: string };
+
+function parseAndValidateJsonResponse(response: unknown, schema: unknown): JsonResponseResult {
+  const parsed = parseJsonResponse(response);
+  if (!parsed.ok) return parsed;
+  if (Value.Check(schema as TSchema, parsed.value)) return parsed;
+  return { ok: false, error: schemaValidationFailure(schema, parsed.value) };
+}
+
+function parseJsonResponse(response: unknown): JsonResponseResult {
   if (response !== null && typeof response === "object") return { ok: true, value: response };
   if (typeof response !== "string") return { ok: false, error: `response was ${typeof response}, not JSON text` };
   const trimmed = response.trim();
@@ -681,10 +691,9 @@ async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOpt
   let validationFailure: string | undefined;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const result = await runRawAgent(runtime, structuredAgentPrompt(prompt, schema, validationFailure), launchOptions);
-    const parsed = parseJsonResponse(result);
-    if (!parsed.ok) validationFailure = parsed.error;
-    else if (Value.Check(schema as TSchema, parsed.value)) return parsed.value;
-    else validationFailure = schemaValidationFailure(schema, parsed.value);
+    const validation = parseAndValidateJsonResponse(result, schema);
+    if (validation.ok) return validation.value;
+    validationFailure = validation.error;
     const lastAgent = runtime.snapshot.agents.at(-1);
     if (lastAgent) runtime.emitEvent({ type: "agent_schema_validation_failed", agentId: lastAgent.id, attempt, error: validationFailure });
     recordTrace(runtime, `${launchOptions.label ?? "agent"} schema validation failed`, { attempt, error: validationFailure });
@@ -693,10 +702,19 @@ async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOpt
 }
 
 function structuredAgentPrompt(prompt: string, schema: unknown, validationFailure: string | undefined): string {
-  return [
+  return jsonSchemaPrompt(
     "Complete the task, then return only JSON that validates against this JSON Schema. Do not include markdown fences, commentary, or extra text outside the JSON value.",
+    prompt,
+    schema,
+    validationFailure,
+  );
+}
+
+function jsonSchemaPrompt(instruction: string, task: string, schema: unknown, validationFailure: string | undefined): string {
+  return [
+    instruction,
     `Schema:\n${JSON.stringify(schema, null, 2)}`,
-    `Task:\n${prompt}`,
+    `Task:\n${task}`,
     ...(validationFailure ? [`Previous response failed validation:\n${validationFailure}\nReturn corrected JSON only.`] : []),
   ].join("\n\n");
 }

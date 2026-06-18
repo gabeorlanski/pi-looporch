@@ -379,13 +379,15 @@ function extractOutlineMetadata(sourceFile: ts.SourceFile): {
 function phaseMetadataProperty(object: ts.ObjectLiteralExpression): { title: string; detail?: string }[] {
   const initializer = propertyInitializer(object, "phases");
   if (!initializer || !ts.isArrayLiteralExpression(initializer)) return [];
-  return initializer.elements.flatMap((element) => {
-    if (!ts.isObjectLiteralExpression(element)) return [];
+  const phases: { title: string; detail?: string }[] = [];
+  for (const element of initializer.elements) {
+    if (!ts.isObjectLiteralExpression(element)) continue;
     const title = stringProperty(element, "title");
-    if (title === undefined) return [];
+    if (title === undefined) continue;
     const detail = stringProperty(element, "detail");
-    return [{ title, ...(detail !== undefined ? { detail } : {}) }];
-  });
+    phases.push({ title, ...(detail !== undefined ? { detail } : {}) });
+  }
+  return phases;
 }
 
 function extractLeadingJsDoc(source: string): string | undefined {

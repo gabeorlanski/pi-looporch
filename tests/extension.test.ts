@@ -255,6 +255,8 @@ export default async function workflow({ message }) {
   assert.match(sentMessages[0].message.content, /call run_workflow/);
   assert.match(sentMessages[0].message.content, /Treat bare text as the message field/);
   assert.match(sentMessages[0].message.content, /args\.message/);
+  assert.doesNotMatch(sentMessages[0].message.content, /workflow\.js, for secondary context only/);
+  assert.doesNotMatch(sentMessages[0].message.content, /return \{ message \};/);
 });
 
 void test("existing_workflow_command_reports_missing_required_input_without_running", async () => {

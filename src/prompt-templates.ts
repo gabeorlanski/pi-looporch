@@ -12,7 +12,6 @@ export interface SteerableInputResolutionOptions {
   rawInput: string;
   workflowName: string;
   metadata: WorkflowMetadata;
-  source: string;
   contract: WorkflowInputContract;
 }
 
@@ -39,9 +38,6 @@ export function steerableInputResolutionMessage(options: SteerableInputResolutio
     "",
     "Workflow function input contract:",
     JSON.stringify(options.contract, null, 2),
-    "",
-    "workflow.js, for secondary context only:",
-    options.source,
     "",
     "User command input:",
     options.rawInput,

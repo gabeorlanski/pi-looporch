@@ -147,7 +147,6 @@ async function runExistingWorkflowCommand(
           rawInput: parsedInput.rawInput,
           workflowName,
           metadata: workflow.metadata,
-          source,
           contract: inputContract,
         }),
       );

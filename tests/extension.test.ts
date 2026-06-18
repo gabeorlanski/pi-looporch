@@ -114,7 +114,7 @@ export default async function workflow() {
     widgetUpdates.some(
       (update) =>
         update?.[0].includes("workflow echo") &&
-        update.some((line) => line.includes("phase P1/1 running")) &&
+        update.some((line) => line.includes("RUNNING") && line.includes("P1/1 running")) &&
         update.some((line) => line.includes("P1 running")) &&
         update.some((line) => line.includes("NET 0/0 agents")),
     ),
@@ -217,7 +217,7 @@ export default async function workflow() {
   assert.deepEqual(finalSnapshot.logs, ["about to return"]);
 });
 
-void test("workflow_proposal_review_supports_tab_feedback", async () => {
+void test("workflow_proposal_review_requests_changes_with_a_general_comment", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const registeredTools: ToolDefinition[] = [];
   const pi = {
@@ -261,9 +261,10 @@ export default async function workflow() {
       ): Promise<T> {
         return new Promise((resolve) => {
           const component = factory({ requestRender: requestRenderNoop }, plainTheme, undefined, resolve);
-          component.handleInput("\t");
+          component.handleInput("g");
           for (const character of "Use gpt-5-mini for the cheap scan.") component.handleInput(character);
           component.handleInput("\r");
+          component.handleInput("r");
         });
       },
     },
@@ -271,6 +272,6 @@ export default async function workflow() {
 
   await assert.rejects(
     proposeWorkflow.execute("call-1", { name: "summarize", source, request: "summarize files" }, undefined, undefined, ctx as never),
-    /Reviewer feedback: Use gpt-5-mini for the cheap scan\./,
+    /requested changes[\s\S]*Use gpt-5-mini for the cheap scan\./,
   );
 });

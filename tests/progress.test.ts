@@ -59,12 +59,13 @@ void test("workflow_progress_table_collapses_completed_phase_children_and_expand
   assert.ok(display.widgetLines.some((line) => line.includes("RUNNING") && line.includes("Esc abort")));
   assert.ok(
     display.widgetLines.some(
-      (line) => line.includes("OK  P1 collect 1/1 agents") && line.includes("1.2k in / 900 out") && line.includes("2.5s"),
+      (line) => line.includes("✓ P1 collect") && line.includes("1/1 agents") && line.includes("1.2k→900") && line.includes("2.5s"),
     ),
   );
-  assert.ok(display.widgetLines.some((line) => line.includes("RUN P2 fanout 1/2 agents")));
+  assert.ok(display.widgetLines.some((line) => line.includes("▸ P2 fanout") && line.includes("1/2 agents")));
   assert.ok(!display.widgetLines.some((line) => line.includes("#1 inventory")));
-  assert.ok(display.widgetLines.some((line) => line.includes("#3 b.ts") && line.includes("medium") && line.includes("using read")));
+  assert.ok(display.widgetLines.some((line) => line.includes("#3 b.ts") && line.includes("medium")));
+  assert.ok(display.widgetLines.some((line) => line.includes("↳ using read")));
   assert.ok(display.widgetLines.some((line) => line.includes("NET 2/3 agents") && line.includes("2.4k in") && line.includes("6 tools")));
 });
 
@@ -81,8 +82,8 @@ void test("workflow_progress_table_falls_back_to_startup_phase_before_explicit_p
   const display = progressDisplay(snapshot, 88);
 
   assert.equal(display.statusLine, "select: RUNNING · 0/1 agents · in 0 · out 0 · tools 0 · Esc abort");
-  assert.ok(display.widgetLines.some((line) => line.includes("RUN setup 0/1 agents")));
-  assert.ok(display.widgetLines.some((line) => line.includes("#1 selector") && line.includes("run")));
+  assert.ok(display.widgetLines.some((line) => line.includes("▸ setup") && line.includes("0/1 agents")));
+  assert.ok(display.widgetLines.some((line) => line.includes("#1 selector")));
 });
 
 void test("workflow_progress_table_numbers_repeated_phase_titles_by_original_order", () => {
@@ -100,8 +101,8 @@ void test("workflow_progress_table_numbers_repeated_phase_titles_by_original_ord
 
   const display = progressDisplay(snapshot, 96);
 
-  assert.ok(display.widgetLines.some((line) => line.includes("OK  P1 scan 1/1 agents")));
-  assert.ok(display.widgetLines.some((line) => line.includes("RUN P2 scan 0/1 agents")));
+  assert.ok(display.widgetLines.some((line) => line.includes("✓ P1 scan") && line.includes("1/1 agents")));
+  assert.ok(display.widgetLines.some((line) => line.includes("▸ P2 scan") && line.includes("0/1 agents")));
   assert.ok(!display.widgetLines.some((line) => line.includes("setup scan")));
 });
 

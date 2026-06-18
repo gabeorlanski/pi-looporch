@@ -41,6 +41,8 @@ export interface WorkflowAgentProgress {
   inputTokenCount?: number;
   outputTokenCount?: number;
   toolCallCount?: number;
+  /** Raw child-agent session messages, rendered natively in the inspector. */
+  messages?: unknown[];
 }
 
 export type WorkflowAgent = (
@@ -66,6 +68,7 @@ export interface WorkflowAgentSnapshot {
   fanOutId?: number;
   message?: string;
   error?: string;
+  messages?: unknown[];
 }
 
 export interface WorkflowFanOutSnapshot {
@@ -519,10 +522,11 @@ async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOpt
     let result: unknown;
     try {
       result = await runtime.options.agent(prompt, workflowAgentOptionsForLaunch(runtime, agent, agentOptions), (progress) => {
-        agent.message = progress.statusMessage;
+        if (progress.statusMessage !== undefined) agent.message = progress.statusMessage;
         if (progress.inputTokenCount !== undefined) agent.inputTokenCount = progress.inputTokenCount;
         if (progress.outputTokenCount !== undefined) agent.outputTokenCount = progress.outputTokenCount;
         if (progress.toolCallCount !== undefined) agent.toolCallCount = progress.toolCallCount;
+        if (progress.messages !== undefined) agent.messages = progress.messages;
         agent.tokenCount = progress.tokenCount ?? agent.inputTokenCount + agent.outputTokenCount;
         runtime.emitEvent({
           type: "agent_progress",

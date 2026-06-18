@@ -1,7 +1,8 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Editor, Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { AssistantMessageComponent, ToolExecutionComponent, UserMessageComponent, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { Editor, Key, matchesKey, truncateToWidth, type TUI } from "@earendil-works/pi-tui";
 import { naturalLanguageRequestMessage } from "../src/prompt-templates.ts";
 import { discoverWorkflows, workflowRootsForProject } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
@@ -17,7 +18,18 @@ import {
 import { resolveWorkflowInput } from "../src/input.ts";
 import { failureMessage, completeMessage } from "../src/display/messages.ts";
 import { initialProgressDisplay, progressDisplay, type ProgressDisplay, type ProgressTheme } from "../src/display/progress.ts";
+import { agentInspectorHeaderLines } from "../src/display/agent-inspector.ts";
 import { approvalLines } from "../src/display/approval.ts";
+import { parseWorkflowOutline } from "../src/workflow-outline.ts";
+import {
+  buildChangeRequest,
+  defaultExpanded,
+  flattenReviewNodes,
+  renderWorkflowReview,
+  reviewHasFeedback,
+  type ReviewComment,
+  type ReviewNode,
+} from "../src/display/workflow-review.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 
 const MESSAGE_TYPE = "pi-workflow-message";
@@ -102,7 +114,8 @@ async function runExistingWorkflowCommand(
   }
   let runLog: WorkflowRunLog | undefined;
   let lastSnapshot: WorkflowSnapshot | undefined;
-  const abortControls = createWorkflowAbortControls(ctx);
+  const inspector = createWorkflowInspector(ctx);
+  const abortControls = createWorkflowAbortControls(ctx, () => inspector.isOpen());
   try {
     ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, "resolving input");
     const commandOptions = parseWorkflowCommandOptions(rawInput);
@@ -152,6 +165,7 @@ async function runExistingWorkflowCommand(
       onEvent: (event) => runLog?.recordEvent(event),
       onSnapshot: (snapshot) => {
         lastSnapshot = snapshot;
+        inspector.update(snapshot);
         updateRunningWorkflowUi(ctx, (width, theme) => progressDisplay(snapshot, width, theme));
       },
     });
@@ -170,12 +184,16 @@ async function runExistingWorkflowCommand(
     ctx.ui.notify(message, "error");
     pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName, logPath } });
   } finally {
+    inspector.dispose();
     abortControls.dispose();
     clearRunningWorkflowUi(ctx);
   }
 }
 
-function createWorkflowAbortControls(ctx: ExtensionCommandContext): { signal: AbortSignal; dispose: () => void } {
+function createWorkflowAbortControls(
+  ctx: ExtensionCommandContext,
+  shouldIgnoreEscape: () => boolean = () => false,
+): { signal: AbortSignal; dispose: () => void } {
   const controller = new AbortController();
   const abortWorkflow = () => {
     if (controller.signal.aborted) return;
@@ -188,7 +206,7 @@ function createWorkflowAbortControls(ctx: ExtensionCommandContext): { signal: Ab
       })()
     : () => undefined;
   const unsubscribeInput = ctx.ui.onTerminalInput((data) => {
-    if (!matchesKey(data, Key.escape)) return undefined;
+    if (!matchesKey(data, Key.escape) || shouldIgnoreEscape()) return undefined;
     abortWorkflow();
     ctx.abort();
     ctx.ui.notify("Aborting workflow run", "warning");
@@ -201,6 +219,168 @@ function createWorkflowAbortControls(ctx: ExtensionCommandContext): { signal: Ab
       removeHostAbortListener();
     },
   };
+}
+
+interface WorkflowInspector {
+  update: (snapshot: WorkflowSnapshot) => void;
+  isOpen: () => boolean;
+  dispose: () => void;
+}
+
+function createWorkflowInspector(ctx: ExtensionCommandContext): WorkflowInspector {
+  let snapshot: WorkflowSnapshot | undefined;
+  let open = false;
+  let selected = 0;
+  let scroll = 0;
+  let termHeight = 0;
+  let viewport = 0;
+  let maxScroll = 0;
+  let requestRender: (() => void) | undefined;
+
+  const renderInspector = (tui: TUI, theme: ProgressTheme, width: number): string[] => {
+    termHeight = tui.terminal.rows;
+    if (!snapshot || snapshot.agents.length === 0) return agentInspectorHeaderLines(snapshot ?? emptySnapshot(), 0, width, theme);
+    selected = Math.min(selected, snapshot.agents.length - 1);
+    const header = agentInspectorHeaderLines(snapshot, selected, width, theme);
+    const agent = snapshot.agents[selected];
+    const messages = Array.isArray(agent.messages) ? agent.messages : [];
+    const body =
+      messages.length > 0 ? renderAgentTranscript(messages, tui, ctx.cwd, width) : [theme.fg("dim", "  (no activity captured yet)")];
+    viewport = Math.max(6, (termHeight || 32) - header.length - 2);
+    maxScroll = Math.max(0, body.length - viewport);
+    const offset = Math.min(scroll, maxScroll);
+    const start = Math.max(0, body.length - viewport - offset);
+    const visible = body.slice(start, start + viewport);
+    const shownEnd = start + visible.length;
+    const footer = theme.fg(
+      "dim",
+      `  lines ${String(shownEnd)}/${String(body.length)}${maxScroll > 0 ? (offset > 0 ? " · ↑↓ scroll" : " · live (newest)") : ""}`,
+    );
+    return [...header, ...visible, footer];
+  };
+
+  const openInspector = (): void => {
+    if (open || !snapshot || snapshot.agents.length === 0) return;
+    open = true;
+    scroll = 0;
+    selected = Math.min(selected, snapshot.agents.length - 1);
+    void ctx.ui
+      .custom<null>((tui, theme, _keybindings, done) => {
+        requestRender = () => tui.requestRender();
+        return {
+          render: (width: number): string[] => renderInspector(tui, theme, width),
+          handleInput: (data: string): void => {
+            const count = snapshot?.agents.length ?? 0;
+            if (matchesKey(data, Key.escape) || data === "q" || matchesKey(data, Key.alt("o"))) {
+              done(null);
+              return;
+            }
+            if (count === 0) return;
+            if (matchesKey(data, Key.right) || matchesKey(data, Key.tab) || data === "l") {
+              selected = (selected + 1) % count;
+              scroll = 0;
+            } else if (matchesKey(data, Key.left) || data === "h") {
+              selected = (selected - 1 + count) % count;
+              scroll = 0;
+            } else if (matchesKey(data, Key.up) || data === "k") {
+              scroll = Math.min(maxScroll, scroll + 1);
+            } else if (matchesKey(data, Key.down) || data === "j") {
+              scroll = Math.max(0, scroll - 1);
+            } else if (matchesKey(data, Key.pageUp)) {
+              scroll = Math.min(maxScroll, scroll + viewport);
+            } else if (matchesKey(data, Key.pageDown)) {
+              scroll = Math.max(0, scroll - viewport);
+            } else {
+              return;
+            }
+            tui.requestRender();
+          },
+          invalidate: () => {
+            tui.requestRender();
+          },
+        };
+      })
+      .finally(() => {
+        open = false;
+        requestRender = undefined;
+      });
+  };
+
+  const unsubscribe = ctx.ui.onTerminalInput((data) => {
+    if (open || !matchesKey(data, Key.alt("o"))) return undefined;
+    openInspector();
+    return { consume: true };
+  });
+
+  return {
+    update(next) {
+      snapshot = next;
+      if (open) requestRender?.();
+    },
+    isOpen: () => open,
+    dispose() {
+      unsubscribe();
+    },
+  };
+}
+
+function renderAgentTranscript(messages: unknown[], tui: TUI, cwd: string, width: number): string[] {
+  const markdownTheme = getMarkdownTheme();
+  const items: { render: (width: number) => string[] }[] = [];
+  const pendingTools = new Map<string, ToolExecutionComponent>();
+  for (const message of messages) {
+    if (!isRecord(message)) continue;
+    if (message.role === "user") {
+      const text = userMessageText(message.content);
+      if (text) items.push(new UserMessageComponent(text, markdownTheme));
+    } else if (message.role === "assistant") {
+      items.push(
+        new AssistantMessageComponent(
+          message as unknown as ConstructorParameters<typeof AssistantMessageComponent>[0],
+          false,
+          markdownTheme,
+          "thinking",
+        ),
+      );
+      for (const block of asArray(message.content)) {
+        if (isRecord(block) && block.type === "toolCall" && typeof block.name === "string" && typeof block.id === "string") {
+          const tool = new ToolExecutionComponent(block.name, block.id, block.arguments, { showImages: false }, undefined, tui, cwd);
+          tool.setExpanded(false);
+          pendingTools.set(block.id, tool);
+          items.push(tool);
+        }
+      }
+    } else if (message.role === "toolResult") {
+      const tool = typeof message.toolCallId === "string" ? pendingTools.get(message.toolCallId) : undefined;
+      if (tool) tool.updateResult({ content: resultContent(message.content), isError: message.isError === true, details: message.details });
+    }
+  }
+  return items.flatMap((item) => item.render(width));
+}
+
+function userMessageText(content: unknown): string {
+  if (typeof content === "string") return content.trim();
+  return asArray(content)
+    .filter((block): block is { text: string } => isRecord(block) && block.type === "text" && typeof block.text === "string")
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+}
+
+function resultContent(content: unknown): { type: string; text?: string; data?: string; mimeType?: string }[] {
+  return asArray(content).filter(isRecord) as { type: string; text?: string; data?: string; mimeType?: string }[];
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function emptySnapshot(): WorkflowSnapshot {
+  return { workflowName: "", description: "", phases: [], logs: [], agents: [], fanOuts: [] };
 }
 
 function updateRunningWorkflowUi(
@@ -300,6 +480,162 @@ function createReviewer(ctx: ExtensionContext): WorkflowReviewer {
 }
 
 async function reviewGeneratedWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft): Promise<WorkflowReviewDecision> {
+  const outcome = await tuiReviewWorkflow(ctx, draft);
+  return outcome === "fallback" ? terminalReviewWorkflow(ctx, draft) : outcome;
+}
+
+function tuiReviewWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft): Promise<WorkflowReviewDecision | "fallback"> {
+  const workflowDir = path.join(ctx.cwd, ".pi", "workflows", draft.name);
+  const outline = parseWorkflowOutline(draft.source, { workflowDir });
+  let height = 32;
+  return ctx.ui.custom<WorkflowReviewDecision | "fallback">((tui, theme, _keybindings, done) => {
+    const expanded = defaultExpanded(outline);
+    const comments = new Map<string, ReviewComment>();
+    let nodes = flattenReviewNodes(outline, expanded);
+    let selectedIndex = 0;
+    let generalComment = "";
+    let editing: { kind: "node" | "general"; commentKey?: string } | undefined;
+    let hint: string | undefined;
+
+    const editor = new Editor(
+      tui,
+      {
+        borderColor: (text) => theme.fg("borderMuted", text),
+        selectList: {
+          selectedPrefix: (text) => theme.fg("accent", text),
+          selectedText: (text) => theme.fg("accent", theme.bold(text)),
+          description: (text) => theme.fg("dim", text),
+          scrollInfo: (text) => theme.fg("dim", text),
+          noMatch: (text) => theme.fg("error", text),
+        },
+      },
+      { paddingX: 0 },
+    );
+    const refresh = (): void => {
+      nodes = flattenReviewNodes(outline, expanded);
+      selectedIndex = Math.max(0, Math.min(selectedIndex, nodes.length - 1));
+      tui.requestRender();
+    };
+    const stopEditing = (): void => {
+      editing = undefined;
+      editor.setText("");
+    };
+    editor.onSubmit = (value) => {
+      const text = value.trim();
+      if (!editing) return;
+      if (editing.kind === "general") {
+        generalComment = text;
+      } else if (editing.commentKey) {
+        const node = nodes.find((candidate) => candidate.commentKey === editing?.commentKey);
+        if (text && node?.stageId) {
+          comments.set(editing.commentKey, { stageId: node.stageId, ...(node.promptId ? { promptId: node.promptId } : {}), text });
+        } else {
+          comments.delete(editing.commentKey);
+        }
+      }
+      stopEditing();
+      tui.requestRender();
+    };
+
+    const startComment = (): void => {
+      const node = nodes.at(selectedIndex);
+      if (!node?.commentKey || !node.stageId) {
+        hint = "Select a stage or prompt to add a note.";
+        tui.requestRender();
+        return;
+      }
+      editing = { kind: "node", commentKey: node.commentKey };
+      editor.setText(comments.get(node.commentKey)?.text ?? "");
+      hint = undefined;
+      tui.requestRender();
+    };
+
+    return {
+      render(width: number): string[] {
+        height = tui.terminal.rows;
+        return renderWorkflowReview(
+          outline,
+          {
+            selectedIndex,
+            expanded,
+            comments,
+            generalComment,
+            ...(editing ? { editing: { kind: editing.kind, text: editor.getText() } } : {}),
+            height,
+            ...(hint ? { hint } : {}),
+          },
+          width,
+          theme,
+        );
+      },
+      handleInput(data: string): void {
+        if (editing) {
+          if (matchesKey(data, Key.escape)) {
+            stopEditing();
+            tui.requestRender();
+            return;
+          }
+          editor.handleInput(data);
+          tui.requestRender();
+          return;
+        }
+        hint = undefined;
+        if (matchesKey(data, Key.escape)) {
+          done({ action: "reject", reason: "Workflow review canceled" });
+        } else if (data === "a" || data === "A") {
+          done({ action: "approve" });
+        } else if (data === "r" || data === "R") {
+          if (reviewHasFeedback(comments, generalComment)) {
+            done({ action: "reject", reason: buildChangeRequest(outline, comments, generalComment) });
+          } else {
+            hint = "Add a note (c) or a general comment (g) before requesting changes.";
+            tui.requestRender();
+          }
+        } else if (data === "t" || data === "T") {
+          done("fallback");
+        } else if (data === "c" || data === "C") {
+          startComment();
+        } else if (data === "g" || data === "G") {
+          editing = { kind: "general" };
+          editor.setText(generalComment);
+          tui.requestRender();
+        } else if (matchesKey(data, Key.up) || data === "k") {
+          selectedIndex = Math.max(0, selectedIndex - 1);
+          tui.requestRender();
+        } else if (matchesKey(data, Key.down) || data === "j") {
+          selectedIndex = Math.min(nodes.length - 1, selectedIndex + 1);
+          tui.requestRender();
+        } else if (matchesKey(data, Key.right) || data === "l") {
+          expandNode(expanded, nodes[selectedIndex], true);
+          refresh();
+        } else if (matchesKey(data, Key.left) || data === "h") {
+          expandNode(expanded, nodes[selectedIndex], false);
+          refresh();
+        } else if (matchesKey(data, Key.space) || matchesKey(data, Key.enter)) {
+          toggleNode(expanded, nodes[selectedIndex]);
+          refresh();
+        }
+      },
+      invalidate(): void {
+        tui.requestRender();
+      },
+    };
+  });
+}
+
+function expandNode(expanded: Set<string>, node: ReviewNode | undefined, open: boolean): void {
+  if (!node?.expandable) return;
+  if (open) expanded.add(node.id);
+  else expanded.delete(node.id);
+}
+
+function toggleNode(expanded: Set<string>, node: ReviewNode | undefined): void {
+  if (!node?.expandable) return;
+  if (expanded.has(node.id)) expanded.delete(node.id);
+  else expanded.add(node.id);
+}
+
+async function terminalReviewWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft): Promise<WorkflowReviewDecision> {
   return ctx.ui.custom<WorkflowReviewDecision>((tui, theme, _keybindings, done) => {
     let feedbackMode = false;
     const editor = new Editor(

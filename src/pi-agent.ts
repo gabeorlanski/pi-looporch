@@ -53,7 +53,7 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       ...(model ? { model } : {}),
     });
 
-    const progress = createProgressTracker(reportProgress);
+    const progress = createProgressTracker(reportProgress, () => session.messages);
     const unsubscribe = session.subscribe((event) => {
       loggedSession?.recordEvent(event);
       progress.handleEvent(event);
@@ -70,8 +70,11 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
 
       await session.prompt(agentTaskPrompt(prompt, agentOptions));
       const usage = loggedSession ? parseSessionTokens(loggedSession.sessionManager.getSessionDir()) : null;
-      if (usage)
-        reportProgress({ statusMessage: "done", inputTokenCount: usage.input, outputTokenCount: usage.output, tokenCount: usage.total });
+      reportProgress({
+        statusMessage: "done",
+        messages: recentAgentMessages(session.messages),
+        ...(usage ? { inputTokenCount: usage.input, outputTokenCount: usage.output, tokenCount: usage.total } : {}),
+      });
       if (agentOptions.signal?.aborted) throw new Error("Workflow agent aborted");
       return lastAssistantText(session.messages);
     } finally {
@@ -140,28 +143,39 @@ function resolveModel(modelRegistry: ModelRegistry, spec: string): ReturnType<Mo
   return modelRegistry.getAll().find((model) => model.id === modelSpec || model.name === modelSpec);
 }
 
-function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress) => void) {
+function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress) => void, getMessages: () => unknown[]) {
   let inputTokenCount = 0;
   let outputTokenCount = 0;
   let toolCallCount = 0;
+  const report = (status: string, withMessages: boolean): void => {
+    reportProgress({
+      ...progressSnapshot(status, inputTokenCount, outputTokenCount, toolCallCount),
+      ...(withMessages ? { messages: recentAgentMessages(getMessages()) } : {}),
+    });
+  };
   return {
     handleEvent(event: unknown): void {
       if (!isEventObject(event)) return;
-      if (event.type === "turn_start") reportProgress(progressSnapshot("thinking", inputTokenCount, outputTokenCount, toolCallCount));
+      if (event.type === "turn_start") report("thinking", true);
       if (event.type === "tool_execution_start" || event.type === "tool_execution_update") {
         if (event.type === "tool_execution_start") toolCallCount++;
-        reportProgress(progressSnapshot(`using ${eventToolName(event)}`, inputTokenCount, outputTokenCount, toolCallCount));
+        report(`using ${eventToolName(event)}`, event.type === "tool_execution_start");
       }
-      if (event.type === "tool_execution_end")
-        reportProgress(progressSnapshot(`finished ${eventToolName(event)}`, inputTokenCount, outputTokenCount, toolCallCount));
+      if (event.type === "tool_execution_end") report(`finished ${eventToolName(event)}`, true);
       if (event.type === "message_end") {
         const usage = workflowTokenUsageFromMessage(event.message);
         inputTokenCount += usage.inputTokenCount;
         outputTokenCount += usage.outputTokenCount;
-        reportProgress(progressSnapshot("thinking", inputTokenCount, outputTokenCount, toolCallCount));
+        report("thinking", true);
       }
     },
   };
+}
+
+const MAX_AGENT_MESSAGES = 60;
+
+export function recentAgentMessages(messages: unknown[]): unknown[] {
+  return messages.slice(-MAX_AGENT_MESSAGES);
 }
 
 function isEventObject(value: unknown): value is Record<string, unknown> {

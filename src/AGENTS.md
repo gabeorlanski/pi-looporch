@@ -36,7 +36,8 @@ npm run check
 - `tools.ts`: `WorkflowToolsOptions`.
 - `pi-agent.ts`: `PiWorkflowAgentOptions`.
 - `authoring-guide.ts`: rendered workflow source guidance injected into prompt templates.
-- `display/`: progress, approval, and boundary message rendering.
+- `workflow-outline.ts`: `WorkflowOutline`, `OutlineSection`, `OutlineStage`, `OutlinePrompt`; static AST parse of `workflow.js` into phases/stages/prompts plus `applyPromptEdits`/`indexOutline*` helpers for review tooling.
+- `display/`: progress, approval, and boundary message rendering. `workflow-review.ts` (`flattenReviewNodes`/`renderWorkflowReview`/`buildChangeRequest`) is the testable model + renderer for the in-terminal TUI proposal review; `extensions/workflow.ts` wires its keys and comment editor. `agent-inspector.ts` renders the Alt-O inspector header; the transcript below it is the child agent's real session messages rendered with pi's native message components in `extensions/workflow.ts`. Child-agent messages travel on `WorkflowAgentSnapshot.messages` (captured in `pi-agent.ts`).
 - `prompts/`: raw prompt templates loaded by `prompt-templates.ts`.
 
 See `../agent_docs/INDEX.md` before changing patterns.

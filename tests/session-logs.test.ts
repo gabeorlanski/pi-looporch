@@ -12,8 +12,10 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
   const snapshot: WorkflowSnapshot = {
     workflowName: "review",
     description: "Review files",
+    plannedPhases: [],
     phases: ["scan"],
     logs: [],
+    traces: [],
     agents: [
       {
         id: 1,

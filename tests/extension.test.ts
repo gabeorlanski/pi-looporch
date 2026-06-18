@@ -38,7 +38,7 @@ void test("existing_workflow_command_runs_directly_with_progress_updates", async
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
     path.join(workflowDir, "workflow.js"),
-    `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+    `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   phase("running");
   return args;
@@ -176,7 +176,7 @@ void test("existing_workflow_freeform_input_is_steered_in_current_session", asyn
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
     path.join(workflowDir, "workflow.js"),
-    `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Treat bare text as the message field." };
+    `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Treat bare text as the message field.", phases: [{ title: "Run" }] };
 /**
  * Input: args.message is the text to echo.
  * Phase: returns immediately.
@@ -263,7 +263,7 @@ void test("existing_workflow_command_reports_missing_required_input_without_runn
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
     path.join(workflowDir, "workflow.js"),
-    `export const metadata = { name: "plan", description: "Plan fixes", inputInstructions: "Resolve repo and problem from command input." };
+    `export const metadata = { name: "plan", description: "Plan fixes", inputInstructions: "Resolve repo and problem from command input.", phases: [{ title: "Run" }] };
 /**
  * Input: repo and problem are required. mode defaults to fast.
  * Phase: runs a planning phase.
@@ -347,7 +347,7 @@ void test("existing_workflow_command_saves_debug_log_when_flag_is_set", async ()
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
     path.join(workflowDir, "workflow.js"),
-    `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+    `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   phase("running");
   log("about to return");
@@ -457,7 +457,7 @@ void test("workflow_proposal_review_requests_changes_with_a_general_comment", as
 
   const proposeWorkflow = registeredTools.find((tool) => tool.name === "propose_workflow");
   assert.ok(proposeWorkflow);
-  const source = `export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const source = `export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return args;
 }`;

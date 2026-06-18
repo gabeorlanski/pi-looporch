@@ -49,7 +49,7 @@ void test("workflow_helper_tools_are_exposed_by_default", () => {
 
 void test("debug_workflow_tool_runs_source_with_fake_agent_responses", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
-  const source = `export const metadata = { name: "draft", description: "Debug draft", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const source = `export const metadata = { name: "draft", description: "Debug draft", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   phase("debug");
   const answer = await agent("summarize " + args.topic, { label: "summary", reasoning: "minimal", model: "cheap" });
@@ -75,7 +75,7 @@ export default async function workflow() {
 
 void test("debug_workflow_tool_returns_errors_without_throwing", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
-  const source = `export const metadata = { name: "broken", description: "Broken draft", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const source = `export const metadata = { name: "broken", description: "Broken draft", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return missingGlobal;
 }`;
@@ -109,7 +109,7 @@ void test("run_workflow_tool_runs_existing_workflow", async () => {
   await mkdir(workflowDir, { recursive: true });
   await writeFile(
     path.join(workflowDir, "workflow.js"),
-    `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+    `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return { input: args, agent: await agent("say hi", { label: "helper" }) };
 }`,
@@ -142,7 +142,7 @@ export default async function workflow() {
 
 void test("propose_workflow_tool_saves_only_after_review", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
-  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;
@@ -174,7 +174,7 @@ export default async function workflow() {
 
 void test("propose_workflow_tool_rejects_approved_source_without_docstring", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
-  const source = `export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const source = `export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;
@@ -191,7 +191,7 @@ export default async function workflow() {
 
 void test("propose_workflow_tool_passes_natural_language_proposal_to_review", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
-  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;
@@ -217,11 +217,11 @@ export default async function workflow() {
 
 void test("propose_workflow_tool_saves_reviewer_updated_source", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
-  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;
-  const updatedSource = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files with edits", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const updatedSource = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files with edits", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return { prompt: args.prompt, reviewed: true };
 }`;
@@ -238,7 +238,7 @@ export default async function workflow() {
 
 void test("propose_workflow_tool_rejection_does_not_save", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
-  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return { prompt: args.prompt };
 }`;

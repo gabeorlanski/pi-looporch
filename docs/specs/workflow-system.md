@@ -54,6 +54,7 @@ Initial global primitives should include at least:
 - `coerce({ schema, prompt, ...opts })`
 - `mapreduce({ inputPrompt, mapPrompt, reducePrompt, ...opts })`
 - `verifier({ criteria, criteriaPrompt, reducePrompt, ...opts })`
+- `trace(label, value?)`
 - `args`
 - `cwd`
 - `budget`
@@ -61,13 +62,17 @@ Initial global primitives should include at least:
 - `readWorkflowJson(relativePath)`
 - `renderPrompt(templatePath, values)`
 
-Every `workflow.js` must export small metadata. `metadata.inputInstructions` gives the resolver workflow-specific guidance without duplicating the argument list. Agent-generated workflows must document the default workflow function with JSDoc that covers purpose, input fields/defaults, phases, child agent usage, file reads, and result shape:
+Every `workflow.js` must export metadata with a planned phase outline. `metadata.inputInstructions` gives the resolver workflow-specific guidance without duplicating the argument list, and required `metadata.phases` makes the runbook shape visible before execution. The authoring model intentionally favors power-user/agent-authored runbooks over package-like shareability: inline schemas, prompt builders, top-level constants, and local paths are acceptable when they improve observability and ease of tweaking. Agent-generated workflows must document the default workflow function with JSDoc that covers purpose, input fields/defaults, phases, child agent usage, file reads, and result shape:
 
 ```js
 export const metadata = {
   name: "review",
   description: "Review a set of files and synthesize findings",
   inputInstructions: "Resolve explicit paths as files. Treat remaining prose as optional focus.",
+  phases: [
+    { title: "fanout", detail: "review each file independently" },
+    { title: "synthesis", detail: "combine findings" },
+  ],
 };
 
 /**
@@ -85,7 +90,7 @@ export default async function workflow({ files, focus = "general review" }) {
 }
 ```
 
-The workflow directory name is the command name. `metadata.name` should match the directory name or be validated against it. `metadata.description` is used for discovery, review UI, and display. `metadata.inputInstructions` is passed to the current-session resolver when freeform named-command input needs to become workflow JSON.
+The workflow directory name is the command name. `metadata.name` must match the directory name. `metadata.description` is used for discovery, review UI, and display. `metadata.inputInstructions` is passed to the current-session resolver when freeform named-command input needs to become workflow JSON. `metadata.phases` is a required list of `{ title, detail? }` entries used for preview and review; runtime `phase()` calls remain the source of actual progress.
 
 ## Storage Layout
 
@@ -108,7 +113,7 @@ const schema = readJson("schemas/finding.schema.json");
 
 Prompt templates owned by a workflow live under the workflow's `prompts/` directory. Workflows render those templates through `renderPrompt(templatePath, values)`, which uses simple `{{name}}` placeholder substitution. `readText`, `readJson`, and `renderPrompt` all stay scoped to the workflow directory.
 
-Structured agent helpers stay inside the same sandbox. `coerce` uses a no-tools child agent and JSON Schema validation retries for extraction. `mapreduce` first coerces an input prompt into a bare `{ items: [...] }` shape before map fan-out and reduction. `verifier` validates criteria objects with `name`, `description`, `guidelines`, `reasoning`, and optional `voters`, then runs criterion voter agents before a reduction agent.
+Structured agent helpers stay inside the same sandbox. `agent(prompt, { schema, maxAttempts? })` is the power-user path for child agents that do real work and must return a typed JSON result; the runtime wraps the task with the schema, retries with validation feedback, records validation failures as events/traces, and returns the parsed JSON value. `coerce` uses a no-tools child agent and JSON Schema validation retries for pure extraction. `mapreduce` first coerces an input prompt into a bare `{ items: [...] }` shape before map fan-out and reduction. `verifier` validates criteria objects with `name`, `description`, `guidelines`, `reasoning`, and optional `voters`, then runs criterion voter agents before a reduction agent. `trace(label, value?)` records workflow-local debug state in snapshots and run events for easier tweaking.
 
 Agent-facing helper tools support workflow authoring. `workflow_primitives` returns canonical primitive documentation and examples for workflow authors. `debug_workflow` runs a supplied workflow source in a temporary workflow root with fake child-agent responses, returning results, token counts, launched-agent prompts, snapshots, and errors without saving the workflow. Agents should use it only for small snippets/simple tasks with minimal or low-thinking model labels.
 
@@ -136,7 +141,7 @@ return agent("Use this research:\n\n" + research + "\n\nWrite the final answer."
 
 Workflow runs are live by default. All child-agent launches respect the global `.pi/settings.json` `workflow.maxParallelAgents` cap (default `4`): at most that many agents may be active across the whole workflow run, and extra `agent(...)` calls wait until a slot opens. The built-in `parallel` primitive also queues fan-out workers to avoid unbounded non-agent work; `mapreduce` and `verifier` use the same queue because their map/voter stages run through `parallel`.
 
-Every child agent launched for a workflow persists logs under `~/.pi/agent/sessions/<project-key>/<parent-run-id>/<agent-key>/`. The project key matches pi's encoded session directory naming for the current project, the parent run id is shared by all agents in the workflow run, and each agent directory includes `metadata.json`, append-only in-flight `events.jsonl`, and the pi session JSONL. The final workflow completion message sent back to the main session includes only the workflow session-log directory path, and pi-workflow also injects that path as a normal user message so the parent agent has it in context without bloating the custom completion entry. That directory contains `workflow-summary.json` with phases, fan-outs, agents, and result metadata; child-agent directory slugs include phase, fan-out, agent id, and label for searchable follow-up analysis. Token counts must never be estimated; workflow progress uses provider usage from events/session JSONL when available and otherwise leaves actual usage at zero/unknown.
+Every child agent launched for a workflow persists logs under `~/.pi/agent/sessions/<project-key>/<parent-run-id>/<agent-key>/`. The project key matches pi's encoded session directory naming for the current project, the parent run id is shared by all agents in the workflow run, and each agent directory includes `metadata.json`, append-only in-flight `events.jsonl`, and the pi session JSONL. The final workflow completion message sent back to the main session includes only the workflow session-log directory path, and pi-workflow also injects that path as a normal user message so the parent agent has it in context without bloating the custom completion entry. That directory contains `workflow-summary.json` with planned phases, runtime phases, traces, fan-outs, agents, and result metadata; child-agent directory slugs include phase, fan-out, agent id, and label for searchable follow-up analysis. Token counts must never be estimated; workflow progress uses provider usage from events/session JSONL when available and otherwise leaves actual usage at zero/unknown.
 
 Named slash-command runs may opt into additional workflow-level debugging logs with `--save-log`; saved logs live under `.pi/workflow-runs/<parent-run-id>/` and include run metadata, normalized input, the workflow source, append-only `events.jsonl`, a final snapshot, and either `result.json` or `error.json`. Persisted workflow logs are for inspection only and do not support resuming canceled or failed runs. The TUI progress display keeps a compact normalized-input args preview visible, keeps phase history visible, expands the active phase, collapses completed phase children, and shows model, thinking, provider input tokens, assistant output tokens, tool calls, and NET totals.
 

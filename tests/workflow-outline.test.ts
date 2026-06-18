@@ -19,7 +19,7 @@ const DEMO_SOURCE = `/**
  * Agent: research/facts/review/synthesis agents.
  * Result: final text.
  */
-export const metadata = { name: "demo", description: "Demo workflow", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+export const metadata = { name: "demo", description: "Demo workflow", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 
 export default async function workflow() {
   phase("research");
@@ -40,6 +40,7 @@ void test("outline_groups_stages_by_phase_with_metadata_and_jsdoc", () => {
 
   assert.equal(outline.metadata.name, "demo");
   assert.equal(outline.metadata.description, "Demo workflow");
+  assert.deepEqual(outline.metadata.phases, [{ title: "Run" }]);
   assert.ok(outline.jsdoc?.includes("Purpose: demo workflow"));
   assert.deepEqual(
     outline.sections.map((section) => section.phase),
@@ -89,7 +90,7 @@ void test("outline_extracts_coerce_prompt_role", () => {
 });
 
 void test("outline_extracts_mapreduce_and_verifier_prompt_roles", () => {
-  const source = `export const metadata = { name: "mr", description: "Map reduce", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const source = `export const metadata = { name: "mr", description: "Map reduce", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   await mapreduce({ inputPrompt: "split {{text}}", mapPrompt: "map {{item}}", reducePrompt: "reduce {{results}}", label: "mr" });
   return verifier({ criteria: [], criteriaPrompt: "judge {{name}}", reducePrompt: "tally {{votes}}", label: "v" });
@@ -109,7 +110,7 @@ export default async function workflow() {
 });
 
 void test("outline_classifies_renderPrompt_without_template_dir", () => {
-  const source = `export const metadata = { name: "rp", description: "Render prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const source = `export const metadata = { name: "rp", description: "Render prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return agent(renderPrompt("base.txt", { x: 1 }), { label: "r" });
 }
@@ -128,7 +129,7 @@ void test("outline_reads_renderPrompt_template_from_workflow_prompts_directory",
   const workflowDir = path.join(project, ".pi", "workflows", "rp");
   mkdirSync(path.join(workflowDir, "prompts"), { recursive: true });
   writeFileSync(path.join(workflowDir, "prompts", "base.txt"), "Review {{file}}.", "utf8");
-  const source = `export const metadata = { name: "rp", description: "Render prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const source = `export const metadata = { name: "rp", description: "Render prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return agent(renderPrompt("base.txt", { file: args.file }), { label: "r" });
 }
@@ -141,7 +142,7 @@ export default async function workflow() {
 });
 
 void test("outline_warns_about_dynamic_control_flow", () => {
-  const source = `export const metadata = { name: "loopy", description: "Loops", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+  const source = `export const metadata = { name: "loopy", description: "Loops", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   for (const item of args.items) {
     await agent("Handle " + item, { label: "handle" });

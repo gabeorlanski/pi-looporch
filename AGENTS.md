@@ -57,7 +57,7 @@ if an existing workflow fits:
 else:
   call workflow_primitives if syntax/details are needed
   draft .pi/workflows/<name>/workflow.js
-  include metadata { name, description, inputInstructions }
+  include metadata { name, description, inputInstructions, phases }
   document workflow(input) with JSDoc:
     purpose, input fields/defaults, phases, child agents, file reads, result
   prefer workflow({ field, optional = default }) over global args for new code
@@ -88,7 +88,7 @@ The workflow agent sees only what the workflow prompt gives it. Phases are progr
 - `extensions/`: pi command, tool, and TUI wiring. Parse/coerce user input here.
 - `src/`: testable workflow orchestration logic. Accept normalized inputs here.
 - `src/display/`: every TUI or visible text renderer lives in a focused display module.
-- `src/authoring-guide.ts`: generated workflow source guidance rendered into prompt templates.
+- `src/authoring-guide.ts`: generated workflow source guidance rendered into prompt templates. Keep this synchronized with any authoring convention change because it is the primary documentation future workflow-authoring agents see.
 - `src/prompts/`: raw prompt text files only; TypeScript interpolation lives outside this directory.
 - `tests/`: deterministic `node:test` coverage with fake agents only.
 - `docs/specs/`: workflow system design notes.
@@ -111,7 +111,9 @@ TypeScript interfaces/types are the source of truth:
 - Keep prompt copy in raw `.txt` files under `src/prompts/`.
 - Keep generated workflow authoring guidance in TypeScript and inject it into raw prompts through placeholders.
 - Keep workflow-local file reads in `readText`/`readJson`; use `renderPrompt` for prompt templates under the workflow's own `prompts/` directory.
-- Agent-generated workflow source must document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
+- Agent-generated workflow source must include required `metadata.phases` as the planned runbook outline and document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
+- Optimize workflow authoring for power-user/agent-authored executable runbooks: top-level constants, inline schemas, prompt-builder helpers, and local paths are fine when they improve observability and ease of tweaking.
+- Prefer `agent(prompt, { schema, maxAttempts? })` for structured child-agent work; use `trace(label, value?)` for workflow-local debug state that should show up in snapshots/run events.
 - Give every function a clear job; inline short helpers that only hide one expression or rename a local concept.
 - Prefer simple functions over managers, frameworks, or class hierarchies.
 - Inject agents/reviewers; never call real models from tests.

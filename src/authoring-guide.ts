@@ -8,13 +8,26 @@ const workflowSourceRequirements = [
   "Document the default workflow function with JSDoc before the function declaration.",
   "The workflow function JSDoc and parameter signature are the input contract: document purpose, expected input fields, defaults, phases, agent calls, file reads, and result shape there.",
   "Put input resolution guidance in metadata.inputInstructions; do not duplicate the argument list there.",
+  "List the planned runbook outline in metadata.phases; every workflow needs at least one phase with a title and optional detail.",
   "Do not import modules or use require().",
-  "Export `metadata` with name, description, and inputInstructions, plus one default workflow function.",
+  "Export `metadata` with name, description, inputInstructions, and phases, plus one default workflow function.",
+  "Lean into power-user runbook code: top-level constants, inline schemas, prompt builders, and local paths are fine when they make the workflow easier to tweak.",
   "Keep runtime logic explicit; use local helpers only when they remove real duplication or clarify a multi-step transformation.",
   "Phases are progress markers, not shared memory; pass data between phases by storing agent results and rendering them into later prompts.",
 ];
 
 const workflowPrimitiveExamples: Record<string, string> = {
+  agent: `const result = await agent("Analyze the run and return a finding object", {
+  label: "analysis",
+  reasoning: "medium",
+  schema: {
+    type: "object",
+    properties: { ok: { type: "boolean" }, summary: { type: "string" } },
+    required: ["ok", "summary"],
+    additionalProperties: false,
+  },
+});`,
+  trace: `trace("selected inputs", { count: items.length, first: items[0] });`,
   coerce: `const data = await coerce({
   schema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
   prompt: "Extract a title from: " + args.text,
@@ -56,9 +69,10 @@ return agent("Use this research:\\n\\n" + research + "\\n\\nWrite the final answ
 const workflowPrimitiveDocs: AuthoringDoc[] = [
   {
     name: "metadata",
-    signature: "export const metadata = { name: string, description: string, inputInstructions: string }",
+    signature:
+      "export const metadata = { name: string, description: string, inputInstructions: string, phases: { title: string, detail?: string }[] }",
     docstring:
-      "Static discovery and resolver guidance. name must match the workflow directory/tool name; description is shown in selection and review UI; inputInstructions tells the resolver how to map natural-language command input without duplicating the argument list.",
+      "Static discovery, resolver guidance, and planned runbook outline. name must match the workflow directory/tool name; description is shown in selection and review UI; inputInstructions tells the resolver how to map natural-language command input without duplicating the argument list; phases previews the expected execution shape before runtime phase() calls start.",
   },
   {
     name: "workflow",
@@ -78,11 +92,17 @@ const workflowPrimitiveDocs: AuthoringDoc[] = [
     docstring: "Adds a concise progress note. Use for durable milestones, not noisy per-item chatter.",
   },
   {
+    name: "trace",
+    signature: "trace(label: string, value?: unknown): void",
+    docstring:
+      "Records workflow-local debug data in snapshots and run events. Use it for tweakable intermediate choices, counts, and structured handoff state.",
+  },
+  {
     name: "agent",
     signature:
-      "agent(prompt: string, options?: { label?: string, model?: string, reasoning?: string, taskFile?: string }): Promise<unknown>",
+      "agent(prompt: string, options?: { label?: string, model?: string, reasoning?: string, taskFile?: string, schema?: JSONSchema, maxAttempts?: number }): Promise<unknown>",
     docstring:
-      "Launches a child agent with only the prompt you provide and launch metadata. Always pass needed prior results in the prompt.",
+      "Launches a child agent with only the prompt you provide and launch metadata. When schema is provided, retries until the response is JSON that validates and returns the parsed value. Always pass needed prior results in the prompt.",
   },
   {
     name: "parallel",

@@ -11,7 +11,7 @@ import {
   type ReviewComment,
 } from "../src/display/workflow-review.ts";
 
-const SOURCE = `export const metadata = { name: "demo", description: "Demo workflow", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+const SOURCE = `export const metadata = { name: "demo", description: "Demo workflow", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 /**
  * args: a topic string.
  * phase: Search then Synthesize.

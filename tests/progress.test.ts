@@ -7,8 +7,10 @@ void test("workflow_progress_table_collapses_completed_phase_children_and_expand
   const snapshot: WorkflowSnapshot = {
     workflowName: "review",
     description: "Review files",
+    plannedPhases: [],
     phases: ["collect", "fanout"],
     logs: ["hidden from compact progress"],
+    traces: [{ label: "selected inputs", phaseIndex: 2, phase: "fanout", value: { count: 2 } }],
     agents: [
       agent({
         id: 1,
@@ -68,6 +70,9 @@ void test("workflow_progress_table_collapses_completed_phase_children_and_expand
   assert.ok(!display.widgetLines.some((line) => line.includes("#1 inventory")));
   assert.ok(display.widgetLines.some((line) => line.includes("#3 b.ts") && line.includes("medium")));
   assert.ok(display.widgetLines.some((line) => line.includes("↳ using read")));
+  assert.ok(
+    display.widgetLines.some((line) => line.includes("trace selected inputs") && line.includes("fanout") && line.includes('"count":2')),
+  );
   assert.ok(display.widgetLines.some((line) => line.includes("NET 2/3 agents") && line.includes("2.4k in") && line.includes("6 tools")));
 });
 
@@ -75,8 +80,10 @@ void test("workflow_progress_table_falls_back_to_startup_phase_before_explicit_p
   const snapshot: WorkflowSnapshot = {
     workflowName: "select",
     description: "Select workflow",
+    plannedPhases: [],
     phases: [],
     logs: [],
+    traces: [],
     agents: [agent({ id: 1, label: "selector", status: "running", tokenCount: 1 })],
     fanOuts: [],
   };
@@ -92,8 +99,10 @@ void test("workflow_progress_table_numbers_repeated_phase_titles_by_original_ord
   const snapshot: WorkflowSnapshot = {
     workflowName: "repeat",
     description: "Repeat phase names",
+    plannedPhases: [],
     phases: ["scan", "scan"],
     logs: [],
+    traces: [],
     agents: [
       agent({ id: 1, phaseIndex: 1, phase: "scan", label: "first", status: "done", endedAt: 100 }),
       agent({ id: 2, phaseIndex: 2, phase: "scan", label: "second", status: "running" }),

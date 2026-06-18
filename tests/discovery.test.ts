@@ -16,7 +16,7 @@ void test("discover_workflows_skips_invalid_workflow_sources", async () => {
   await writeWorkflow(
     project,
     "valid",
-    `export const metadata = { name: "valid", description: "Valid workflow", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+    `export const metadata = { name: "valid", description: "Valid workflow", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return "ok";
 }`,
@@ -25,7 +25,7 @@ export default async function workflow() {
     project,
     "invalid",
     `import fs from "node:fs";
-export const metadata = { name: "invalid", description: "Invalid workflow", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+export const metadata = { name: "invalid", description: "Invalid workflow", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return fs.existsSync(".");
 }`,
@@ -46,7 +46,7 @@ void test("discover_workflows_allows_workflow_settings_without_workflow_dirs", a
   await writeWorkflow(
     project,
     "valid",
-    `export const metadata = { name: "valid", description: "Valid workflow", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+    `export const metadata = { name: "valid", description: "Valid workflow", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   return "ok";
 }`,

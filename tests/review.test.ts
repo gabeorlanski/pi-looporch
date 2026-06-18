@@ -7,11 +7,12 @@ void test("workflow_approval_lines_render_plan_source_summary_and_feedback_hint"
   const draft: GeneratedWorkflowDraft = {
     name: "smoke-created",
     source:
-      "export const metadata = { name: 'smoke-created', description: 'Return prompt', inputInstructions: 'Use the workflow function JSDoc and signature to resolve input.' };\nphase('run');\nawait agent(args.prompt);",
+      "export const metadata = { name: 'smoke-created', description: 'Return prompt', inputInstructions: 'Use the workflow function JSDoc and signature to resolve input.', phases: [{ title: 'Run' }] };\nphase('run');\nawait agent(args.prompt);",
     metadata: {
       name: "smoke-created",
       description: "Return prompt",
       inputInstructions: "Use the workflow function JSDoc and signature to resolve input.",
+      phases: [{ title: "Run" }],
     },
     proposal: {
       summary: "Create a smoke test workflow.",
@@ -39,6 +40,7 @@ void test("workflow_approval_feedback_mode_shows_feedback_entry", () => {
       name: "smoke-created",
       description: "Return prompt",
       inputInstructions: "Use the workflow function JSDoc and signature to resolve input.",
+      phases: [{ title: "Run" }],
     },
     proposal: {
       summary: "Create a smoke test workflow.",
@@ -62,6 +64,7 @@ void test("workflow_approval_lines_wrap_long_content_inside_frame", () => {
       name: "reports2phase2",
       description: "Convert repo2plan report directories into staged Library Design Bench phase-2 steps.",
       inputInstructions: "Use the workflow function JSDoc and signature to resolve input.",
+      phases: [{ title: "Run" }],
     },
     proposal: {
       summary:

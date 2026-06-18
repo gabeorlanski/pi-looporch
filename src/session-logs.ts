@@ -40,7 +40,9 @@ function workflowSessionSummary(options: WorkflowSessionSummaryOptions): Record<
   return {
     workflowName: options.snapshot.workflowName,
     description: options.snapshot.description,
+    plannedPhases: options.snapshot.plannedPhases,
     phases: options.snapshot.phases.map((title, index) => ({ index: index + 1, title })),
+    traces: options.snapshot.traces,
     agents: options.snapshot.agents.map((agent) => ({
       id: agent.id,
       label: agent.label,

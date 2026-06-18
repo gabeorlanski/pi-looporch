@@ -1,5 +1,5 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime.ts";
+import type { WorkflowAgentSnapshot, WorkflowSnapshot, WorkflowTraceSnapshot } from "../runtime.ts";
 
 const DEFAULT_WIDTH = 96;
 const MIN_WIDTH = 64;
@@ -71,6 +71,7 @@ export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDT
     summaryLine(snapshot, stats, state, safeWidth, theme),
     "",
     ...phaseSections(snapshot).flatMap((section) => renderPhaseSection(section, safeWidth, theme)),
+    ...traceLines(snapshot.traces, safeWidth, theme),
     "",
     netLine(snapshot, stats, safeWidth, theme),
   ];
@@ -159,6 +160,23 @@ function renderAgentRow(agent: WorkflowAgentSnapshot, width: number, theme: Prog
   const note = agent.error ?? (agent.status === "running" ? agent.message : undefined);
   if (note?.trim()) lines.push(fit(`        ${theme.fg(agent.error ? "error" : "muted", `↳ ${note.trim()}`)}`, width));
   return lines;
+}
+
+function traceLines(traces: WorkflowTraceSnapshot[], width: number, theme: ProgressTheme): string[] {
+  const recent = traces.slice(-3);
+  if (recent.length === 0) return [];
+  return [
+    "",
+    ...recent.map((trace) => {
+      const value = trace.value === undefined ? "" : ` ${traceValueText(trace.value)}`;
+      const phase = trace.phase ? ` · ${trace.phase}` : "";
+      return fit(`  ${theme.fg("muted", "trace")} ${theme.fg("text", trace.label)}${theme.fg("dim", `${phase}${value}`)}`, width);
+    }),
+  ];
+}
+
+function traceValueText(value: unknown): string {
+  return compactJson(value) ?? "[unrenderable]";
 }
 
 function netLine(snapshot: WorkflowSnapshot, stats: NetStats, width: number, theme: ProgressTheme): string {

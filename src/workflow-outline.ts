@@ -14,7 +14,7 @@ export interface OutlinePrompt {
   templatePath?: string;
 }
 
-export type OutlineStageKind = "agent" | "parallel" | "pipeline" | "coerce" | "mapreduce" | "verifier" | "log";
+export type OutlineStageKind = "agent" | "parallel" | "pipeline" | "coerce" | "mapreduce" | "verifier" | "log" | "trace";
 
 export interface OutlineStage {
   id: string;
@@ -34,7 +34,7 @@ export interface OutlineSection {
 }
 
 export interface WorkflowOutline {
-  metadata: { name: string; description: string };
+  metadata: { name: string; description: string; phases: { title: string; detail?: string }[] };
   jsdoc?: string;
   sections: OutlineSection[];
   warnings: string[];
@@ -54,7 +54,7 @@ export interface OutlineStageContext {
   phase?: string;
 }
 
-const STAGE_KINDS = new Set<OutlineStageKind>(["agent", "parallel", "pipeline", "coerce", "mapreduce", "verifier", "log"]);
+const STAGE_KINDS = new Set<OutlineStageKind>(["agent", "parallel", "pipeline", "coerce", "mapreduce", "verifier", "log", "trace"]);
 
 export function indexOutlinePrompts(outline: WorkflowOutline): Map<string, OutlinePrompt> {
   const prompts = new Map<string, OutlinePrompt>();
@@ -165,9 +165,9 @@ function buildStage(call: ts.CallExpression, kind: OutlineStageKind, ctx: Outlin
     const promptArg = args.at(0);
     if (promptArg) stage.prompts.push(extractPrompt(promptArg, "prompt", ctx));
     applyOptions(stage, objectLiteral(args.at(1)));
-  } else if (kind === "log") {
+  } else if (kind === "log" || kind === "trace") {
     const messageArg = args.at(0);
-    if (messageArg) stage.prompts.push(extractPrompt(messageArg, "message", ctx));
+    if (messageArg) stage.prompts.push(extractPrompt(messageArg, kind === "log" ? "message" : "label", ctx));
   } else if (kind === "coerce") {
     const optionsArg = objectLiteral(args.at(0));
     pushPromptFromProperty(stage, optionsArg, "prompt", ctx);
@@ -355,7 +355,11 @@ function findNamedFunctionBody(sourceFile: ts.SourceFile, name: string): ts.Node
   return undefined;
 }
 
-function extractOutlineMetadata(sourceFile: ts.SourceFile): { name: string; description: string } {
+function extractOutlineMetadata(sourceFile: ts.SourceFile): {
+  name: string;
+  description: string;
+  phases: { title: string; detail?: string }[];
+} {
   for (const statement of sourceFile.statements) {
     if (!ts.isVariableStatement(statement)) continue;
     for (const declaration of statement.declarationList.declarations) {
@@ -364,11 +368,24 @@ function extractOutlineMetadata(sourceFile: ts.SourceFile): { name: string; desc
         return {
           name: stringProperty(declaration.initializer, "name") ?? "",
           description: stringProperty(declaration.initializer, "description") ?? "",
+          phases: phaseMetadataProperty(declaration.initializer),
         };
       }
     }
   }
-  return { name: "", description: "" };
+  return { name: "", description: "", phases: [] };
+}
+
+function phaseMetadataProperty(object: ts.ObjectLiteralExpression): { title: string; detail?: string }[] {
+  const initializer = propertyInitializer(object, "phases");
+  if (!initializer || !ts.isArrayLiteralExpression(initializer)) return [];
+  return initializer.elements.flatMap((element) => {
+    if (!ts.isObjectLiteralExpression(element)) return [];
+    const title = stringProperty(element, "title");
+    if (title === undefined) return [];
+    const detail = stringProperty(element, "detail");
+    return [{ title, ...(detail !== undefined ? { detail } : {}) }];
+  });
 }
 
 function extractLeadingJsDoc(source: string): string | undefined {

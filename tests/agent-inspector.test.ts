@@ -7,8 +7,10 @@ void test("agent_inspector_header_identifies_the_selected_agent", () => {
   const snapshot: WorkflowSnapshot = {
     workflowName: "review",
     description: "",
+    plannedPhases: [],
     phases: ["collect", "fanout"],
     logs: [],
+    traces: [],
     agents: [
       agent({ id: 1, phaseIndex: 1, phase: "collect", label: "inventory", status: "done" }),
       agent({
@@ -38,14 +40,25 @@ void test("agent_inspector_header_identifies_the_selected_agent", () => {
 });
 
 void test("agent_inspector_header_clamps_selection_and_handles_empty", () => {
-  const empty: WorkflowSnapshot = { workflowName: "x", description: "", phases: [], logs: [], agents: [], fanOuts: [] };
+  const empty: WorkflowSnapshot = {
+    workflowName: "x",
+    description: "",
+    plannedPhases: [],
+    phases: [],
+    logs: [],
+    traces: [],
+    agents: [],
+    fanOuts: [],
+  };
   assert.ok(agentInspectorHeaderLines(empty, 0, 80).some((line) => line.includes("No agents")));
 
   const snapshot: WorkflowSnapshot = {
     workflowName: "x",
     description: "",
+    plannedPhases: [],
     phases: [],
     logs: [],
+    traces: [],
     agents: [agent({ id: 1, label: "only", status: "running" })],
     fanOuts: [],
   };

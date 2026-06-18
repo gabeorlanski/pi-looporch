@@ -20,16 +20,20 @@ void test("workflow_snapshot_messages_report_new_phases_logs_and_agent_status", 
   const previous: WorkflowSnapshot = {
     workflowName: "review",
     description: "Review files",
+    plannedPhases: [],
     phases: [],
     logs: [],
+    traces: [],
     agents: [],
     fanOuts: [],
   };
   const next: WorkflowSnapshot = {
     workflowName: "review",
     description: "Review files",
+    plannedPhases: [],
     phases: ["fanout"],
     logs: ["reading files"],
+    traces: [],
     agents: [
       {
         id: 1,

@@ -9,10 +9,16 @@ import type { TSchema } from "typebox";
 
 export type ReasoningLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
+export interface WorkflowPhaseMetadata {
+  title: string;
+  detail?: string;
+}
+
 export interface WorkflowMetadata {
   name: string;
   description: string;
   inputInstructions: string;
+  phases: WorkflowPhaseMetadata[];
 }
 
 export interface WorkflowAgentOptions {
@@ -20,6 +26,8 @@ export interface WorkflowAgentOptions {
   reasoning?: ReasoningLevel;
   model?: string;
   taskFile?: string;
+  schema?: unknown;
+  maxAttempts?: number;
   signal?: AbortSignal;
   sessionLog?: WorkflowAgentSessionLog;
   tools?: boolean;
@@ -87,11 +95,20 @@ export interface WorkflowFanOutSnapshot {
   error: number;
 }
 
+export interface WorkflowTraceSnapshot {
+  label: string;
+  phaseIndex: number;
+  phase?: string;
+  value?: unknown;
+}
+
 export interface WorkflowSnapshot {
   workflowName: string;
   description: string;
+  plannedPhases: WorkflowPhaseMetadata[];
   phases: string[];
   logs: string[];
+  traces: WorkflowTraceSnapshot[];
   agents: WorkflowAgentSnapshot[];
   fanOuts: WorkflowFanOutSnapshot[];
   input?: unknown;
@@ -99,9 +116,11 @@ export interface WorkflowSnapshot {
 }
 
 export type WorkflowEvent =
-  | { type: "run_started"; workflowName: string; description: string }
+  | { type: "run_started"; workflowName: string; description: string; plannedPhases: WorkflowPhaseMetadata[] }
   | { type: "phase"; title: string; index: number }
   | { type: "log"; message: string }
+  | { type: "trace"; trace: WorkflowTraceSnapshot }
+  | { type: "agent_schema_validation_failed"; agentId: number; attempt: number; error: string }
   | { type: "fanout_started"; fanOut: WorkflowFanOutSnapshot }
   | { type: "fanout_progress"; fanOut: WorkflowFanOutSnapshot }
   | { type: "agent_started"; agent: WorkflowAgentSnapshot }
@@ -205,8 +224,10 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
   const snapshot: WorkflowSnapshot = {
     workflowName,
     description: metadata.description,
+    plannedPhases: cloneSerializable(metadata.phases) as WorkflowPhaseMetadata[],
     phases: [],
     logs: [],
+    traces: [],
     agents: [],
     fanOuts: [],
     input: cloneSerializable(options.input),
@@ -220,7 +241,12 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
   };
   const compiled = compileWorkflow(source, entryFile, workflowGlobals(activeRuntime, workflowDir));
   validateWorkflowMetadata(compiled.metadata, workflowName);
-  activeRuntime.emitEvent({ type: "run_started", workflowName, description: metadata.description });
+  activeRuntime.emitEvent({
+    type: "run_started",
+    workflowName,
+    description: metadata.description,
+    plannedPhases: cloneSerializable(metadata.phases) as WorkflowPhaseMetadata[],
+  });
   activeRuntime.emit();
   try {
     const result = cloneSerializable(await compiled.workflow(options.input));
@@ -261,12 +287,22 @@ export function resolveInsideWorkflow(workflowDir: string, relativePath: string)
 
 export function validateWorkflowMetadata(metadata: unknown, workflowName: string): asserts metadata is WorkflowMetadata {
   if (typeof metadata !== "object" || metadata === null) throw new Error("workflow.js must export metadata");
-  const candidate = metadata as { name?: unknown; description?: unknown; inputInstructions?: unknown };
+  const candidate = metadata as { name?: unknown; description?: unknown; inputInstructions?: unknown; phases?: unknown };
   if (candidate.name !== workflowName) throw new Error(`Workflow metadata name must be '${workflowName}'`);
   if (typeof candidate.description !== "string" || !candidate.description.trim())
     throw new Error("Workflow metadata description must be non-empty");
   if (typeof candidate.inputInstructions !== "string" || !candidate.inputInstructions.trim())
     throw new Error("Workflow metadata inputInstructions must describe how to resolve command input");
+  if (!Array.isArray(candidate.phases) || candidate.phases.length === 0)
+    throw new Error("Workflow metadata phases must list at least one planned phase");
+  candidate.phases.forEach((phase, index) => {
+    if (typeof phase !== "object" || phase === null) throw new Error(`Workflow metadata phases[${String(index)}] must be an object`);
+    const planned = phase as { title?: unknown; detail?: unknown };
+    if (typeof planned.title !== "string" || !planned.title.trim())
+      throw new Error(`Workflow metadata phases[${String(index)}].title must be non-empty`);
+    if (planned.detail !== undefined && typeof planned.detail !== "string")
+      throw new Error(`Workflow metadata phases[${String(index)}].detail must be a string when present`);
+  });
 }
 
 function metadataGlobals(options: RunWorkflowOptions, workflowDir: string): Record<string, unknown> {
@@ -277,6 +313,7 @@ function metadataGlobals(options: RunWorkflowOptions, workflowDir: string): Reco
     agent: unavailableMetadataPrimitive("agent"),
     phase: unavailableMetadataPrimitive("phase"),
     log: unavailableMetadataPrimitive("log"),
+    trace: unavailableMetadataPrimitive("trace"),
     readText: (relativePath: string) => readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8"),
     readJson: (relativePath: string) => JSON.parse(readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8")) as unknown,
     renderPrompt: (templatePath: string, values: unknown) => renderWorkflowPrompt(workflowDir, templatePath, values),
@@ -317,6 +354,7 @@ function workflowGlobals(runtime: ActiveWorkflowRuntime, workflowDir: string): R
       runtime.emitEvent({ type: "log", message });
       runtime.emit();
     },
+    trace: (label: string, value?: unknown) => recordTrace(runtime, label, value),
     readText: (relativePath: string) => readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8"),
     readJson: (relativePath: string) => JSON.parse(readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8")) as unknown,
     renderPrompt: (templatePath: string, values: unknown) => renderWorkflowPrompt(workflowDir, templatePath, values),
@@ -328,6 +366,27 @@ function workflowGlobals(runtime: ActiveWorkflowRuntime, workflowDir: string): R
     mapreduce: (options: MapReduceOptions) => mapReduceWithAgents(runtime, options),
     verifier: (options: VerifierOptions) => verifyWithAgents(runtime, options),
   };
+}
+
+function recordTrace(runtime: ActiveWorkflowRuntime, label: string, value?: unknown): void {
+  if (typeof label !== "string" || !label.trim()) throw new Error("trace label must be non-empty");
+  const trace: WorkflowTraceSnapshot = {
+    label,
+    phaseIndex: runtime.snapshot.phases.length,
+    ...(runtime.snapshot.phases.at(-1) ? { phase: runtime.snapshot.phases.at(-1) } : {}),
+    ...(value !== undefined ? { value: traceValue(value) } : {}),
+  };
+  runtime.snapshot.traces.push(trace);
+  runtime.emitEvent({ type: "trace", trace });
+  runtime.emit();
+}
+
+function traceValue(value: unknown): unknown {
+  try {
+    return cloneSerializable(value);
+  } catch {
+    return String(value);
+  }
 }
 
 async function runParallel<T, R>(
@@ -459,7 +518,7 @@ function createAgentLaunchQueue(maxParallelAgents: number): AgentLaunchQueue {
 
 async function coerceWithAgent(runtime: ActiveWorkflowRuntime, options: CoerceOptions): Promise<unknown> {
   if (typeof options.prompt !== "string" || !options.prompt.trim()) throw new Error("coerce prompt must be non-empty");
-  const maxAttempts = normalizeAttemptCount(options.maxAttempts);
+  const maxAttempts = normalizeAttemptCount(options.maxAttempts, "coerce");
   let validationFailure: string | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const response = await runAgent(runtime, coercePrompt(options.prompt, options.schema, validationFailure), {
@@ -471,14 +530,14 @@ async function coerceWithAgent(runtime: ActiveWorkflowRuntime, options: CoerceOp
     const parsed = parseJsonResponse(response);
     if (!parsed.ok) validationFailure = parsed.error;
     else if (Value.Check(options.schema as TSchema, parsed.value)) return parsed.value;
-    else validationFailure = "response did not match schema";
+    else validationFailure = schemaValidationFailure(options.schema, parsed.value);
   }
   throw new Error(`coerce failed schema validation after ${String(maxAttempts)} attempts: ${validationFailure ?? "unknown error"}`);
 }
 
-function normalizeAttemptCount(maxAttempts: number | undefined): number {
+function normalizeAttemptCount(maxAttempts: number | undefined, primitive: string): number {
   if (maxAttempts === undefined) return 3;
-  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) throw new Error("coerce maxAttempts must be a positive integer");
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) throw new Error(`${primitive} maxAttempts must be a positive integer`);
   return maxAttempts;
 }
 
@@ -616,6 +675,38 @@ function normalizeVerifierCriteria(criteria: unknown): VerifierCriterion[] {
 }
 
 async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
+  if (agentOptions.schema === undefined) return runRawAgent(runtime, prompt, agentOptions);
+  const { schema, maxAttempts, ...launchOptions } = agentOptions;
+  const attempts = normalizeAttemptCount(maxAttempts, "agent");
+  let validationFailure: string | undefined;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const result = await runRawAgent(runtime, structuredAgentPrompt(prompt, schema, validationFailure), launchOptions);
+    const parsed = parseJsonResponse(result);
+    if (!parsed.ok) validationFailure = parsed.error;
+    else if (Value.Check(schema as TSchema, parsed.value)) return parsed.value;
+    else validationFailure = schemaValidationFailure(schema, parsed.value);
+    const lastAgent = runtime.snapshot.agents.at(-1);
+    if (lastAgent) runtime.emitEvent({ type: "agent_schema_validation_failed", agentId: lastAgent.id, attempt, error: validationFailure });
+    recordTrace(runtime, `${launchOptions.label ?? "agent"} schema validation failed`, { attempt, error: validationFailure });
+  }
+  throw new Error(`agent failed schema validation after ${String(attempts)} attempts: ${validationFailure ?? "unknown error"}`);
+}
+
+function structuredAgentPrompt(prompt: string, schema: unknown, validationFailure: string | undefined): string {
+  return [
+    "Complete the task, then return only JSON that validates against this JSON Schema. Do not include markdown fences, commentary, or extra text outside the JSON value.",
+    `Schema:\n${JSON.stringify(schema, null, 2)}`,
+    `Task:\n${prompt}`,
+    ...(validationFailure ? [`Previous response failed validation:\n${validationFailure}\nReturn corrected JSON only.`] : []),
+  ].join("\n\n");
+}
+
+function schemaValidationFailure(schema: unknown, value: unknown): string {
+  const errors = [...Value.Errors(schema as TSchema, value)].slice(0, 5).map((error) => `${error.instancePath || "/"} ${error.message}`);
+  return errors.length ? errors.join("; ") : "response did not match schema";
+}
+
+async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
   if (runtime.options.signal?.aborted) throw new Error("Workflow aborted");
   const releaseAgentSlot = await runtime.agentLaunchQueue.acquire(runtime.options.signal);
   try {
@@ -690,8 +781,11 @@ function workflowAgentOptionsForLaunch(
   agent: WorkflowAgentSnapshot,
   agentOptions: WorkflowAgentOptions,
 ): WorkflowAgentOptions {
+  const launchOptions: WorkflowAgentOptions = { ...agentOptions };
+  delete launchOptions.schema;
+  delete launchOptions.maxAttempts;
   return {
-    ...agentOptions,
+    ...launchOptions,
     ...(runtime.options.signal ? { signal: runtime.options.signal } : {}),
     ...(runtime.options.agentLogParentId
       ? {
@@ -836,8 +930,10 @@ function applySourceEdits(source: string, edits: SourceEdit[]): string {
 function cloneSnapshot(snapshot: WorkflowSnapshot): WorkflowSnapshot {
   return {
     ...snapshot,
+    plannedPhases: snapshot.plannedPhases.map((phase) => ({ ...phase })),
     phases: [...snapshot.phases],
     logs: [...snapshot.logs],
+    traces: snapshot.traces.map((trace) => ({ ...trace, ...(trace.value !== undefined ? { value: cloneSerializable(trace.value) } : {}) })),
     agents: snapshot.agents.map((agent) => ({ ...agent })),
     fanOuts: snapshot.fanOuts.map((fanOut) => ({ ...fanOut })),
   };

@@ -457,7 +457,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function emptySnapshot(): WorkflowSnapshot {
-  return { workflowName: "", description: "", phases: [], logs: [], agents: [], fanOuts: [] };
+  return { workflowName: "", description: "", plannedPhases: [], phases: [], logs: [], traces: [], agents: [], fanOuts: [] };
 }
 
 function updateRunningWorkflowUi(

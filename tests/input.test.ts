@@ -29,7 +29,7 @@ void test("workflow_input_leaves_freeform_for_steerable_session_resolution", () 
 
 void test("workflow_input_contract_uses_function_signature_and_jsdoc", () => {
   const contract =
-    extractWorkflowInputContract(`export const metadata = { name: "plan", description: "Plan", inputInstructions: "Resolve inputs." };
+    extractWorkflowInputContract(`export const metadata = { name: "plan", description: "Plan", inputInstructions: "Resolve inputs.", phases: [{ title: "Run" }] };
 /**
  * Input: repo and problem are required; mode defaults to fast.
  * Phase: plan.

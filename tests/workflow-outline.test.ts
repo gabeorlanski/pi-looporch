@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import {
   parseWorkflowOutline,
@@ -16,7 +19,7 @@ const DEMO_SOURCE = `/**
  * Agent: research/facts/review/synthesis agents.
  * Result: final text.
  */
-export const metadata = { name: "demo", description: "Demo workflow" };
+export const metadata = { name: "demo", description: "Demo workflow", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 
 export default async function workflow() {
   phase("research");
@@ -86,7 +89,7 @@ void test("outline_extracts_coerce_prompt_role", () => {
 });
 
 void test("outline_extracts_mapreduce_and_verifier_prompt_roles", () => {
-  const source = `export const metadata = { name: "mr", description: "Map reduce" };
+  const source = `export const metadata = { name: "mr", description: "Map reduce", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   await mapreduce({ inputPrompt: "split {{text}}", mapPrompt: "map {{item}}", reducePrompt: "reduce {{results}}", label: "mr" });
   return verifier({ criteria: [], criteriaPrompt: "judge {{name}}", reducePrompt: "tally {{votes}}", label: "v" });
@@ -106,7 +109,7 @@ export default async function workflow() {
 });
 
 void test("outline_classifies_renderPrompt_without_template_dir", () => {
-  const source = `export const metadata = { name: "rp", description: "Render prompt" };
+  const source = `export const metadata = { name: "rp", description: "Render prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return agent(renderPrompt("base.txt", { x: 1 }), { label: "r" });
 }
@@ -120,8 +123,25 @@ export default async function workflow() {
   assert.ok(prompt.text.includes("renderPrompt"));
 });
 
+void test("outline_reads_renderPrompt_template_from_workflow_prompts_directory", () => {
+  const project = mkdtempSync(path.join(tmpdir(), "pi-workflow-outline-"));
+  const workflowDir = path.join(project, ".pi", "workflows", "rp");
+  mkdirSync(path.join(workflowDir, "prompts"), { recursive: true });
+  writeFileSync(path.join(workflowDir, "prompts", "base.txt"), "Review {{file}}.", "utf8");
+  const source = `export const metadata = { name: "rp", description: "Render prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+export default async function workflow() {
+  return agent(renderPrompt("base.txt", { file: args.file }), { label: "r" });
+}
+`;
+  const outline = parseWorkflowOutline(source, { workflowDir });
+  const prompt = outline.sections[0].stages[0].prompts[0];
+
+  assert.equal(prompt.source, "renderPrompt");
+  assert.equal(prompt.text, "Review {{file}}.");
+});
+
 void test("outline_warns_about_dynamic_control_flow", () => {
-  const source = `export const metadata = { name: "loopy", description: "Loops" };
+  const source = `export const metadata = { name: "loopy", description: "Loops", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   for (const item of args.items) {
     await agent("Handle " + item, { label: "handle" });

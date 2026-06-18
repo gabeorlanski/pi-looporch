@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Type } from "typebox";
@@ -8,6 +8,7 @@ import { workflowRootsForProject } from "./discovery.ts";
 import {
   normalizeWorkflowName,
   parseWorkflowSourceMetadata,
+  resolveWorkflowDirectory,
   runWorkflowFromDirectory,
   type WorkflowAgent,
   type WorkflowSnapshot,
@@ -16,6 +17,7 @@ import { progressDisplay } from "./display/progress.ts";
 import { reviewAndSaveWorkflowDraft, type WorkflowProposal, type WorkflowReviewer } from "./request.ts";
 import { createWorkflowRunId } from "./run-logs.ts";
 import { workflowPrimitiveGuide } from "./authoring-guide.ts";
+import { extractWorkflowInputContract, validateWorkflowInput } from "./input.ts";
 
 export interface WorkflowToolsOptions {
   cwd?: string;
@@ -57,13 +59,17 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
       const agent = options.agent ?? options.agentForContext?.(ctx);
       if (!agent) throw new Error("run_workflow requires a workflow agent");
       const workflowName = normalizeWorkflowName(params.name);
+      const workflowRoots = await workflowRootsForProject(cwd);
+      const workflowDir = resolveWorkflowDirectory(cwd, workflowName, workflowRoots);
+      const source = await readFile(path.join(workflowDir, "workflow.js"), "utf8");
+      const input = validateWorkflowInput(params.input ?? {}, workflowName, extractWorkflowInputContract(source));
       const parentRunId = createWorkflowRunId(workflowName);
       const result = await runWorkflowFromDirectory({
         cwd,
         workflowName,
-        input: params.input ?? {},
+        input,
         agent,
-        workflowRoots: await workflowRootsForProject(cwd),
+        workflowRoots,
         agentLogParentId: parentRunId,
         signal,
         onSnapshot: (snapshot) => {

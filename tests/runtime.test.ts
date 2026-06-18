@@ -21,7 +21,7 @@ void test("workflow_runs_with_core_primitives", async () => {
   await writeWorkflow(
     project,
     "review",
-    `export const metadata = { name: "review", description: "Review files" };
+    `export const metadata = { name: "review", description: "Review files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   phase("fanout");
   const reviewed = await parallel(args.files, (file) => agent(readText("prompt.txt") + file, { label: file }), { label: "file reviews" });
@@ -83,7 +83,7 @@ void test("workflow_coerces_agent_output_to_json_schema", async () => {
   await writeWorkflow(
     project,
     "coerce",
-    `export const metadata = { name: "coerce", description: "Coerce output" };
+    `export const metadata = { name: "coerce", description: "Coerce output", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return coerce({
     schema: {
@@ -124,15 +124,14 @@ export default async function workflow() {
 
 void test("workflow_renders_project_prompt_template", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
-  await mkdir(path.join(project, ".pi", "workflows", "templated.prompts"), { recursive: true });
-  await writeFile(path.join(project, ".pi", "workflows", "templated.prompts", "review.txt"), "Review {{file}} for {{focus}}.", "utf8");
   await writeWorkflow(
     project,
     "templated",
-    `export const metadata = { name: "templated", description: "Templated prompt" };
+    `export const metadata = { name: "templated", description: "Templated prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return agent(renderPrompt("review.txt", { file: args.file, focus: args.focus }), { label: "review" });
 }`,
+    { "prompts/review.txt": "Review {{file}} for {{focus}}." },
   );
   const agent: WorkflowAgent = (prompt, options) => Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
 
@@ -146,21 +145,20 @@ export default async function workflow() {
   assert.equal(result.result, "review:Review src/index.ts for edge cases.");
 });
 
-void test("workflow_renders_prompt_template_from_external_workflow_root_sibling", async () => {
+void test("workflow_renders_prompt_template_from_external_workflow_root", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   const workflowRoot = await mkdtemp(path.join(tmpdir(), "pi-workflow-root-"));
   const workflowDir = path.join(workflowRoot, "external-prompt");
-  await mkdir(workflowDir, { recursive: true });
-  await mkdir(path.join(workflowRoot, "external-prompt.prompts", "review"), { recursive: true });
+  await mkdir(path.join(workflowDir, "prompts", "review"), { recursive: true });
   await writeFile(
     path.join(workflowDir, "workflow.js"),
-    `export const metadata = { name: "external-prompt", description: "External prompt" };
+    `export const metadata = { name: "external-prompt", description: "External prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return renderPrompt("review/base.txt", { topic: args.topic });
 }`,
     "utf8",
   );
-  await writeFile(path.join(workflowRoot, "external-prompt.prompts", "review", "base.txt"), "External {{topic}} prompt.", "utf8");
+  await writeFile(path.join(workflowDir, "prompts", "review", "base.txt"), "External {{topic}} prompt.", "utf8");
   const agent: WorkflowAgent = () => Promise.resolve("unused");
 
   const result = await runWorkflowFromDirectory({
@@ -174,12 +172,32 @@ export default async function workflow() {
   assert.equal(result.result, "External template prompt.");
 });
 
+void test("workflow_does_not_read_legacy_sibling_prompt_template", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await mkdir(path.join(project, ".pi", "workflows", "legacy.prompts"), { recursive: true });
+  await writeFile(path.join(project, ".pi", "workflows", "legacy.prompts", "review.txt"), "Legacy {{topic}} prompt.", "utf8");
+  await writeWorkflow(
+    project,
+    "legacy",
+    `export const metadata = { name: "legacy", description: "Legacy prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+export default async function workflow() {
+  return renderPrompt("review.txt", { topic: args.topic });
+}`,
+  );
+  const agent: WorkflowAgent = () => Promise.resolve("unused");
+
+  await assert.rejects(
+    runWorkflowFromDirectory({ cwd: project, workflowName: "legacy", input: { topic: "template" }, agent }),
+    /Prompt template not found: review\.txt/,
+  );
+});
+
 void test("workflow_mapreduce_coerces_items_maps_them_and_reduces_results", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
     "mapreduce",
-    `export const metadata = { name: "mapreduce", description: "Map reduce" };
+    `export const metadata = { name: "mapreduce", description: "Map reduce", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return mapreduce({
     inputPrompt: "Split {{topic}} into items",
@@ -217,7 +235,7 @@ void test("workflow_verifier_runs_criterion_voters_and_reduces_votes", async () 
   await writeWorkflow(
     project,
     "verifier",
-    `export const metadata = { name: "verifier", description: "Verify with rubric" };
+    `export const metadata = { name: "verifier", description: "Verify with rubric", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return verifier({
     criteria: [
@@ -260,7 +278,7 @@ void test("workflow_emits_heartbeat_snapshots_while_agent_is_running", async () 
   await writeWorkflow(
     project,
     "heartbeat",
-    `export const metadata = { name: "heartbeat", description: "Heartbeat" };
+    `export const metadata = { name: "heartbeat", description: "Heartbeat", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return agent("wait", { label: "slow" });
 }`,
@@ -286,7 +304,7 @@ void test("workflow_passes_session_log_context_to_each_launched_agent", async ()
   await writeWorkflow(
     project,
     "logged",
-    `export const metadata = { name: "logged", description: "Logged agents" };
+    `export const metadata = { name: "logged", description: "Logged agents", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   phase("scan");
   await agent("first", { label: "Review src/index.ts" });
@@ -335,7 +353,7 @@ void test("workflow_sandbox_blocks_ambient_authority_and_file_escapes", async ()
   await writeWorkflow(
     project,
     "process",
-    `export const metadata = { name: "process", description: "Process access" };
+    `export const metadata = { name: "process", description: "Process access", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return process.cwd();
 }`,
@@ -345,7 +363,7 @@ export default async function workflow() {
   await writeWorkflow(
     project,
     "escape",
-    `export const metadata = { name: "escape", description: "Escape access" };
+    `export const metadata = { name: "escape", description: "Escape access", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return readText("../secret.txt");
 }`,
@@ -355,7 +373,7 @@ export default async function workflow() {
   await writeWorkflow(
     project,
     "prompt-escape",
-    `export const metadata = { name: "prompt-escape", description: "Prompt escape" };
+    `export const metadata = { name: "prompt-escape", description: "Prompt escape", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return renderPrompt("../secret.txt", {});
 }`,
@@ -372,7 +390,7 @@ void test("workflow_module_syntax_check_ignores_prompt_text", async () => {
   await writeWorkflow(
     project,
     "prompt-text",
-    `export const metadata = { name: "prompt-text", description: "Prompt text" };
+    `export const metadata = { name: "prompt-text", description: "Prompt text", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return agent("Do not import the agent's code or write export default examples.", { label: "prompt text" });
 }`,
@@ -390,7 +408,7 @@ void test("workflow_module_syntax_check_blocks_actual_module_loads", async () =>
     project,
     "static-import",
     `import fs from "node:fs";
-export const metadata = { name: "static-import", description: "Static import" };
+export const metadata = { name: "static-import", description: "Static import", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return fs.existsSync(".");
 }`,
@@ -403,7 +421,7 @@ export default async function workflow() {
   await writeWorkflow(
     project,
     "dynamic-import",
-    `export const metadata = { name: "dynamic-import", description: "Dynamic import" };
+    `export const metadata = { name: "dynamic-import", description: "Dynamic import", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return import("node:fs");
 }`,
@@ -416,7 +434,7 @@ export default async function workflow() {
   await writeWorkflow(
     project,
     "require",
-    `export const metadata = { name: "require", description: "Require" };
+    `export const metadata = { name: "require", description: "Require", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
 export default async function workflow() {
   return require("node:fs");
 }`,

@@ -12,6 +12,7 @@ export type ReasoningLevel = "off" | "minimal" | "low" | "medium" | "high" | "xh
 export interface WorkflowMetadata {
   name: string;
   description: string;
+  inputInstructions: string;
 }
 
 export interface WorkflowAgentOptions {
@@ -87,6 +88,7 @@ export interface WorkflowSnapshot {
   logs: string[];
   agents: WorkflowAgentSnapshot[];
   fanOuts: WorkflowFanOutSnapshot[];
+  input?: unknown;
   result?: unknown;
 }
 
@@ -131,7 +133,7 @@ export interface WorkflowRunResult {
   snapshot: WorkflowSnapshot;
 }
 
-type WorkflowFunction = () => unknown;
+type WorkflowFunction = (input: unknown) => unknown;
 type PipelineStage<T> = ((item: T, index: number) => Promise<T> | T) | { run: (item: T, index: number) => Promise<T> | T };
 
 interface CoerceOptions {
@@ -187,7 +189,15 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
   const { metadata } = compileWorkflow(source, entryFile, metadataGlobals(options, workflowDir));
   validateWorkflowMetadata(metadata, workflowName);
 
-  const snapshot: WorkflowSnapshot = { workflowName, description: metadata.description, phases: [], logs: [], agents: [], fanOuts: [] };
+  const snapshot: WorkflowSnapshot = {
+    workflowName,
+    description: metadata.description,
+    phases: [],
+    logs: [],
+    agents: [],
+    fanOuts: [],
+    input: cloneSerializable(options.input),
+  };
   const activeRuntime: ActiveWorkflowRuntime = {
     options,
     snapshot,
@@ -199,7 +209,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
   activeRuntime.emitEvent({ type: "run_started", workflowName, description: metadata.description });
   activeRuntime.emit();
   try {
-    const result = cloneSerializable(await compiled.workflow());
+    const result = cloneSerializable(await compiled.workflow(options.input));
     snapshot.result = result;
     activeRuntime.emitEvent({ type: "run_completed", result });
     activeRuntime.emit();
@@ -237,10 +247,12 @@ export function resolveInsideWorkflow(workflowDir: string, relativePath: string)
 
 export function validateWorkflowMetadata(metadata: unknown, workflowName: string): asserts metadata is WorkflowMetadata {
   if (typeof metadata !== "object" || metadata === null) throw new Error("workflow.js must export metadata");
-  const candidate = metadata as { name?: unknown; description?: unknown };
+  const candidate = metadata as { name?: unknown; description?: unknown; inputInstructions?: unknown };
   if (candidate.name !== workflowName) throw new Error(`Workflow metadata name must be '${workflowName}'`);
   if (typeof candidate.description !== "string" || !candidate.description.trim())
     throw new Error("Workflow metadata description must be non-empty");
+  if (typeof candidate.inputInstructions !== "string" || !candidate.inputInstructions.trim())
+    throw new Error("Workflow metadata inputInstructions must describe how to resolve command input");
 }
 
 function metadataGlobals(options: RunWorkflowOptions, workflowDir: string): Record<string, unknown> {
@@ -434,7 +446,7 @@ function renderWorkflowPrompt(workflowDir: string, templatePath: string, values:
 }
 
 function workflowPromptDirectory(workflowDir: string): string {
-  return path.join(path.dirname(workflowDir), `${path.basename(workflowDir)}.prompts`);
+  return path.join(workflowDir, "prompts");
 }
 
 function resolvePromptTemplate(promptDir: string, templatePath: string): string {

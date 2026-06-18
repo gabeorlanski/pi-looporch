@@ -51,14 +51,15 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 - Inject `WorkflowAgent` and reviewers; never hardcode model or pi providers into core logic.
 - Keep generated workflows review-gated before save or run.
-- Require agent-generated workflow source to start with JSDoc that documents purpose, expected `args`, phases, child agent usage, file reads, and result shape.
+- Require agent-generated workflow source to document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
 - Keep workflow file helpers sandboxed inside the workflow directory.
-- Keep prompt templates behind `renderPrompt` and the workflow's sibling prompt directory; do not expand workflow-local file helpers to read arbitrary shared files.
+- Keep prompt templates behind `renderPrompt` and the workflow's own `prompts/` directory; do not expand workflow-local file helpers to read arbitrary shared files.
+- When a requested behavior change is a cutover, remove the old path instead of adding compatibility fallback.
 - Keep workflow dataflow explicit: `phase()` is a progress marker, not shared memory, and later agents should receive earlier results only when the workflow renders those results into their prompts.
 - Keep workflow discovery resilient: startup, autocomplete, and listing paths must skip one invalid workflow definition instead of crashing pi.
 - Throw actionable `Error` messages at boundaries when user input, metadata, or workflow config is invalid.
 - Never estimate token counts. Use provider usage from pi events/session JSONL, or show zero/unknown when actual usage is unavailable.
-- Named workflow commands must not require users to hand-write JSON; resolve freeform command input against the workflow metadata/source into the expected `args` shape.
+- Named workflow commands must not require users to hand-write JSON; direct JSON/key-value input should validate required fields, while freeform named-workflow input should become a visible, steerable session conversation that shows the exact prompt using `metadata.inputInstructions` plus the workflow function JSDoc/signature before calling `run_workflow`.
 
 ### Testing
 

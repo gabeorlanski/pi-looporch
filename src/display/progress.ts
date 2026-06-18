@@ -44,11 +44,14 @@ export function initialProgressDisplay(
   workflowName = "workflow",
   width = DEFAULT_WIDTH,
   theme: ProgressTheme = plainTheme,
+  input?: unknown,
 ): ProgressDisplay {
   const safeWidth = Math.max(MIN_WIDTH, width);
   const statusLine = `${workflowName}: STARTING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort`;
+  const inputLine = argsLine(input, safeWidth, theme);
   const widgetLines = [
     titleLine(`workflow ${workflowName}`, safeWidth, theme),
+    ...(inputLine ? [inputLine] : []),
     theme.fg("warning", fit(`  STARTING · waiting for workflow runtime events · Esc abort`, safeWidth)),
     "",
     theme.fg("muted", fit(`  NET 0/0 agents · in 0 · out 0 · total 0 · tools 0`, safeWidth)),
@@ -61,8 +64,10 @@ export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDT
   const stats = netStats(snapshot);
   const state = workflowState(snapshot, stats);
   const statusLine = `${snapshot.workflowName}: ${state.label} · ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · in ${formatTokenCount(stats.inputTokenCount)} · out ${formatTokenCount(stats.outputTokenCount)} · tools ${String(stats.toolCallCount)}${state.kind === "running" ? " · Esc abort" : ""}`;
+  const inputLine = argsLine(snapshot.input, safeWidth, theme);
   const widgetLines = [
     titleLine(`workflow ${snapshot.workflowName}`, safeWidth, theme),
+    ...(inputLine ? [inputLine] : []),
     summaryLine(snapshot, stats, state, safeWidth, theme),
     "",
     ...phaseSections(snapshot).flatMap((section) => renderPhaseSection(section, safeWidth, theme)),
@@ -77,6 +82,16 @@ export function formatTokenCount(tokenCount: number): string {
   if (tokenCount < 1000) return String(tokenCount);
   if (tokenCount < 1_000_000) return `${trimFixed(tokenCount / 1000)}k`;
   return `${trimFixed(tokenCount / 1_000_000)}M`;
+}
+
+function argsLine(input: unknown, width: number, theme: ProgressTheme): string | undefined {
+  const rendered = compactJson(input);
+  if (!rendered) return undefined;
+  return fit(`  ${theme.fg("muted", "args")} ${theme.fg("text", rendered)}`, width);
+}
+
+function compactJson(value: unknown): string | undefined {
+  return JSON.stringify(value);
 }
 
 function titleLine(title: string, width: number, theme: ProgressTheme): string {

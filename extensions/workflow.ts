@@ -3,19 +3,13 @@ import { readFile } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { AssistantMessageComponent, ToolExecutionComponent, UserMessageComponent, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Editor, Key, matchesKey, truncateToWidth, type TUI } from "@earendil-works/pi-tui";
-import { naturalLanguageRequestMessage } from "../src/prompt-templates.ts";
+import { naturalLanguageRequestMessage, steerableInputResolutionMessage } from "../src/prompt-templates.ts";
 import { discoverWorkflows, workflowRootsForProject } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
 import { type GeneratedWorkflowDraft, type WorkflowReviewer, type WorkflowReviewDecision } from "../src/request.ts";
 import { createWorkflowRunId, createWorkflowRunLog, type WorkflowRunLog } from "../src/run-logs.ts";
-import {
-  normalizeWorkflowName,
-  runWorkflowFromDirectory,
-  type WorkflowAgentProgress,
-  type WorkflowAgentSnapshot,
-  type WorkflowSnapshot,
-} from "../src/runtime.ts";
-import { resolveWorkflowInput } from "../src/input.ts";
+import { normalizeWorkflowName, runWorkflowFromDirectory, type WorkflowSnapshot } from "../src/runtime.ts";
+import { WorkflowInputError, extractWorkflowInputContract, parseWorkflowInput, validateWorkflowInput } from "../src/input.ts";
 import { failureMessage, completeMessage } from "../src/display/messages.ts";
 import { initialProgressDisplay, progressDisplay, type ProgressDisplay, type ProgressTheme } from "../src/display/progress.ts";
 import { agentInspectorHeaderLines } from "../src/display/agent-inspector.ts";
@@ -117,29 +111,28 @@ async function runExistingWorkflowCommand(
   const inspector = createWorkflowInspector(ctx);
   const abortControls = createWorkflowAbortControls(ctx, () => inspector.isOpen());
   try {
-    ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, "resolving input");
     const commandOptions = parseWorkflowCommandOptions(rawInput);
     const source = await readFile(workflow.entryFile, "utf8");
+    const inputContract = extractWorkflowInputContract(source);
+    const parsedInput = parseWorkflowInput(commandOptions.rawInput);
+    if (parsedInput.action === "resolve") {
+      ctx.ui.notify(`Workflow '${workflowName}' input resolution sent to current session`, "info");
+      sendWhenReady(
+        pi,
+        ctx,
+        steerableInputResolutionMessage({
+          rawInput: parsedInput.rawInput,
+          workflowName,
+          metadata: workflow.metadata,
+          source,
+          contract: inputContract,
+        }),
+      );
+      return;
+    }
+    const input = validateWorkflowInput(parsedInput.input, workflowName, inputContract);
     const parentRunId = createWorkflowRunId(workflowName);
     const agent = createPiWorkflowAgent({ cwd: ctx.cwd, reviewer });
-    const reportInputResolutionProgress = createInputResolutionProgressUi(ctx, workflowName);
-    const input = await resolveWorkflowInput({
-      rawInput: commandOptions.rawInput,
-      workflowName,
-      metadata: workflow.metadata,
-      source,
-      agent: createPiWorkflowAgent({ cwd: ctx.cwd, reviewer, tools: [] }),
-      signal: abortControls.signal,
-      sessionLog: {
-        parentId: parentRunId,
-        agentId: 0,
-        agentKey: "agent-000-input-resolution",
-        workflowName,
-        label: `resolve ${workflowName} input`,
-        phaseIndex: 0,
-      },
-      onProgress: reportInputResolutionProgress,
-    });
     if (commandOptions.saveLog) {
       runLog = await createWorkflowRunLog({
         cwd: ctx.cwd,
@@ -153,7 +146,7 @@ async function runExistingWorkflowCommand(
       ctx.ui.notify(`Saving workflow log to ${relativeToProject(ctx.cwd, runLog.runDir)}`, "info");
     }
     ctx.ui.notify(`Running workflow '${workflowName}'`, "info");
-    updateRunningWorkflowUi(ctx, (width, theme) => initialProgressDisplay(workflowName, width, theme));
+    updateRunningWorkflowUi(ctx, (width, theme) => initialProgressDisplay(workflowName, width, theme, input));
     const result = await runWorkflowFromDirectory({
       cwd: ctx.cwd,
       workflowName,
@@ -180,8 +173,8 @@ async function runExistingWorkflowCommand(
   } catch (error) {
     await runLog?.fail(error, lastSnapshot);
     const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
-    const message = withWorkflowLogPath(failureMessage(workflowName, error), logPath);
-    ctx.ui.notify(message, "error");
+    const message = withWorkflowLogPath(error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error), logPath);
+    ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
     pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName, logPath } });
   } finally {
     inspector.dispose();
@@ -401,42 +394,6 @@ function updateRunningWorkflowUi(
   );
 }
 
-function createInputResolutionProgressUi(ctx: ExtensionCommandContext, workflowName: string): (progress: WorkflowAgentProgress) => void {
-  const agent: WorkflowAgentSnapshot = {
-    id: 1,
-    label: `resolve ${workflowName} input`,
-    phaseIndex: 0,
-    status: "running",
-    startedAt: Date.now(),
-    tokenCount: 0,
-    inputTokenCount: 0,
-    outputTokenCount: 0,
-    toolCallCount: 0,
-    message: "starting",
-  };
-  const snapshot: WorkflowSnapshot = {
-    workflowName: `${workflowName} input`,
-    description: "Resolve workflow input",
-    phases: [],
-    logs: [],
-    agents: [agent],
-    fanOuts: [],
-  };
-  updateRunningWorkflowUi(ctx, (width, theme) => progressDisplay(snapshot, width, theme));
-  return (progress) => {
-    applyAgentProgress(agent, progress);
-    updateRunningWorkflowUi(ctx, (width, theme) => progressDisplay(snapshot, width, theme));
-  };
-}
-
-function applyAgentProgress(agent: WorkflowAgentSnapshot, progress: WorkflowAgentProgress): void {
-  agent.message = progress.statusMessage;
-  if (progress.inputTokenCount !== undefined) agent.inputTokenCount = progress.inputTokenCount;
-  if (progress.outputTokenCount !== undefined) agent.outputTokenCount = progress.outputTokenCount;
-  if (progress.toolCallCount !== undefined) agent.toolCallCount = progress.toolCallCount;
-  agent.tokenCount = progress.tokenCount ?? agent.inputTokenCount + agent.outputTokenCount;
-}
-
 function clearRunningWorkflowUi(ctx: ExtensionCommandContext): void {
   ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, undefined);
   ctx.ui.setWidget(RUNNING_WORKFLOW_WIDGET, undefined);
@@ -465,11 +422,15 @@ function relativeToProject(cwd: string, target: string): string {
 }
 
 function sendWhenReady(pi: ExtensionAPI, ctx: ExtensionCommandContext, message: string): void {
-  if (ctx.isIdle()) {
-    pi.sendUserMessage(message);
-    return;
-  }
-  pi.sendUserMessage(message, { deliverAs: "followUp" });
+  pi.sendMessage(
+    {
+      customType: MESSAGE_TYPE,
+      content: message,
+      display: true,
+      details: { kind: "workflow-agent-prompt" },
+    },
+    ctx.isIdle() ? { triggerTurn: true } : { triggerTurn: true, deliverAs: "followUp" },
+  );
 }
 
 function createReviewer(ctx: ExtensionContext): WorkflowReviewer {

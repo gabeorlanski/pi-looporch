@@ -37,6 +37,52 @@ Keep these in sync with every behavior or convention change:
 
 When the user gives coding guidance or pushes back on code, add a rule to `agent_docs/INDEX.md` only if it is a generalizable coding pattern. Do not record one-off preferences, task-specific notes, or stale workarounds.
 
+## Workflow authoring and running model
+
+Keep the mental model simple:
+
+```text
+User asks for workflow help
+  -> current session agent decides: use existing workflow OR author a new one
+  -> new workflow drafts are reviewed before save
+  -> saved workflows run through run_workflow or a named /workflow command
+```
+
+When authoring a workflow, the agent should think roughly:
+
+```text
+read the user's goal
+if an existing workflow fits:
+  call run_workflow(name, input)
+else:
+  call workflow_primitives if syntax/details are needed
+  draft .pi/workflows/<name>/workflow.js
+  include metadata { name, description, inputInstructions }
+  document workflow(input) with JSDoc:
+    purpose, input fields/defaults, phases, child agents, file reads, result
+  prefer workflow({ field, optional = default }) over global args for new code
+  use debug_workflow only for small deterministic checks with fake agents
+  call propose_workflow so the human can review before save
+```
+
+When running an existing named workflow:
+
+```text
+/workflow:name {json} or key=value input
+  -> parse at command boundary
+  -> validate required fields from workflow function JSDoc/signature
+  -> run immediately or show a missing-arg message
+
+/workflow:name freeform natural language
+  -> do NOT start a hidden resolver agent
+  -> inject a visible message into the current conversation
+  -> the agent sees metadata.inputInstructions, workflow(input) contract, source, and user text
+  -> the agent asks the human if required input is missing/ambiguous
+  -> the agent calls run_workflow only once input is complete
+```
+
+The workflow agent sees only what the workflow prompt gives it. Phases are progress markers, not shared memory. If one child agent needs another child agent's output, the workflow must explicitly include that output in the later prompt.
+
 ## Code organization
 
 - `extensions/`: pi command, tool, and TUI wiring. Parse/coerce user input here.
@@ -64,8 +110,8 @@ TypeScript interfaces/types are the source of truth:
 - Keep command/UI parsing at boundaries; keep core runtime strict.
 - Keep prompt copy in raw `.txt` files under `src/prompts/`.
 - Keep generated workflow authoring guidance in TypeScript and inject it into raw prompts through placeholders.
-- Keep workflow-local file reads in `readText`/`readJson`; use `renderPrompt` for prompt templates under the workflow's sibling `<workflow-name>.prompts/` directory.
-- Agent-generated workflow source must start with JSDoc documenting purpose, args, phases, child agent usage, file reads, and result shape.
+- Keep workflow-local file reads in `readText`/`readJson`; use `renderPrompt` for prompt templates under the workflow's own `prompts/` directory.
+- Agent-generated workflow source must document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
 - Give every function a clear job; inline short helpers that only hide one expression or rename a local concept.
 - Prefer simple functions over managers, frameworks, or class hierarchies.
 - Inject agents/reviewers; never call real models from tests.

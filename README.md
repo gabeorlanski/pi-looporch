@@ -25,7 +25,8 @@ Workflows live in one directory per workflow:
 ```text
 .pi/workflows/<workflow-name>/
   workflow.js  # required executable workflow and metadata
-  ...          # optional prompts, schemas, fixtures, and examples
+  prompts/     # optional renderPrompt templates
+  ...          # optional schemas, fixtures, examples, and readText/readJson support files
 ```
 
 You can also point a project at external workflow directories with `.pi/settings.json`:
@@ -42,25 +43,29 @@ Each entry is a workflow root containing `<workflow-name>/workflow.js` children.
 
 ## Authoring
 
-`workflow.js` exports required metadata and a default function:
+`workflow.js` exports required metadata and a default function. `metadata.inputInstructions` tells the input resolver how to interpret natural-language command input; the workflow function JSDoc and parameter signature are the single argument contract.
 
 ```js
-/**
- * Purpose: review a set of files in parallel and synthesize findings.
- * Args: expects { files: string[] } and an optional user focus prompt.
- * Phase: fanout reviews each file, synthesis combines the findings.
- * Agent: launches one child agent per file, then one synthesis agent.
- * Result: returns the synthesis agent response.
- */
 export const metadata = {
   name: "review",
   description: "Review a set of files in parallel and synthesize findings",
+  inputInstructions: "Resolve file paths from explicit file mentions. Treat remaining prose as the optional focus prompt.",
 };
 
-export default async function workflow() {
+/**
+ * Purpose: review a set of files in parallel and synthesize findings.
+ * Input: files is required; focus defaults to a general review.
+ * Phase: fanout reviews each file, synthesis combines the findings.
+ * Agent: launches one child agent per file, then one synthesis agent.
+ * Result: returns the synthesis agent response.
+ * @param {object} input
+ * @param {string[]} input.files - Files to review.
+ * @param {string} [input.focus="general review"] - Optional review focus.
+ */
+export default async function workflow({ files, focus = "general review" }) {
   phase("fanout");
   const reviews = await parallel(
-    args.files,
+    files,
     async (file) => {
       return agent(readText("prompts/review.txt") + "\n\nFile: " + file, {
         label: file,
@@ -72,14 +77,14 @@ export default async function workflow() {
   );
 
   phase("synthesis");
-  return agent("Synthesize these reviews:\n" + reviews.join("\n\n"), {
+  return agent("Focus: " + focus + "\n\nSynthesize these reviews:\n" + reviews.join("\n\n"), {
     label: "synthesis",
     reasoning: "medium",
   });
 }
 ```
 
-Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `args`, `cwd`, `budget`, `readText`, `readJson`, and `renderPrompt`. Workflow-local file helpers are constrained to the workflow directory. Agent-generated workflows must start with a JSDoc block that documents purpose, expected `args`, phases, child agent usage, and result shape before they can be saved.
+Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `args`, `cwd`, `budget`, `readText`, `readJson`, and `renderPrompt`. Workflow-local file helpers are constrained to the workflow directory. New workflows should receive input through the default function parameter; the global `args` remains for compatibility. Agent-generated workflows must document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape before they can be saved.
 
 Workflow discovery skips invalid workflow definitions so one broken `.pi/workflows/<name>/workflow.js` cannot prevent pi startup or command completion registration. Fix or remove the invalid workflow file to make it appear in `/workflow` suggestions again.
 
@@ -95,7 +100,7 @@ return agent("Use this research:\n\n" + research + "\n\nWrite the final answer."
 });
 ```
 
-`renderPrompt(templatePath, values)` reads a prompt template from the workflow's sibling prompt directory and replaces simple `{{name}}` placeholders with values. For `.pi/workflows/review/workflow.js`, templates live under `.pi/workflows/review.prompts/`:
+`renderPrompt(templatePath, values)` reads a prompt template from the workflow's `prompts/` directory and replaces simple `{{name}}` placeholders with values. For `.pi/workflows/review/workflow.js`, templates live under `.pi/workflows/review/prompts/`:
 
 ```txt
 Review {{file}}.
@@ -107,7 +112,7 @@ Focus: {{focus}}
 const prompt = renderPrompt("review/base.txt", { file: args.file, focus: args.focus });
 ```
 
-Use `readText` and `readJson` for files inside the workflow directory. Use `renderPrompt` for prompt templates owned by the workflow but stored outside that directory.
+Use `readText` and `readJson` for support files inside the workflow directory. Use `renderPrompt` for prompt templates owned by the workflow under its `prompts/` directory.
 
 ### Structured primitives
 
@@ -138,7 +143,7 @@ Examples:
 /workflow-review review
 ```
 
-Named workflow commands (`/workflow <name>` and `/workflow:<name>`) run the saved workflow directly instead of asking the session agent to choose a tool. Manual calls do not require JSON: JSON and `key=value`/`--key value` are accepted directly, and freeform text is resolved by an agent against the workflow metadata/source into the `args` shape the workflow expects. Every resolver or child agent launched for a workflow stores logs under `~/.pi/agent/sessions/<project-key>/<parent-run-id>/<agent-key>/`, with `metadata.json`, in-flight `events.jsonl`, and the pi session JSONL. Token counts are never estimated; pi-workflow reports provider usage from events/session JSONL when available. Pass `--save-log` to also save the workflow-level debugging trajectory under `.pi/workflow-runs/<parent-run-id>/` with `metadata.json`, `input.json`, `workflow.js`, `events.jsonl`, `final-snapshot.json`, and the final `result.json` or `error.json`. While a workflow is running in the TUI, pi-workflow shows phase history, expands active phase children, collapses completed phases, and summarizes model, thinking, input tokens, assistant output tokens, tool calls, and NET totals.
+Named workflow commands (`/workflow <name>` and `/workflow:<name>`) run the saved workflow directly for JSON and `key=value`/`--key value` input. Freeform named-workflow input is sent into the current session as a normal visible, steerable conversation: pi-workflow displays the exact prompt it passes to the agent, including `metadata.inputInstructions`, the workflow function JSDoc/signature contract, and the user's input. The agent asks if required fields are missing and calls `run_workflow` only when the input is complete. Missing required args in direct JSON/key-value calls produce an actionable message instead of starting the workflow and crashing. Every child agent launched for a workflow stores logs under `~/.pi/agent/sessions/<project-key>/<parent-run-id>/<agent-key>/`, with `metadata.json`, in-flight `events.jsonl`, and the pi session JSONL. Token counts are never estimated; pi-workflow reports provider usage from events/session JSONL when available. Pass `--save-log` to also save the workflow-level debugging trajectory under `.pi/workflow-runs/<parent-run-id>/` with `metadata.json`, `input.json`, `workflow.js`, `events.jsonl`, `final-snapshot.json`, and the final `result.json` or `error.json`. While a workflow is running in the TUI, pi-workflow shows a compact `args ...` preview of the normalized run input, phase history, expanded active phase children, collapsed completed phases, and model, thinking, input tokens, assistant output tokens, tool calls, and NET totals.
 
 ## Development
 

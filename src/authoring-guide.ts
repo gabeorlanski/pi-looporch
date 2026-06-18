@@ -5,10 +5,11 @@ interface AuthoringDoc {
 }
 
 const workflowSourceRequirements = [
-  "Start every generated workflow.js with a JSDoc block before metadata.",
-  "The JSDoc must document purpose, expected args shape, phases, agent calls, file reads, and result shape.",
+  "Document the default workflow function with JSDoc before the function declaration.",
+  "The workflow function JSDoc and parameter signature are the input contract: document purpose, expected input fields, defaults, phases, agent calls, file reads, and result shape there.",
+  "Put input resolution guidance in metadata.inputInstructions; do not duplicate the argument list there.",
   "Do not import modules or use require().",
-  "Export `metadata` and one default workflow function.",
+  "Export `metadata` with name, description, and inputInstructions, plus one default workflow function.",
   "Keep runtime logic explicit; use local helpers only when they remove real duplication or clarify a multi-step transformation.",
   "Phases are progress markers, not shared memory; pass data between phases by storing agent results and rendering them into later prompts.",
 ];
@@ -55,13 +56,15 @@ return agent("Use this research:\\n\\n" + research + "\\n\\nWrite the final answ
 const workflowPrimitiveDocs: AuthoringDoc[] = [
   {
     name: "metadata",
-    signature: "export const metadata = { name: string, description: string }",
-    docstring: "Static discovery data. name must match the workflow directory/tool name; description is shown in selection and review UI.",
+    signature: "export const metadata = { name: string, description: string, inputInstructions: string }",
+    docstring:
+      "Static discovery and resolver guidance. name must match the workflow directory/tool name; description is shown in selection and review UI; inputInstructions tells the resolver how to map natural-language command input without duplicating the argument list.",
   },
   {
     name: "workflow",
-    signature: "export default async function workflow()",
-    docstring: "Entrypoint for the workflow. Read normalized user input from args and return a JSON-serializable result.",
+    signature: "export default async function workflow(args) or workflow({ required, optional = default })",
+    docstring:
+      "Entrypoint for the workflow. Its JSDoc and parameter signature define the input contract. The runner also exposes args as a global for compatibility, but new workflows should receive input through this parameter.",
   },
   {
     name: "phase",
@@ -118,14 +121,13 @@ const workflowPrimitiveDocs: AuthoringDoc[] = [
   {
     name: "renderPrompt",
     signature: "renderPrompt(templatePath: string, values: object): string",
-    docstring:
-      "Reads a prompt template from the workflow's sibling <workflow-name>.prompts directory and substitutes {{name}} placeholders with provided values.",
+    docstring: "Reads a prompt template from the workflow's prompts/ directory and substitutes {{name}} placeholders with provided values.",
   },
   {
     name: "args / cwd / budget",
     signature: "args: unknown; cwd: string; budget: { agentCount: number, tokenCount: number }",
     docstring:
-      "Runtime context. Boundaries normalize args before execution; workflow logic should treat args as already shaped for this script.",
+      "Runtime context. Boundaries normalize args before execution; workflow logic should treat args as already shaped for this script. Prefer workflow(input) parameters for new workflow inputs.",
   },
 ];
 

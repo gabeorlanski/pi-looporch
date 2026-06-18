@@ -61,23 +61,31 @@ Initial global primitives should include at least:
 - `readWorkflowJson(relativePath)`
 - `renderPrompt(templatePath, values)`
 
-Every `workflow.js` must export small metadata. Agent-generated workflows must also start with a JSDoc block that documents purpose, expected `args`, phases, child agent usage, file reads, and result shape:
+Every `workflow.js` must export small metadata. `metadata.inputInstructions` gives the resolver workflow-specific guidance without duplicating the argument list. Agent-generated workflows must document the default workflow function with JSDoc that covers purpose, input fields/defaults, phases, child agent usage, file reads, and result shape:
 
 ```js
-/**
- * Purpose: review a set of files and synthesize findings.
- * Args: expects { files: string[], prompt?: string }.
- * Phase: fanout reviews each file, synthesis combines findings.
- * Agent: launches child review agents and one synthesis agent.
- * Result: returns the synthesis text.
- */
 export const metadata = {
   name: "review",
   description: "Review a set of files and synthesize findings",
+  inputInstructions: "Resolve explicit paths as files. Treat remaining prose as optional focus.",
 };
+
+/**
+ * Purpose: review a set of files and synthesize findings.
+ * Input: files is required; focus defaults to a general review.
+ * Phase: fanout reviews each file, synthesis combines findings.
+ * Agent: launches child review agents and one synthesis agent.
+ * Result: returns the synthesis text.
+ * @param {object} input
+ * @param {string[]} input.files - Files to review.
+ * @param {string} [input.focus="general review"] - Optional focus.
+ */
+export default async function workflow({ files, focus = "general review" }) {
+  // ...
+}
 ```
 
-The workflow directory name is the command name. `metadata.name` should match the directory name or be validated against it. `metadata.description` is used for discovery, review UI, and display.
+The workflow directory name is the command name. `metadata.name` should match the directory name or be validated against it. `metadata.description` is used for discovery, review UI, and display. `metadata.inputInstructions` is passed to the current-session resolver when freeform named-command input needs to become workflow JSON.
 
 ## Storage Layout
 
@@ -98,7 +106,7 @@ const prompt = readText("prompts/review.md");
 const schema = readJson("schemas/finding.schema.json");
 ```
 
-Prompt templates owned by a workflow can live outside the workflow directory in a sibling `<workflow-name>.prompts/` directory. Workflows render those templates through `renderPrompt(templatePath, values)`, which uses simple `{{name}}` placeholder substitution. `readText` and `readJson` stay scoped to the workflow directory.
+Prompt templates owned by a workflow live under the workflow's `prompts/` directory. Workflows render those templates through `renderPrompt(templatePath, values)`, which uses simple `{{name}}` placeholder substitution. `readText`, `readJson`, and `renderPrompt` all stay scoped to the workflow directory.
 
 Structured agent helpers stay inside the same sandbox. `coerce` uses a no-tools child agent and JSON Schema validation retries for extraction. `mapreduce` first coerces an input prompt into a bare `{ items: [...] }` shape before map fan-out and reduction. `verifier` validates criteria objects with `name`, `description`, `guidelines`, `reasoning`, and optional `voters`, then runs criterion voter agents before a reduction agent.
 
@@ -126,9 +134,9 @@ return agent("Use this research:\n\n" + research + "\n\nWrite the final answer."
 });
 ```
 
-Workflow runs are live by default, but every resolver or child agent launched for a workflow persists logs under `~/.pi/agent/sessions/<project-key>/<parent-run-id>/<agent-key>/`. The project key matches pi's encoded session directory naming for the current project, the parent run id is shared by all agents in the workflow run, and each agent directory includes `metadata.json`, append-only in-flight `events.jsonl`, and the pi session JSONL. Token counts must never be estimated; workflow progress uses provider usage from events/session JSONL when available and otherwise leaves actual usage at zero/unknown.
+Workflow runs are live by default, and every child agent launched for a workflow persists logs under `~/.pi/agent/sessions/<project-key>/<parent-run-id>/<agent-key>/`. The project key matches pi's encoded session directory naming for the current project, the parent run id is shared by all agents in the workflow run, and each agent directory includes `metadata.json`, append-only in-flight `events.jsonl`, and the pi session JSONL. Token counts must never be estimated; workflow progress uses provider usage from events/session JSONL when available and otherwise leaves actual usage at zero/unknown.
 
-Named slash-command runs may opt into additional workflow-level debugging logs with `--save-log`; saved logs live under `.pi/workflow-runs/<parent-run-id>/` and include run metadata, normalized input, the workflow source, append-only `events.jsonl`, a final snapshot, and either `result.json` or `error.json`. Persisted workflow logs are for inspection only and do not support resuming canceled or failed runs. The TUI progress display keeps phase history visible, expands the active phase, collapses completed phase children, and shows model, thinking, provider input tokens, assistant output tokens, tool calls, and NET totals.
+Named slash-command runs may opt into additional workflow-level debugging logs with `--save-log`; saved logs live under `.pi/workflow-runs/<parent-run-id>/` and include run metadata, normalized input, the workflow source, append-only `events.jsonl`, a final snapshot, and either `result.json` or `error.json`. Persisted workflow logs are for inspection only and do not support resuming canceled or failed runs. The TUI progress display keeps a compact normalized-input args preview visible, keeps phase history visible, expands the active phase, collapses completed phase children, and shows model, thinking, provider input tokens, assistant output tokens, tool calls, and NET totals.
 
 ## Command Model
 
@@ -140,7 +148,7 @@ Named workflow invocation should use colon syntax and accept ergonomic non-JSON 
 /workflow:review files=src/index.ts,tests/index.test.ts prompt="focus on auth"
 ```
 
-Manual input handling should support JSON, `key=value`, `--key value`, and comma-separated lists directly. The named-command flag `--save-log` is reserved by the slash command and stripped before workflow input parsing. Freeform text should be resolved by an agent against the named workflow metadata/source into the `args` shape the workflow expects, so users do not have to hand-write JSON.
+Manual input handling should support JSON, `key=value`, `--key value`, and comma-separated lists directly. The named-command flag `--save-log` is reserved by the slash command and stripped before workflow input parsing. JSON and key-value inputs validate against the workflow function contract before execution and report missing required fields without starting the workflow. Freeform text should be sent into the current session as a normal steerable conversation; the agent receives `metadata.inputInstructions`, the workflow function JSDoc/signature contract, and the original input, asks clarifying questions if required fields are missing, and calls `run_workflow` only once the input is complete.
 
 A generic workflow invocation should let the agent decide how to handle the request:
 

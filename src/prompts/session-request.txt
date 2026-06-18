@@ -8,7 +8,7 @@ If a new reusable workflow is needed, use debug_workflow on small draft snippets
 
 The workflow.js source must not import modules or use require(). Use only workflow globals: agent, parallel, pipeline, coerce, mapreduce, verifier, phase, log, args, cwd, budget, readText, readJson, and renderPrompt.
 
-Generated workflow.js source must include the required top-level JSDoc described below.
+Generated workflow.js source must include the required workflow function JSDoc described below.
 
 {{workflowAuthoringGuide}}
 

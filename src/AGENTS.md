@@ -22,9 +22,9 @@ npm run check
 - Put TUI and visible text rendering in `display/`, one display concern per file.
 - Put raw prompt text in `prompts/*.txt`; keep interpolation code outside `prompts/`.
 - Keep generated workflow authoring docs in `authoring-guide.ts`; render them into prompts through placeholders.
-- Require generated workflow source to start with JSDoc documenting args, phases, child agents, file reads, and result shape.
+- Require generated workflow source to document the default workflow function with JSDoc covering input fields/defaults, phases, child agents, file reads, and result shape.
 - Keep helpers purposeful; inline short functions that only obscure flow.
-- Preserve workflow sandbox constraints: workflow file reads must stay inside the workflow directory, and prompt templates must resolve only through the workflow's sibling prompt directory.
+- Preserve workflow sandbox constraints: workflow file reads must stay inside the workflow directory, and prompt templates must resolve only through the workflow's own `prompts/` directory.
 - Never estimate token counts; only report provider/session usage or zero/unknown when actual usage is unavailable.
 - Update tests and docs when exported behavior or workflow primitives change.
 

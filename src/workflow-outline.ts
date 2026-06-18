@@ -222,7 +222,7 @@ function renderPromptPrompt(call: ts.CallExpression, id: string, role: string, c
 
 function readPromptTemplate(ctx: OutlineContext, templatePath: string): string | undefined {
   if (!ctx.workflowDir) return undefined;
-  const promptDir = path.join(path.dirname(ctx.workflowDir), `${path.basename(ctx.workflowDir)}.prompts`);
+  const promptDir = path.join(ctx.workflowDir, "prompts");
   const resolved = path.resolve(promptDir, templatePath.replace(/^@/, ""));
   const relative = path.relative(promptDir, resolved);
   if (relative.startsWith("..") || path.isAbsolute(relative) || !existsSync(resolved)) return undefined;

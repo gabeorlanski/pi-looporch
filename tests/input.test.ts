@@ -1,28 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseWorkflowInput, resolveWorkflowInput } from "../src/input.ts";
-import type { WorkflowAgent } from "../src/runtime.ts";
+import { extractWorkflowInputContract, parseWorkflowInput, validateWorkflowInput } from "../src/input.ts";
 
-void test("workflow_input_uses_structured_json_without_agent_resolution", async () => {
-  let called = false;
-  const agent: WorkflowAgent = () => {
-    called = true;
-    return Promise.resolve("{}");
-  };
+void test("workflow_input_uses_structured_json_directly", () => {
+  const parsed = parseWorkflowInput('{"repo":"owner/name","problem":"bugs"}');
 
-  const input = await resolveWorkflowInput({
-    rawInput: '{"repo":"owner/name","problem":"bugs"}',
-    workflowName: "repo2plan",
-    metadata: { name: "repo2plan", description: "Plan repository fixes" },
-    source: "export default async function workflow() { return args; }",
-    agent,
-  });
-
-  assert.deepEqual(input, { repo: "owner/name", problem: "bugs" });
-  assert.equal(called, false);
+  assert.deepEqual(parsed, { action: "use", input: { repo: "owner/name", problem: "bugs" } });
 });
 
-void test("workflow_input_uses_key_value_without_agent_resolution", () => {
+void test("workflow_input_uses_key_value_directly", () => {
   assert.deepEqual(parseWorkflowInput('repo=owner/name --problem @problems/python_dag/ files=a.ts,b.ts note="hello world"'), {
     action: "use",
     input: {
@@ -34,84 +20,42 @@ void test("workflow_input_uses_key_value_without_agent_resolution", () => {
   });
 });
 
-void test("workflow_input_uses_agent_to_resolve_freeform_named_workflow_input", async () => {
-  let prompt = "";
-  const agent: WorkflowAgent = (agentPrompt) => {
-    prompt = agentPrompt;
-    return Promise.resolve(
-      '{"repo":"scratch/repo_traverse/dagistan/repos/havrikov__codeine","problem":"@problems/python_dag/","prompt":"is the problem."}',
-    );
-  };
-
-  const input = await resolveWorkflowInput({
-    rawInput: "scratch/repo_traverse/dagistan/repos/havrikov__codeine @problems/python_dag/ is the problem.",
-    workflowName: "repo2plan",
-    metadata: { name: "repo2plan", description: "Turn a repository and problem into a plan" },
-    source: "export default async function workflow() { return { repo: args.repo, problem: args.problem }; }",
-    agent,
-  });
-
-  assert.match(prompt, /workflow\.js/);
-  assert.match(prompt, /havrikov__codeine/);
-  assert.deepEqual(input, {
-    repo: "scratch/repo_traverse/dagistan/repos/havrikov__codeine",
-    problem: "@problems/python_dag/",
-    prompt: "is the problem.",
+void test("workflow_input_leaves_freeform_for_steerable_session_resolution", () => {
+  assert.deepEqual(parseWorkflowInput("scratch/repo @problems/python_dag/ is the problem."), {
+    action: "resolve",
+    rawInput: "scratch/repo @problems/python_dag/ is the problem.",
   });
 });
 
-void test("workflow_input_forwards_resolver_agent_progress", async () => {
-  const progressMessages: string[] = [];
-  const agent: WorkflowAgent = (_agentPrompt, _options, reportProgress) => {
-    reportProgress({ statusMessage: "thinking", inputTokenCount: 120, outputTokenCount: 8, toolCallCount: 1 });
-    reportProgress({ statusMessage: "finished readJson", inputTokenCount: 120, outputTokenCount: 16, toolCallCount: 1 });
-    return Promise.resolve('{"prompt":"summarize the repo"}');
-  };
+void test("workflow_input_contract_uses_function_signature_and_jsdoc", () => {
+  const contract =
+    extractWorkflowInputContract(`export const metadata = { name: "plan", description: "Plan", inputInstructions: "Resolve inputs." };
+/**
+ * Input: repo and problem are required; mode defaults to fast.
+ * Phase: plan.
+ * Agent: one planner.
+ * Result: plan text.
+ * @param {object} input
+ * @param {string} input.problem - Problem statement.
+ */
+export default async function workflow({ repo, mode = "fast" }) {
+  return { repo, mode };
+}`);
 
-  const input = await resolveWorkflowInput({
-    rawInput: "summarize the repo",
-    workflowName: "summarize",
-    metadata: { name: "summarize", description: "Summarize files" },
-    source: "export default async function workflow() { return args; }",
-    agent,
-    onProgress: (progress) => {
-      if (progress.statusMessage) progressMessages.push(progress.statusMessage);
-    },
-  });
-
-  assert.deepEqual(input, { prompt: "summarize the repo" });
-  assert.deepEqual(progressMessages, ["thinking", "finished readJson"]);
+  assert.deepEqual(contract.requiredFields, ["problem", "repo"]);
+  assert.deepEqual(contract.optionalFields, ["mode"]);
+  assert.match(contract.signature ?? "", /repo/);
+  assert.match(contract.jsdoc ?? "", /input\.problem/);
 });
 
-void test("workflow_input_forwards_resolver_session_log_context", async () => {
-  let sessionLog: unknown;
-  const agent: WorkflowAgent = (_agentPrompt, options) => {
-    sessionLog = options.sessionLog;
-    return Promise.resolve('{"prompt":"summarize the repo"}');
-  };
-
-  await resolveWorkflowInput({
-    rawInput: "summarize the repo",
-    workflowName: "summarize",
-    metadata: { name: "summarize", description: "Summarize files" },
-    source: "export default async function workflow() { return args; }",
-    agent,
-    sessionLog: {
-      parentId: "parent-1",
-      agentId: 0,
-      agentKey: "agent-000-input-resolution",
-      workflowName: "summarize",
-      label: "resolve summarize input",
-      phaseIndex: 0,
-    },
-  });
-
-  assert.deepEqual(sessionLog, {
-    parentId: "parent-1",
-    agentId: 0,
-    agentKey: "agent-000-input-resolution",
-    workflowName: "summarize",
-    label: "resolve summarize input",
-    phaseIndex: 0,
-  });
+void test("workflow_input_validation_reports_missing_required_fields", () => {
+  assert.throws(
+    () =>
+      validateWorkflowInput({ repo: "owner/name" }, "plan", {
+        requiredFields: ["repo", "problem"],
+        optionalFields: ["mode"],
+        signature: "workflow({ repo, problem, mode = 'fast' })",
+      }),
+    /Workflow 'plan' is missing required input: problem[\s\S]*problem=<value>/,
+  );
 });

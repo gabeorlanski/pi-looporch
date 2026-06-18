@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { extractWorkflowInputContract } from "./input.ts";
 import { selectionPrompt } from "./prompt-templates.ts";
 import { discoverWorkflows, type WorkflowReference } from "./discovery.ts";
 import { normalizeWorkflowName, parseWorkflowSourceMetadata, type WorkflowAgent, type WorkflowMetadata } from "./runtime.ts";
@@ -99,15 +100,12 @@ export async function reviewAndSaveWorkflowDraft(options: ReviewAndSaveWorkflowD
 }
 
 export function validateGeneratedWorkflowDocstring(source: string): void {
-  const trimmedSource = source.trimStart();
-  if (!trimmedSource.startsWith("/**"))
-    throw new Error("Generated workflow source must start with a JSDoc docstring before it can be saved");
-  const docstring = /\/\*\*([\s\S]*?)\*\//.exec(trimmedSource)?.[1];
-  if (!docstring) throw new Error("Generated workflow source must start with a JSDoc docstring before it can be saved");
-  const normalized = docstring.toLowerCase();
-  for (const requiredTopic of ["args", "phase", "agent", "result"]) {
+  const contract = extractWorkflowInputContract(source);
+  if (!contract.jsdoc) throw new Error("Generated workflow function must start with a JSDoc docstring before it can be saved");
+  const normalized = contract.jsdoc.toLowerCase();
+  for (const requiredTopic of ["input", "phase", "agent", "result"]) {
     if (!normalized.includes(requiredTopic))
-      throw new Error(`Generated workflow JSDoc must document ${requiredTopic} before the workflow can be saved`);
+      throw new Error(`Generated workflow function JSDoc must document ${requiredTopic} before the workflow can be saved`);
   }
 }
 

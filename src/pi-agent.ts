@@ -16,6 +16,7 @@ import type { WorkflowReviewer } from "./request.ts";
 import type { WorkflowAgent, WorkflowAgentProgress, WorkflowAgentSessionLog } from "./runtime.ts";
 import { createWorkflowTools, type WorkflowToolsOptions } from "./tools.ts";
 import { agentTaskPrompt } from "./prompt-templates.ts";
+import { workflowAgentSessionLogDirectory } from "./session-logs.ts";
 
 export interface PiWorkflowAgentOptions {
   cwd: string;
@@ -53,6 +54,13 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       ...(model ? { model } : {}),
     });
 
+    if (loggedSession) {
+      reportProgress({
+        sessionDir: loggedSession.sessionDir,
+        sessionFile: loggedSession.sessionFile,
+        eventsFile: loggedSession.eventsFile,
+      });
+    }
     const progress = createProgressTracker(reportProgress, () => session.messages);
     const unsubscribe = session.subscribe((event) => {
       loggedSession?.recordEvent(event);
@@ -87,6 +95,9 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
 
 interface LoggedSessionManager {
   sessionManager: SessionManager;
+  sessionDir: string;
+  sessionFile: string;
+  eventsFile: string;
   recordEvent: (event: unknown) => void;
 }
 
@@ -94,7 +105,9 @@ async function createLoggedSessionManager(cwd: string, sessionLog: WorkflowAgent
   const sessionDir = workflowAgentSessionLogDirectory(cwd, sessionLog.parentId, sessionLog.agentKey);
   const eventsFile = path.join(sessionDir, "events.jsonl");
   await mkdir(sessionDir, { recursive: true });
-  const sessionManager = SessionManager.create(cwd, sessionDir, { id: `workflow-agent-${String(sessionLog.agentId)}` });
+  const sessionId = `workflow-agent-${String(sessionLog.agentId)}`;
+  const sessionManager = SessionManager.create(cwd, sessionDir, { id: sessionId });
+  const sessionFile = sessionManager.getSessionFile() ?? path.join(sessionDir, `${sessionId}.jsonl`);
   await Promise.all([
     writeFile(
       path.join(sessionDir, "metadata.json"),
@@ -103,7 +116,7 @@ async function createLoggedSessionManager(cwd: string, sessionLog: WorkflowAgent
           ...sessionLog,
           cwd: path.resolve(cwd),
           sessionDir,
-          sessionFile: sessionManager.getSessionFile(),
+          sessionFile,
           eventsFile,
           startedAt: new Date().toISOString(),
         },
@@ -117,24 +130,16 @@ async function createLoggedSessionManager(cwd: string, sessionLog: WorkflowAgent
   let seq = 0;
   return {
     sessionManager,
+    sessionDir,
+    sessionFile,
+    eventsFile,
     recordEvent(event) {
       appendFileSync(eventsFile, `${JSON.stringify({ seq: ++seq, time: new Date().toISOString(), event })}\n`, "utf8");
     },
   };
 }
 
-export function workflowAgentSessionLogDirectory(
-  cwd: string,
-  parentId: string,
-  agentKey: string,
-  sessionsRoot = path.join(getAgentDir(), "sessions"),
-): string {
-  const projectKey = `--${path
-    .resolve(cwd)
-    .replace(/^[/\\]/, "")
-    .replace(/[/\\:]/g, "-")}--`;
-  return path.join(sessionsRoot, projectKey, parentId, agentKey);
-}
+export { workflowAgentSessionLogDirectory } from "./session-logs.ts";
 
 function resolveModel(modelRegistry: ModelRegistry, spec: string): ReturnType<ModelRegistry["find"]> {
   const modelSpec = spec.split(":", 1)[0] ?? spec;

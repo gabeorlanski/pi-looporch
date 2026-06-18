@@ -34,7 +34,7 @@ void test("agent_inspector_header_identifies_the_selected_agent", () => {
   assert.ok(lines.some((line) => line.includes("fanout") && line.includes("running") && line.includes("gpt-5/medium")));
   assert.ok(lines.some((line) => line.includes("700 in") && line.includes("3 tools")));
   assert.ok(lines.some((line) => line.includes("file reviews 1/2")));
-  assert.ok(lines.some((line) => line.includes("switch agent") && line.includes("Esc close")));
+  assert.ok(lines.some((line) => line.includes("switch agent") && line.includes("Esc/q/Ctrl+\\ close")));
 });
 
 void test("agent_inspector_header_clamps_selection_and_handles_empty", () => {

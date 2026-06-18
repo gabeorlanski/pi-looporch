@@ -12,10 +12,10 @@ const plainTheme: ProgressTheme = {
 };
 
 /**
- * Header shown above the native agent transcript in the Alt-O inspector:
+ * Header shown above the native agent transcript in the Ctrl+\ transcript pane:
  * a title identifying the selected agent (`agent i/n · #id label`), a compact
  * metadata line, and a navigation hint. The transcript itself is rendered with
- * pi's own message components in the extension overlay.
+ * pi's own message components in the extension TUI wiring.
  */
 export function agentInspectorHeaderLines(
   snapshot: WorkflowSnapshot,
@@ -33,7 +33,7 @@ export function agentInspectorHeaderLines(
   return [
     titleLine(`agent ${String(selected + 1)}/${String(agents.length)} · #${String(agent.id)} ${agent.label}`, safeWidth, theme),
     metaLine(agent, snapshot, safeWidth, theme),
-    theme.fg("dim", fit("  ◂ ▸ switch agent · ↑ ↓ scroll · Esc close", safeWidth)),
+    theme.fg("dim", fit("  ◂ ▸ switch agent · ↑ ↓ scroll · Esc/q/Ctrl+\\ close", safeWidth)),
     "",
   ];
 }

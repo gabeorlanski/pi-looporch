@@ -1,8 +1,24 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { AssistantMessageComponent, ToolExecutionComponent, UserMessageComponent, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Editor, Key, matchesKey, truncateToWidth, type TUI } from "@earendil-works/pi-tui";
+import {
+  AssistantMessageComponent,
+  ToolExecutionComponent,
+  UserMessageComponent,
+  getMarkdownTheme,
+  getSettingsListTheme,
+} from "@earendil-works/pi-coding-agent";
+import {
+  Container,
+  Editor,
+  Key,
+  SettingsList,
+  matchesKey,
+  truncateToWidth,
+  visibleWidth,
+  type SettingItem,
+  type TUI,
+} from "@earendil-works/pi-tui";
 import { naturalLanguageRequestMessage, steerableInputResolutionMessage } from "../src/prompt-templates.ts";
 import { discoverWorkflows, workflowRootsForProject } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
@@ -10,7 +26,7 @@ import { type GeneratedWorkflowDraft, type WorkflowReviewer, type WorkflowReview
 import { createWorkflowRunId, createWorkflowRunLog, type WorkflowRunLog } from "../src/run-logs.ts";
 import { normalizeWorkflowName, runWorkflowFromDirectory, type WorkflowSnapshot } from "../src/runtime.ts";
 import { WorkflowInputError, extractWorkflowInputContract, parseWorkflowInput, validateWorkflowInput } from "../src/input.ts";
-import { failureMessage, completeMessage } from "../src/display/messages.ts";
+import { completeMessage, failureMessage } from "../src/display/messages.ts";
 import { initialProgressDisplay, progressDisplay, type ProgressDisplay, type ProgressTheme } from "../src/display/progress.ts";
 import { agentInspectorHeaderLines } from "../src/display/agent-inspector.ts";
 import { approvalLines } from "../src/display/approval.ts";
@@ -25,6 +41,8 @@ import {
   type ReviewNode,
 } from "../src/display/workflow-review.ts";
 import { createWorkflowTools } from "../src/tools.ts";
+import { writeWorkflowSessionSummary } from "../src/session-logs.ts";
+import { readProjectWorkflowSettings, writeProjectWorkflowSettings, type WorkflowSettings } from "../src/workflow-settings.ts";
 
 const MESSAGE_TYPE = "pi-workflow-message";
 const RUNNING_WORKFLOW_WIDGET = "pi-workflow-running";
@@ -50,6 +68,11 @@ export default function piWorkflow(pi: ExtensionAPI) {
     description: "Inspect an existing workflow definition",
     getArgumentCompletions: (prefix) => workflowCompletions(process.cwd(), prefix),
     handler: async (args, ctx) => reviewWorkflowCommand(pi, ctx, args),
+  });
+
+  pi.registerCommand("workflow-settings", {
+    description: "Configure project workflow settings",
+    handler: async (args, ctx) => workflowSettingsCommand(ctx, args),
   });
 
   pi.on("session_start", async (_event, ctx) => {
@@ -132,6 +155,7 @@ async function runExistingWorkflowCommand(
     }
     const input = validateWorkflowInput(parsedInput.input, workflowName, inputContract);
     const parentRunId = createWorkflowRunId(workflowName);
+    const workflowSettings = await readProjectWorkflowSettings(ctx.cwd);
     const agent = createPiWorkflowAgent({ cwd: ctx.cwd, reviewer });
     if (commandOptions.saveLog) {
       runLog = await createWorkflowRunLog({
@@ -146,7 +170,7 @@ async function runExistingWorkflowCommand(
       ctx.ui.notify(`Saving workflow log to ${relativeToProject(ctx.cwd, runLog.runDir)}`, "info");
     }
     ctx.ui.notify(`Running workflow '${workflowName}'`, "info");
-    updateRunningWorkflowUi(ctx, (width, theme) => initialProgressDisplay(workflowName, width, theme, input));
+    updateRunningWorkflowUi(ctx, (width, theme) => initialProgressDisplay(workflowName, width, theme, input), inspector);
     const result = await runWorkflowFromDirectory({
       cwd: ctx.cwd,
       workflowName,
@@ -154,22 +178,31 @@ async function runExistingWorkflowCommand(
       agent,
       workflowRoots: await workflowRootsForProject(ctx.cwd),
       agentLogParentId: parentRunId,
+      maxParallelAgents: workflowSettings.maxParallelAgents,
       signal: abortControls.signal,
       onEvent: (event) => runLog?.recordEvent(event),
       onSnapshot: (snapshot) => {
         lastSnapshot = snapshot;
         inspector.update(snapshot);
-        updateRunningWorkflowUi(ctx, (width, theme) => progressDisplay(snapshot, width, theme));
+        updateRunningWorkflowUi(ctx, (width, theme) => progressDisplay(snapshot, width, theme), inspector);
       },
     });
     await runLog?.complete(result.result, result.snapshot);
     const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
+    const sessionLogDir = await writeWorkflowSessionSummary({
+      cwd: ctx.cwd,
+      parentId: parentRunId,
+      snapshot: result.snapshot,
+      result: result.result,
+    });
+    const sessionLogMessage = workflowSessionLogMessage(sessionLogDir);
     pi.sendMessage({
       customType: MESSAGE_TYPE,
-      content: withWorkflowLogPath(completeMessage(result.workflowName, result.result), logPath),
+      content: `${withWorkflowLogPath(completeMessage(result.workflowName, result.result), logPath)}\n\n${sessionLogMessage}`,
       display: true,
-      details: { workflowName: result.workflowName, result: result.result, logPath },
+      details: { workflowName: result.workflowName, result: result.result, snapshot: result.snapshot, logPath, sessionLogDir },
     });
+    sendUserMessageWhenReady(pi, ctx, sessionLogMessage);
   } catch (error) {
     await runLog?.fail(error, lastSnapshot);
     const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
@@ -216,6 +249,7 @@ function createWorkflowAbortControls(
 
 interface WorkflowInspector {
   update: (snapshot: WorkflowSnapshot) => void;
+  render: (tui: TUI, theme: ProgressTheme, width: number, progressLines: string[]) => string[];
   isOpen: () => boolean;
   dispose: () => void;
 }
@@ -225,21 +259,39 @@ function createWorkflowInspector(ctx: ExtensionCommandContext): WorkflowInspecto
   let open = false;
   let selected = 0;
   let scroll = 0;
-  let termHeight = 0;
   let viewport = 0;
   let maxScroll = 0;
+  let suppressAbortUntil = 0;
   let requestRender: (() => void) | undefined;
 
-  const renderInspector = (tui: TUI, theme: ProgressTheme, width: number): string[] => {
-    termHeight = tui.terminal.rows;
-    if (!snapshot || snapshot.agents.length === 0) return agentInspectorHeaderLines(snapshot ?? emptySnapshot(), 0, width, theme);
+  const toggleInspector = (): void => {
+    if (!snapshot || snapshot.agents.length === 0) {
+      ctx.ui.notify("No workflow agent transcript is available yet.", "info");
+      return;
+    }
+    open = !open;
+    selected = Math.min(selected, snapshot.agents.length - 1);
+    if (open) scroll = 0;
+    requestRender?.();
+  };
+
+  const closeInspector = (): void => {
+    if (!open) return;
+    open = false;
+    suppressAbortUntil = Date.now() + 100;
+    requestRender?.();
+  };
+
+  const renderTranscriptPane = (tui: TUI, theme: ProgressTheme, width: number, height: number): string[] => {
+    if (!snapshot || snapshot.agents.length === 0)
+      return fillPane(agentInspectorHeaderLines(snapshot ?? emptySnapshot(), 0, width, theme), width, height);
     selected = Math.min(selected, snapshot.agents.length - 1);
     const header = agentInspectorHeaderLines(snapshot, selected, width, theme);
     const agent = snapshot.agents[selected];
     const messages = Array.isArray(agent.messages) ? agent.messages : [];
     const body =
       messages.length > 0 ? renderAgentTranscript(messages, tui, ctx.cwd, width) : [theme.fg("dim", "  (no activity captured yet)")];
-    viewport = Math.max(6, (termHeight || 32) - header.length - 2);
+    viewport = Math.max(3, height - header.length - 1);
     maxScroll = Math.max(0, body.length - viewport);
     const offset = Math.min(scroll, maxScroll);
     const start = Math.max(0, body.length - viewport - offset);
@@ -247,61 +299,64 @@ function createWorkflowInspector(ctx: ExtensionCommandContext): WorkflowInspecto
     const shownEnd = start + visible.length;
     const footer = theme.fg(
       "dim",
-      `  lines ${String(shownEnd)}/${String(body.length)}${maxScroll > 0 ? (offset > 0 ? " · ↑↓ scroll" : " · live (newest)") : ""}`,
+      `  lines ${String(shownEnd)}/${String(body.length)}${maxScroll > 0 ? (offset > 0 ? " · ↑↓ scroll" : " · live (newest)") : ""} · Ctrl+\\ close`,
     );
-    return [...header, ...visible, footer];
+    return fillPane([...header, ...visible, footer], width, height);
   };
 
-  const openInspector = (): void => {
-    if (open || !snapshot || snapshot.agents.length === 0) return;
-    open = true;
-    scroll = 0;
-    selected = Math.min(selected, snapshot.agents.length - 1);
-    void ctx.ui
-      .custom<null>((tui, theme, _keybindings, done) => {
-        requestRender = () => tui.requestRender();
-        return {
-          render: (width: number): string[] => renderInspector(tui, theme, width),
-          handleInput: (data: string): void => {
-            const count = snapshot?.agents.length ?? 0;
-            if (matchesKey(data, Key.escape) || data === "q" || matchesKey(data, Key.alt("o"))) {
-              done(null);
-              return;
-            }
-            if (count === 0) return;
-            if (matchesKey(data, Key.right) || matchesKey(data, Key.tab) || data === "l") {
-              selected = (selected + 1) % count;
-              scroll = 0;
-            } else if (matchesKey(data, Key.left) || data === "h") {
-              selected = (selected - 1 + count) % count;
-              scroll = 0;
-            } else if (matchesKey(data, Key.up) || data === "k") {
-              scroll = Math.min(maxScroll, scroll + 1);
-            } else if (matchesKey(data, Key.down) || data === "j") {
-              scroll = Math.max(0, scroll - 1);
-            } else if (matchesKey(data, Key.pageUp)) {
-              scroll = Math.min(maxScroll, scroll + viewport);
-            } else if (matchesKey(data, Key.pageDown)) {
-              scroll = Math.max(0, scroll - viewport);
-            } else {
-              return;
-            }
-            tui.requestRender();
-          },
-          invalidate: () => {
-            tui.requestRender();
-          },
-        };
-      })
-      .finally(() => {
-        open = false;
-        requestRender = undefined;
-      });
+  const renderSplit = (tui: TUI, theme: ProgressTheme, width: number, progressLines: string[]): string[] => {
+    requestRender = () => tui.requestRender();
+    if (!open) return progressLines;
+    const height = transcriptPaneHeight(tui.terminal.rows);
+    if (width < 120) {
+      const progressHeight = Math.max(6, Math.floor(height / 2));
+      return [
+        ...fitProgressPane(progressLines, width, progressHeight, theme),
+        theme.fg("borderMuted", truncateToWidth("─".repeat(width), width)),
+        ...renderTranscriptPane(tui, theme, width, height - progressHeight),
+      ];
+    }
+    const gutter = theme.fg("borderMuted", " │ ");
+    const leftWidth = Math.max(50, Math.floor((width - visibleWidth(gutter)) / 2));
+    const rightWidth = Math.max(48, width - leftWidth - visibleWidth(gutter));
+    const left = fitProgressPane(progressLines, leftWidth, height, theme);
+    const right = renderTranscriptPane(tui, theme, rightWidth, height);
+    return Array.from(
+      { length: height },
+      (_unused, index) => padToWidth(left[index] ?? "", leftWidth) + gutter + fitLine(right[index] ?? "", rightWidth),
+    );
   };
 
   const unsubscribe = ctx.ui.onTerminalInput((data) => {
-    if (open || !matchesKey(data, Key.alt("o"))) return undefined;
-    openInspector();
+    if (matchesKey(data, Key.ctrl("\\")) || matchesKey(data, Key.f2) || matchesKey(data, Key.alt("o"))) {
+      toggleInspector();
+      return { consume: true };
+    }
+    if (!open) return undefined;
+    const count = snapshot?.agents.length ?? 0;
+    if (matchesKey(data, Key.escape) || data === "q") {
+      closeInspector();
+      return { consume: true };
+    }
+    if (count === 0) return { consume: true };
+    if (matchesKey(data, Key.right) || matchesKey(data, Key.tab) || data === "l") {
+      selected = (selected + 1) % count;
+      scroll = 0;
+    } else if (matchesKey(data, Key.left) || data === "h") {
+      selected = (selected - 1 + count) % count;
+      scroll = 0;
+    } else if (matchesKey(data, Key.up) || data === "k") {
+      scroll = Math.min(maxScroll, scroll + 1);
+    } else if (matchesKey(data, Key.down) || data === "j") {
+      scroll = Math.max(0, scroll - 1);
+    } else if (matchesKey(data, Key.pageUp)) {
+      scroll = Math.min(maxScroll, scroll + viewport);
+    } else if (matchesKey(data, Key.pageDown)) {
+      scroll = Math.max(0, scroll - viewport);
+    } else {
+      return undefined;
+    }
+    requestRender?.();
     return { consume: true };
   });
 
@@ -310,7 +365,8 @@ function createWorkflowInspector(ctx: ExtensionCommandContext): WorkflowInspecto
       snapshot = next;
       if (open) requestRender?.();
     },
-    isOpen: () => open,
+    render: renderSplit,
+    isOpen: () => open || Date.now() < suppressAbortUntil,
     dispose() {
       unsubscribe();
     },
@@ -351,6 +407,34 @@ function renderAgentTranscript(messages: unknown[], tui: TUI, cwd: string, width
   return items.flatMap((item) => item.render(width));
 }
 
+function transcriptPaneHeight(termRows: number): number {
+  const safeRows = termRows > 0 ? termRows : 32;
+  return Math.max(10, Math.min(34, Math.floor(safeRows * 0.62)));
+}
+
+function fitProgressPane(lines: string[], width: number, height: number, theme: ProgressTheme): string[] {
+  if (lines.length <= height) return fillPane(lines, width, height);
+  const hidden = lines.length - height + 1;
+  const footer = theme.fg("dim", fitLine(`  … ${String(hidden)} workflow lines hidden while transcript pane is open`, width));
+  return fillPane([...lines.slice(0, height - 1), footer], width, height);
+}
+
+function fillPane(lines: string[], width: number, height: number): string[] {
+  const fitted = lines.slice(0, height).map((line) => fitLine(line, width));
+  while (fitted.length < height) fitted.push("");
+  return fitted;
+}
+
+function fitLine(line: string, width: number): string {
+  if (!line.includes("\u001B")) return line.length <= width ? line : `${line.slice(0, Math.max(0, width - 3))}...`;
+  return truncateToWidth(line, width, "...");
+}
+
+function padToWidth(line: string, width: number): string {
+  const fitted = fitLine(line, width);
+  return fitted + " ".repeat(Math.max(0, width - visibleWidth(fitted)));
+}
+
 function userMessageText(content: unknown): string {
   if (typeof content === "string") return content.trim();
   return asArray(content)
@@ -379,13 +463,17 @@ function emptySnapshot(): WorkflowSnapshot {
 function updateRunningWorkflowUi(
   ctx: ExtensionCommandContext,
   displayForWidth: (width: number, theme?: ProgressTheme) => ProgressDisplay,
+  inspector: WorkflowInspector,
 ): void {
   const statusLine = displayForWidth(96).statusLine;
   ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, statusLine);
   ctx.ui.setWidget(
     RUNNING_WORKFLOW_WIDGET,
-    (_tui, theme) => ({
-      render: (width: number) => displayForWidth(width, theme).widgetLines,
+    (tui, theme) => ({
+      render: (width: number) => {
+        const display = displayForWidth(width, theme);
+        return inspector.render(tui, theme, width, display.widgetLines);
+      },
       invalidate: () => {
         ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, displayForWidth(96).statusLine);
       },
@@ -415,6 +503,18 @@ function parseWorkflowCommandOptions(rawInput: string): { rawInput: string; save
 
 function withWorkflowLogPath(message: string, logPath: string | undefined): string {
   return logPath ? `${message}\n\nSaved workflow log: ${logPath}` : message;
+}
+
+function workflowSessionLogMessage(sessionLogDir: string): string {
+  return `Workflow session logs: ${sessionLogDir}`;
+}
+
+function sendUserMessageWhenReady(pi: ExtensionAPI, ctx: ExtensionCommandContext, message: string): void {
+  if (ctx.isIdle()) {
+    pi.sendUserMessage(message);
+    return;
+  }
+  pi.sendUserMessage(message, { deliverAs: "followUp" });
 }
 
 function relativeToProject(cwd: string, target: string): string {
@@ -664,6 +764,90 @@ function styleApprovalLine(line: string, theme: ProgressTheme): string {
     return theme.bold(line);
   if (line.includes("Source:")) return theme.fg("muted", line);
   return line;
+}
+
+async function workflowSettingsCommand(ctx: ExtensionCommandContext, args: string): Promise<void> {
+  const trimmed = args.trim();
+  if (trimmed) {
+    try {
+      const settings = parseWorkflowSettingsArgs(trimmed);
+      await writeProjectWorkflowSettings(ctx.cwd, settings);
+      ctx.ui.notify(`Workflow max parallel agents set to ${String(settings.maxParallelAgents)} in .pi/settings.json`, "info");
+    } catch (error) {
+      ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+    }
+    return;
+  }
+  if (ctx.mode !== "tui") {
+    const settings = await readProjectWorkflowSettings(ctx.cwd);
+    ctx.ui.notify(
+      `Workflow max parallel agents: ${String(settings.maxParallelAgents)}. Set with /workflow-settings maxParallelAgents=<n>.`,
+      "info",
+    );
+    return;
+  }
+  await tuiWorkflowSettings(ctx);
+}
+
+function parseWorkflowSettingsArgs(args: string): WorkflowSettings {
+  const match = /^(?:(?:maxParallelAgents|maxParallel)\s*=\s*)?(\d+)$/.exec(args);
+  if (!match) throw new Error("Usage: /workflow-settings [maxParallelAgents=<positive integer>]");
+  return { maxParallelAgents: Number(match[1]) };
+}
+
+async function tuiWorkflowSettings(ctx: ExtensionCommandContext): Promise<void> {
+  const settings = await readProjectWorkflowSettings(ctx.cwd);
+  await ctx.ui.custom<undefined>((tui, theme, _keybindings, done) => {
+    const items: SettingItem[] = [
+      {
+        id: "maxParallelAgents",
+        label: "Max parallel agents",
+        currentValue: String(settings.maxParallelAgents),
+        values: workflowMaxParallelChoices(settings.maxParallelAgents),
+      },
+    ];
+    const container = new Container();
+    container.addChild({
+      render(width: number): string[] {
+        return [
+          truncateToWidth(theme.fg("accent", theme.bold("Workflow Settings")), width),
+          truncateToWidth(theme.fg("muted", "Saved to .pi/settings.json. Extra parallel items queue until a slot opens."), width),
+          "",
+        ];
+      },
+      invalidate(): void {
+        return undefined;
+      },
+    });
+    const settingsList = new SettingsList(
+      items,
+      5,
+      getSettingsListTheme(),
+      (id, newValue) => {
+        if (id !== "maxParallelAgents") return;
+        const next = { maxParallelAgents: Number(newValue) };
+        void writeProjectWorkflowSettings(ctx.cwd, next)
+          .then(() => ctx.ui.notify(`Workflow max parallel agents set to ${String(next.maxParallelAgents)}`, "info"))
+          .catch((error: unknown) => ctx.ui.notify(error instanceof Error ? error.message : String(error), "error"));
+      },
+      () => done(undefined),
+      { enableSearch: false },
+    );
+    container.addChild(settingsList);
+    return {
+      render: (width: number): string[] => container.render(width),
+      invalidate: () => container.invalidate(),
+      handleInput(data: string): void {
+        settingsList.handleInput(data);
+        tui.requestRender();
+      },
+    };
+  });
+}
+
+function workflowMaxParallelChoices(currentValue: number): string[] {
+  const values = new Set([1, 2, 3, 4, 6, 8, 12, 16, 24, 32, currentValue]);
+  return [...values].sort((left, right) => left - right).map(String);
 }
 
 async function reviewWorkflowCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {

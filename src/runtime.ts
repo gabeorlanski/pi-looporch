@@ -42,6 +42,9 @@ export interface WorkflowAgentProgress {
   inputTokenCount?: number;
   outputTokenCount?: number;
   toolCallCount?: number;
+  sessionDir?: string;
+  sessionFile?: string;
+  eventsFile?: string;
   /** Raw child-agent session messages, rendered natively in the inspector. */
   messages?: unknown[];
 }
@@ -67,6 +70,9 @@ export interface WorkflowAgentSnapshot {
   outputTokenCount: number;
   toolCallCount: number;
   fanOutId?: number;
+  sessionDir?: string;
+  sessionFile?: string;
+  eventsFile?: string;
   message?: string;
   error?: string;
   messages?: unknown[];
@@ -120,6 +126,7 @@ export interface RunWorkflowOptions {
   agent: WorkflowAgent;
   workflowRoots?: string[];
   agentLogParentId?: string;
+  maxParallelAgents: number;
   signal?: AbortSignal;
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
   onEvent?: (event: WorkflowEvent) => void;
@@ -174,15 +181,21 @@ interface VerifierCriterion extends Record<string, unknown> {
 
 const fanOutScope = new AsyncLocalStorage<number>();
 
+interface AgentLaunchQueue {
+  acquire: (signal: AbortSignal | undefined) => Promise<() => void>;
+}
+
 interface ActiveWorkflowRuntime {
   options: RunWorkflowOptions;
   snapshot: WorkflowSnapshot;
+  agentLaunchQueue: AgentLaunchQueue;
   emit: () => void;
   emitEvent: (event: WorkflowEvent) => void;
 }
 
 export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Promise<WorkflowRunResult> {
   const workflowName = normalizeWorkflowName(options.workflowName);
+  const maxParallelAgents = normalizeMaxParallelAgents(options.maxParallelAgents);
   const workflowDir = resolveWorkflowDirectory(options.cwd, workflowName, options.workflowRoots);
   const entryFile = path.join(workflowDir, "workflow.js");
   const source = await readFile(entryFile, "utf8");
@@ -199,8 +212,9 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     input: cloneSerializable(options.input),
   };
   const activeRuntime: ActiveWorkflowRuntime = {
-    options,
+    options: { ...options, maxParallelAgents },
     snapshot,
+    agentLaunchQueue: createAgentLaunchQueue(maxParallelAgents),
     emit: () => options.onSnapshot?.(cloneSnapshot(snapshot)),
     emitEvent: (event) => options.onEvent?.(cloneSerializable(event) as WorkflowEvent),
   };
@@ -326,29 +340,121 @@ async function runParallel<T, R>(
     id: runtime.snapshot.fanOuts.length + 1,
     label: label ?? `parallel ${String(runtime.snapshot.fanOuts.length + 1)}`,
     total: items.length,
-    running: items.length,
+    running: Math.min(items.length, runtime.options.maxParallelAgents),
     done: 0,
     error: 0,
   };
   runtime.snapshot.fanOuts.push(fanOut);
   runtime.emitEvent({ type: "fanout_started", fanOut: { ...fanOut } });
   runtime.emit();
-  return Promise.all(
-    items.map(async (item, index) => {
+  return runQueuedParallel(items, runtime.options.maxParallelAgents, async (item, index) => {
+    if (index >= runtime.options.maxParallelAgents) {
+      fanOut.running++;
+      runtime.emitEvent({ type: "fanout_progress", fanOut: { ...fanOut } });
+      runtime.emit();
+    }
+    try {
+      const result = await fanOutScope.run(fanOut.id, () => worker(item, index));
+      fanOut.done++;
+      return result;
+    } catch (error) {
+      fanOut.error++;
+      throw error;
+    } finally {
+      fanOut.running = Math.max(0, fanOut.running - 1);
+      runtime.emitEvent({ type: "fanout_progress", fanOut: { ...fanOut } });
+      runtime.emit();
+    }
+  });
+}
+
+async function runQueuedParallel<T, R>(
+  items: readonly T[],
+  maxParallelAgents: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  const errors: unknown[] = [];
+  let nextIndex = 0;
+  const runWorker = async (): Promise<void> => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex++;
       try {
-        const result = await fanOutScope.run(fanOut.id, () => worker(item, index));
-        fanOut.done++;
-        return result;
+        results[index] = await worker(items[index], index);
       } catch (error) {
-        fanOut.error++;
-        throw error;
-      } finally {
-        fanOut.running = Math.max(0, fanOut.running - 1);
-        runtime.emitEvent({ type: "fanout_progress", fanOut: { ...fanOut } });
-        runtime.emit();
+        errors.push(error);
       }
-    }),
-  );
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(maxParallelAgents, items.length) }, () => runWorker()));
+  if (errors.length > 0) throw errors[0];
+  return results;
+}
+
+function normalizeMaxParallelAgents(value: number): number {
+  if (!Number.isInteger(value) || value < 1) throw new Error("maxParallelAgents must be a positive integer");
+  return value;
+}
+
+function createAgentLaunchQueue(maxParallelAgents: number): AgentLaunchQueue {
+  let activeAgents = 0;
+  const waiting: {
+    resolve: (release: () => void) => void;
+    reject: (error: Error) => void;
+    signal: AbortSignal | undefined;
+    abort: () => void;
+  }[] = [];
+
+  const releaseNext = (): void => {
+    while (activeAgents < maxParallelAgents && waiting.length > 0) {
+      const waiter = waiting.shift();
+      if (!waiter) return;
+      waiter.signal?.removeEventListener("abort", waiter.abort);
+      if (waiter.signal?.aborted) {
+        waiter.reject(new Error("Workflow aborted"));
+        continue;
+      }
+      activeAgents++;
+      waiter.resolve(releaseOnce());
+      return;
+    }
+  };
+
+  const releaseOnce = (): (() => void) => {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      activeAgents = Math.max(0, activeAgents - 1);
+      releaseNext();
+    };
+  };
+
+  return {
+    acquire(signal) {
+      if (signal?.aborted) return Promise.reject(new Error("Workflow aborted"));
+      if (activeAgents < maxParallelAgents) {
+        activeAgents++;
+        return Promise.resolve(releaseOnce());
+      }
+      return new Promise((resolve, reject) => {
+        const waiter = {
+          resolve,
+          reject,
+          signal,
+          abort: () => {
+            const index = waiting.indexOf(waiter);
+            if (index >= 0) waiting.splice(index, 1);
+            reject(new Error("Workflow aborted"));
+          },
+        };
+        waiting.push(waiter);
+        signal?.addEventListener("abort", waiter.abort, { once: true });
+      });
+    },
+  };
 }
 
 async function coerceWithAgent(runtime: ActiveWorkflowRuntime, options: CoerceOptions): Promise<unknown> {
@@ -511,62 +617,71 @@ function normalizeVerifierCriteria(criteria: unknown): VerifierCriterion[] {
 
 async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
   if (runtime.options.signal?.aborted) throw new Error("Workflow aborted");
-  const agent: WorkflowAgentSnapshot = {
-    id: runtime.snapshot.agents.length + 1,
-    label: agentOptions.label ?? `agent ${String(runtime.snapshot.agents.length + 1)}`,
-    phaseIndex: runtime.snapshot.phases.length,
-    phase: runtime.snapshot.phases.at(-1),
-    model: agentOptions.model,
-    reasoning: agentOptions.reasoning,
-    status: "running",
-    startedAt: Date.now(),
-    tokenCount: 0,
-    inputTokenCount: 0,
-    outputTokenCount: 0,
-    toolCallCount: 0,
-    fanOutId: fanOutScope.getStore(),
-  };
-  runtime.snapshot.agents.push(agent);
-  runtime.emitEvent({ type: "agent_started", agent: { ...agent } });
-  runtime.emit();
+  const releaseAgentSlot = await runtime.agentLaunchQueue.acquire(runtime.options.signal);
   try {
-    const heartbeat = setInterval(runtime.emit, 1000);
-    let result: unknown;
-    try {
-      result = await runtime.options.agent(prompt, workflowAgentOptionsForLaunch(runtime, agent, agentOptions), (progress) => {
-        if (progress.statusMessage !== undefined) agent.message = progress.statusMessage;
-        if (progress.inputTokenCount !== undefined) agent.inputTokenCount = progress.inputTokenCount;
-        if (progress.outputTokenCount !== undefined) agent.outputTokenCount = progress.outputTokenCount;
-        if (progress.toolCallCount !== undefined) agent.toolCallCount = progress.toolCallCount;
-        if (progress.messages !== undefined) agent.messages = progress.messages;
-        agent.tokenCount = progress.tokenCount ?? agent.inputTokenCount + agent.outputTokenCount;
-        runtime.emitEvent({
-          type: "agent_progress",
-          agentId: agent.id,
-          message: agent.message,
-          tokenCount: agent.tokenCount,
-          inputTokenCount: agent.inputTokenCount,
-          outputTokenCount: agent.outputTokenCount,
-          toolCallCount: agent.toolCallCount,
-        });
-        runtime.emit();
-      });
-    } finally {
-      clearInterval(heartbeat);
-    }
     if (runtime.options.signal?.aborted) throw new Error("Workflow aborted");
-    agent.status = "done";
-    agent.endedAt = Date.now();
-    runtime.emitEvent({ type: "agent_done", agentId: agent.id });
+    const agent: WorkflowAgentSnapshot = {
+      id: runtime.snapshot.agents.length + 1,
+      label: agentOptions.label ?? `agent ${String(runtime.snapshot.agents.length + 1)}`,
+      phaseIndex: runtime.snapshot.phases.length,
+      phase: runtime.snapshot.phases.at(-1),
+      model: agentOptions.model,
+      reasoning: agentOptions.reasoning,
+      status: "running",
+      startedAt: Date.now(),
+      tokenCount: 0,
+      inputTokenCount: 0,
+      outputTokenCount: 0,
+      toolCallCount: 0,
+      fanOutId: fanOutScope.getStore(),
+    };
+    runtime.snapshot.agents.push(agent);
+    runtime.emitEvent({ type: "agent_started", agent: { ...agent } });
     runtime.emit();
-    return result;
-  } catch (error) {
-    agent.status = "error";
-    agent.endedAt = Date.now();
-    agent.error = error instanceof Error ? error.message : String(error);
-    runtime.emitEvent({ type: "agent_error", agentId: agent.id, error: agent.error });
-    runtime.emit();
-    throw error;
+    try {
+      const heartbeat = setInterval(runtime.emit, 1000);
+      let result: unknown;
+      try {
+        result = await runtime.options.agent(prompt, workflowAgentOptionsForLaunch(runtime, agent, agentOptions), (progress) => {
+          if (progress.statusMessage !== undefined) agent.message = progress.statusMessage;
+          if (progress.inputTokenCount !== undefined) agent.inputTokenCount = progress.inputTokenCount;
+          if (progress.outputTokenCount !== undefined) agent.outputTokenCount = progress.outputTokenCount;
+          if (progress.toolCallCount !== undefined) agent.toolCallCount = progress.toolCallCount;
+          if (progress.sessionDir !== undefined) agent.sessionDir = progress.sessionDir;
+          if (progress.sessionFile !== undefined) agent.sessionFile = progress.sessionFile;
+          if (progress.eventsFile !== undefined) agent.eventsFile = progress.eventsFile;
+          if (progress.messages !== undefined) agent.messages = progress.messages;
+          agent.tokenCount = progress.tokenCount ?? agent.inputTokenCount + agent.outputTokenCount;
+          runtime.emitEvent({
+            type: "agent_progress",
+            agentId: agent.id,
+            message: agent.message,
+            tokenCount: agent.tokenCount,
+            inputTokenCount: agent.inputTokenCount,
+            outputTokenCount: agent.outputTokenCount,
+            toolCallCount: agent.toolCallCount,
+          });
+          runtime.emit();
+        });
+      } finally {
+        clearInterval(heartbeat);
+      }
+      if (runtime.options.signal?.aborted) throw new Error("Workflow aborted");
+      agent.status = "done";
+      agent.endedAt = Date.now();
+      runtime.emitEvent({ type: "agent_done", agentId: agent.id });
+      runtime.emit();
+      return result;
+    } catch (error) {
+      agent.status = "error";
+      agent.endedAt = Date.now();
+      agent.error = error instanceof Error ? error.message : String(error);
+      runtime.emitEvent({ type: "agent_error", agentId: agent.id, error: agent.error });
+      runtime.emit();
+      throw error;
+    }
+  } finally {
+    releaseAgentSlot();
   }
 }
 
@@ -583,14 +698,7 @@ function workflowAgentOptionsForLaunch(
           sessionLog: {
             parentId: runtime.options.agentLogParentId,
             agentId: agent.id,
-            agentKey: `agent-${String(agent.id).padStart(3, "0")}-${
-              agent.label
-                .trim()
-                .toLowerCase()
-                .replace(/[^a-z0-9._-]+/g, "-")
-                .replace(/^-+|-+$/g, "")
-                .slice(0, 48) || "unlabeled"
-            }`,
+            agentKey: workflowAgentSessionKey(agent),
             workflowName: runtime.snapshot.workflowName,
             label: agent.label,
             phaseIndex: agent.phaseIndex,
@@ -600,6 +708,36 @@ function workflowAgentOptionsForLaunch(
         }
       : {}),
   };
+}
+
+function workflowAgentSessionKey(agent: WorkflowAgentSnapshot): string {
+  return [
+    phaseSessionSlug(agent),
+    agent.fanOutId !== undefined ? `fanout-${String(agent.fanOutId).padStart(3, "0")}` : undefined,
+    agentSessionSlug(agent),
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join("--");
+}
+
+function phaseSessionSlug(agent: WorkflowAgentSnapshot): string {
+  const phaseLabel = agent.phase ?? (agent.phaseIndex === 0 ? "setup" : `phase-${String(agent.phaseIndex)}`);
+  return `phase-${String(agent.phaseIndex).padStart(3, "0")}-${slugText(phaseLabel, 36)}`;
+}
+
+function agentSessionSlug(agent: WorkflowAgentSnapshot): string {
+  return `agent-${String(agent.id).padStart(3, "0")}-${slugText(agent.label, 48)}`;
+}
+
+function slugText(value: string, maxLength: number): string {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, maxLength) || "unlabeled"
+  );
 }
 
 async function runPipelineItem<T>(item: T, index: number, stages: PipelineStage<T>[]): Promise<T> {

@@ -36,6 +36,7 @@ export default async function workflow() {
 
   const events: string[] = [];
   const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
     cwd: project,
     workflowName: "review",
     input: { files: ["a.ts", "b.ts"] },
@@ -78,6 +79,108 @@ export default async function workflow() {
   ]);
 });
 
+void test("workflow_queues_parallel_items_over_the_max_parallel_cap", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "queue",
+    `export const metadata = { name: "queue", description: "Queue fanout", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+export default async function workflow() {
+  return parallel(args.items, (item) => agent(item, { label: item }), { label: "queued work" });
+}`,
+  );
+  let activeAgents = 0;
+  let maxActiveAgents = 0;
+  const agent: WorkflowAgent = async (_prompt, options) => {
+    activeAgents++;
+    maxActiveAgents = Math.max(maxActiveAgents, activeAgents);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    activeAgents--;
+    return options.label;
+  };
+
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 2,
+    cwd: project,
+    workflowName: "queue",
+    input: { items: ["one", "two", "three", "four"] },
+    agent,
+  });
+
+  assert.equal(maxActiveAgents, 2);
+  assert.deepEqual(result.result, ["one", "two", "three", "four"]);
+  assert.deepEqual(result.snapshot.fanOuts, [{ id: 1, label: "queued work", total: 4, running: 0, done: 4, error: 0 }]);
+});
+
+void test("workflow_caps_direct_concurrent_agent_calls", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "direct-cap",
+    `export const metadata = { name: "direct-cap", description: "Cap direct agent fanout", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+export default async function workflow() {
+  return Promise.all(args.items.map((item) => agent(item, { label: item })));
+}`,
+  );
+  let activeAgents = 0;
+  let maxActiveAgents = 0;
+  const agent: WorkflowAgent = async (_prompt, options) => {
+    activeAgents++;
+    maxActiveAgents = Math.max(maxActiveAgents, activeAgents);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    activeAgents--;
+    return options.label;
+  };
+
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 2,
+    cwd: project,
+    workflowName: "direct-cap",
+    input: { items: ["one", "two", "three", "four"] },
+    agent,
+  });
+
+  assert.equal(maxActiveAgents, 2);
+  assert.deepEqual(result.result, ["one", "two", "three", "four"]);
+});
+
+void test("workflow_caps_agents_across_concurrent_fanouts", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "global-cap",
+    `export const metadata = { name: "global-cap", description: "Cap concurrent fanouts", inputInstructions: "Use the workflow function JSDoc and signature to resolve input." };
+export default async function workflow() {
+  const left = parallel(["one", "two"], (item) => agent(item, { label: item }), { label: "left" });
+  const right = parallel(["three", "four"], (item) => agent(item, { label: item }), { label: "right" });
+  return Promise.all([left, right]);
+}`,
+  );
+  let activeAgents = 0;
+  let maxActiveAgents = 0;
+  const agent: WorkflowAgent = async (_prompt, options) => {
+    activeAgents++;
+    maxActiveAgents = Math.max(maxActiveAgents, activeAgents);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    activeAgents--;
+    return options.label;
+  };
+
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 2,
+    cwd: project,
+    workflowName: "global-cap",
+    input: {},
+    agent,
+  });
+
+  assert.equal(maxActiveAgents, 2);
+  assert.deepEqual(result.result, [
+    ["one", "two"],
+    ["three", "four"],
+  ]);
+});
+
 void test("workflow_coerces_agent_output_to_json_schema", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
@@ -106,7 +209,7 @@ export default async function workflow() {
     return Promise.resolve(prompts.length === 1 ? "not json" : '{"title":"Ready","score":4}');
   };
 
-  const result = await runWorkflowFromDirectory({ cwd: project, workflowName: "coerce", input: {}, agent });
+  const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "coerce", input: {}, agent });
 
   assert.deepEqual(result.result, { title: "Ready", score: 4 });
   assert.equal(prompts.length, 2);
@@ -136,6 +239,7 @@ export default async function workflow() {
   const agent: WorkflowAgent = (prompt, options) => Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
 
   const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
     cwd: project,
     workflowName: "templated",
     input: { file: "src/index.ts", focus: "edge cases" },
@@ -162,6 +266,7 @@ export default async function workflow() {
   const agent: WorkflowAgent = () => Promise.resolve("unused");
 
   const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
     cwd: project,
     workflowName: "external-prompt",
     input: { topic: "template" },
@@ -187,7 +292,7 @@ export default async function workflow() {
   const agent: WorkflowAgent = () => Promise.resolve("unused");
 
   await assert.rejects(
-    runWorkflowFromDirectory({ cwd: project, workflowName: "legacy", input: { topic: "template" }, agent }),
+    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "legacy", input: { topic: "template" }, agent }),
     /Prompt template not found: review\.txt/,
   );
 });
@@ -219,7 +324,7 @@ export default async function workflow() {
     return Promise.resolve(`unexpected: ${prompt}`);
   };
 
-  const result = await runWorkflowFromDirectory({ cwd: project, workflowName: "mapreduce", input: {}, agent });
+  const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "mapreduce", input: {}, agent });
 
   assert.equal(result.result, "reduced letters");
   assert.equal(prompts.length, 4);
@@ -256,7 +361,7 @@ export default async function workflow() {
     return Promise.resolve(`vote: ${prompt}`);
   };
 
-  const result = await runWorkflowFromDirectory({ cwd: project, workflowName: "verifier", input: {}, agent });
+  const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "verifier", input: {}, agent });
 
   assert.equal(result.result, "verified");
   assert.deepEqual(prompts.slice(0, 3), [
@@ -287,6 +392,7 @@ export default async function workflow() {
   let snapshots = 0;
 
   await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
     cwd: project,
     workflowName: "heartbeat",
     input: {},
@@ -312,12 +418,16 @@ export default async function workflow() {
 }`,
   );
   const sessionLogs: unknown[] = [];
-  const agent: WorkflowAgent = (_prompt, options) => {
+  const agent: WorkflowAgent = (_prompt, options, reportProgress) => {
     sessionLogs.push(options.sessionLog);
+    const sessionLog = options.sessionLog;
+    if (!sessionLog) throw new Error("expected session log context");
+    reportProgress({ sessionFile: `/tmp/${sessionLog.agentKey}.jsonl` });
     return Promise.resolve("ok");
   };
 
-  await runWorkflowFromDirectory({
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
     cwd: project,
     workflowName: "logged",
     input: {},
@@ -325,11 +435,15 @@ export default async function workflow() {
     agentLogParentId: "parent-1",
   });
 
+  assert.deepEqual(
+    result.snapshot.agents.map((agentSnapshot) => agentSnapshot.sessionFile),
+    ["/tmp/phase-001-scan--agent-001-review-src-index.ts.jsonl", "/tmp/phase-001-scan--agent-002-synthesis.jsonl"],
+  );
   assert.deepEqual(sessionLogs, [
     {
       parentId: "parent-1",
       agentId: 1,
-      agentKey: "agent-001-review-src-index.ts",
+      agentKey: "phase-001-scan--agent-001-review-src-index.ts",
       workflowName: "logged",
       label: "Review src/index.ts",
       phaseIndex: 1,
@@ -338,7 +452,7 @@ export default async function workflow() {
     {
       parentId: "parent-1",
       agentId: 2,
-      agentKey: "agent-002-synthesis",
+      agentKey: "phase-001-scan--agent-002-synthesis",
       workflowName: "logged",
       label: "synthesis",
       phaseIndex: 1,
@@ -358,7 +472,10 @@ export default async function workflow() {
   return process.cwd();
 }`,
   );
-  await assert.rejects(runWorkflowFromDirectory({ cwd: project, workflowName: "process", input: {}, agent }), /process is not defined/);
+  await assert.rejects(
+    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "process", input: {}, agent }),
+    /process is not defined/,
+  );
 
   await writeWorkflow(
     project,
@@ -368,7 +485,10 @@ export default async function workflow() {
   return readText("../secret.txt");
 }`,
   );
-  await assert.rejects(runWorkflowFromDirectory({ cwd: project, workflowName: "escape", input: {}, agent }), /escapes workflow directory/);
+  await assert.rejects(
+    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "escape", input: {}, agent }),
+    /escapes workflow directory/,
+  );
 
   await writeWorkflow(
     project,
@@ -379,7 +499,7 @@ export default async function workflow() {
 }`,
   );
   await assert.rejects(
-    runWorkflowFromDirectory({ cwd: project, workflowName: "prompt-escape", input: {}, agent }),
+    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "prompt-escape", input: {}, agent }),
     /escapes workflow prompt directory/,
   );
 });
@@ -396,7 +516,7 @@ export default async function workflow() {
 }`,
   );
 
-  const result = await runWorkflowFromDirectory({ cwd: project, workflowName: "prompt-text", input: {}, agent });
+  const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "prompt-text", input: {}, agent });
 
   assert.equal(result.result, "Do not import the agent's code or write export default examples.");
 });
@@ -414,7 +534,7 @@ export default async function workflow() {
 }`,
   );
   await assert.rejects(
-    runWorkflowFromDirectory({ cwd: project, workflowName: "static-import", input: {}, agent }),
+    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "static-import", input: {}, agent }),
     /cannot import modules/,
   );
 
@@ -427,7 +547,7 @@ export default async function workflow() {
 }`,
   );
   await assert.rejects(
-    runWorkflowFromDirectory({ cwd: project, workflowName: "dynamic-import", input: {}, agent }),
+    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "dynamic-import", input: {}, agent }),
     /cannot import modules/,
   );
 
@@ -439,5 +559,8 @@ export default async function workflow() {
   return require("node:fs");
 }`,
   );
-  await assert.rejects(runWorkflowFromDirectory({ cwd: project, workflowName: "require", input: {}, agent }), /cannot use require/);
+  await assert.rejects(
+    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "require", input: {}, agent }),
+    /cannot use require/,
+  );
 });

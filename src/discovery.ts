@@ -14,6 +14,10 @@ interface WorkflowSettings {
   workflowDirs: string[];
 }
 
+interface RawWorkflowSettings {
+  workflowDirs?: string[];
+}
+
 export async function workflowRootsForProject(cwd: string): Promise<string[]> {
   const projectRoot = path.resolve(cwd);
   const localRoot = path.join(projectRoot, ".pi", "workflows");
@@ -41,15 +45,18 @@ async function readWorkflowSettings(projectRoot: string): Promise<WorkflowSettin
   const workflow = typeof parsed === "object" && parsed !== null ? (parsed as { workflow?: unknown }).workflow : undefined;
   if (workflow === undefined) return { workflowDirs: [] };
   if (!isWorkflowSettings(workflow)) {
-    throw new Error('.pi/settings.json workflow config must contain { "workflowDirs": ["path"] }');
+    throw new Error('.pi/settings.json workflow config must use { "workflowDirs": ["path"] } when workflowDirs is present');
   }
-  return workflow;
+  return { workflowDirs: workflow.workflowDirs ?? [] };
 }
 
-function isWorkflowSettings(value: unknown): value is WorkflowSettings {
+function isWorkflowSettings(value: unknown): value is RawWorkflowSettings {
   if (typeof value !== "object" || value === null) return false;
   const workflowDirs = (value as { workflowDirs?: unknown }).workflowDirs;
-  return Array.isArray(workflowDirs) && workflowDirs.every((item) => typeof item === "string" && item.trim().length > 0);
+  return (
+    workflowDirs === undefined ||
+    (Array.isArray(workflowDirs) && workflowDirs.every((item) => typeof item === "string" && item.trim().length > 0))
+  );
 }
 
 async function discoverWorkflowsInRoot(root: string): Promise<WorkflowReference[]> {

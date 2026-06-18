@@ -18,6 +18,8 @@ import { reviewAndSaveWorkflowDraft, type WorkflowProposal, type WorkflowReviewe
 import { createWorkflowRunId } from "./run-logs.ts";
 import { workflowPrimitiveGuide } from "./authoring-guide.ts";
 import { extractWorkflowInputContract, validateWorkflowInput } from "./input.ts";
+import { writeWorkflowSessionSummary } from "./session-logs.ts";
+import { DEFAULT_MAX_PARALLEL_AGENTS, readProjectWorkflowSettings } from "./workflow-settings.ts";
 
 export interface WorkflowToolsOptions {
   cwd?: string;
@@ -64,12 +66,14 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
       const source = await readFile(path.join(workflowDir, "workflow.js"), "utf8");
       const input = validateWorkflowInput(params.input ?? {}, workflowName, extractWorkflowInputContract(source));
       const parentRunId = createWorkflowRunId(workflowName);
+      const workflowSettings = await readProjectWorkflowSettings(cwd);
       const result = await runWorkflowFromDirectory({
         cwd,
         workflowName,
         input,
         agent,
         workflowRoots,
+        maxParallelAgents: workflowSettings.maxParallelAgents,
         agentLogParentId: parentRunId,
         signal,
         onSnapshot: (snapshot) => {
@@ -79,9 +83,20 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
           });
         },
       });
+      const sessionLogDir = await writeWorkflowSessionSummary({
+        cwd,
+        parentId: parentRunId,
+        snapshot: result.snapshot,
+        result: result.result,
+      });
       return {
-        content: [{ type: "text", text: `Workflow ${result.workflowName} complete.\n\n${JSON.stringify(result.result, null, 2)}` }],
-        details: { workflowName: result.workflowName, status: "complete", snapshot: result.snapshot, result: result.result },
+        content: [
+          {
+            type: "text",
+            text: `Workflow ${result.workflowName} complete.\n\n${JSON.stringify(result.result, null, 2)}\n\nWorkflow session logs: ${sessionLogDir}`,
+          },
+        ],
+        details: { workflowName: result.workflowName, status: "complete", snapshot: result.snapshot, result: result.result, sessionLogDir },
       };
     },
     renderResult(result, _options, theme) {
@@ -129,6 +144,7 @@ function createDebugWorkflowTool(options: WorkflowToolsOptions): ToolDefinition 
           input: params.input ?? {},
           agent,
           workflowRoots: [workflowRoot],
+          maxParallelAgents: DEFAULT_MAX_PARALLEL_AGENTS,
           signal,
           onSnapshot: (snapshot) => {
             lastSnapshot = snapshot;

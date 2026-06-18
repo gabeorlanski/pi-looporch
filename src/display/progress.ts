@@ -47,12 +47,12 @@ export function initialProgressDisplay(
   input?: unknown,
 ): ProgressDisplay {
   const safeWidth = Math.max(MIN_WIDTH, width);
-  const statusLine = `${workflowName}: STARTING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort`;
+  const statusLine = `${workflowName}: STARTING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort · Ctrl+\\ transcript`;
   const inputLine = argsLine(input, safeWidth, theme);
   const widgetLines = [
     titleLine(`workflow ${workflowName}`, safeWidth, theme),
     ...(inputLine ? [inputLine] : []),
-    theme.fg("warning", fit(`  STARTING · waiting for workflow runtime events · Esc abort`, safeWidth)),
+    theme.fg("warning", fit(`  STARTING · waiting for workflow runtime events · Esc abort · Ctrl+\\ transcript`, safeWidth)),
     "",
     theme.fg("muted", fit(`  NET 0/0 agents · in 0 · out 0 · total 0 · tools 0`, safeWidth)),
   ];
@@ -63,7 +63,7 @@ export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDT
   const safeWidth = Math.max(MIN_WIDTH, width);
   const stats = netStats(snapshot);
   const state = workflowState(snapshot, stats);
-  const statusLine = `${snapshot.workflowName}: ${state.label} · ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · in ${formatTokenCount(stats.inputTokenCount)} · out ${formatTokenCount(stats.outputTokenCount)} · tools ${String(stats.toolCallCount)}${state.kind === "running" ? " · Esc abort" : ""}`;
+  const statusLine = `${snapshot.workflowName}: ${state.label} · ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · in ${formatTokenCount(stats.inputTokenCount)} · out ${formatTokenCount(stats.outputTokenCount)} · tools ${String(stats.toolCallCount)}${state.kind === "running" ? " · Esc abort · Ctrl+\\ transcript" : ""}`;
   const inputLine = argsLine(snapshot.input, safeWidth, theme);
   const widgetLines = [
     titleLine(`workflow ${snapshot.workflowName}`, safeWidth, theme),
@@ -112,7 +112,7 @@ function summaryLine(
 ): string {
   const phase = currentPhaseLabel(snapshot);
   const errors = stats.erroredAgents > 0 ? theme.fg("error", ` · ${String(stats.erroredAgents)} errors`) : "";
-  const abortHint = state.kind === "running" ? theme.fg("warning", " · Esc abort") + theme.fg("muted", " · ⌥O inspect") : "";
+  const abortHint = state.kind === "running" ? theme.fg("warning", " · Esc abort") + theme.fg("muted", " · Ctrl+\\ transcript") : "";
   return fit(
     `  ${theme.fg(state.color, theme.bold(state.label))}` +
       ` ${theme.fg("muted", "·")} ${theme.fg("accent", phase)}` +

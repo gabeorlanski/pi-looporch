@@ -107,8 +107,9 @@ export default async function workflow() {
 
   await command.handler('echo message=hello count=10 debug=true files=src/index.ts,tests/index.test.ts note="hello world"', ctx);
 
-  assert.deepEqual(sentUserMessages, []);
-  assert.ok(statusUpdates.includes("echo: RUNNING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort"));
+  assert.equal(sentUserMessages.length, 1);
+  assert.match(String(sentUserMessages[0]), /^Workflow session logs: /);
+  assert.ok(statusUpdates.includes("echo: RUNNING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort · Ctrl+\\ transcript"));
   assert.deepEqual(statusUpdates.at(-1), undefined);
   assert.ok(
     widgetUpdates.some(
@@ -120,12 +121,53 @@ export default async function workflow() {
         update.some((line) => line.includes("NET 0/0 agents")),
     ),
   );
-  assert.deepEqual(
-    sentMessages.map((message) => message.content),
-    [
-      'Workflow \'echo\' complete.\n\n{\n  "message": "hello",\n  "count": 10,\n  "debug": true,\n  "files": [\n    "src/index.ts",\n    "tests/index.test.ts"\n  ],\n  "note": "hello world"\n}',
-    ],
-  );
+  assert.equal(sentMessages.length, 1);
+  assert.match(sentMessages[0].content, /Workflow 'echo' complete\.\n\n\{[\s\S]*"note": "hello world"[\s\S]*\}\n\nWorkflow session logs: /);
+});
+
+void test("workflow_settings_command_writes_project_settings", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const commands = new Map<string, RegisteredTestCommand>();
+  const notifications: { message: string; type?: string }[] = [];
+  const pi = {
+    registerTool(tool: unknown): void {
+      void tool;
+    },
+    registerCommand(name: string, command: RegisteredTestCommand): void {
+      commands.set(name, command);
+    },
+    on(event: string, handler: unknown): void {
+      void event;
+      void handler;
+    },
+    sendMessage(message: unknown): void {
+      void message;
+    },
+    sendUserMessage(message: unknown): void {
+      void message;
+    },
+  } as unknown as ExtensionAPI;
+  piWorkflow(pi);
+
+  const command = commands.get("workflow-settings");
+  assert.ok(command);
+  const ctx = {
+    cwd: project,
+    mode: "tui",
+    hasUI: true,
+    ui: {
+      notify(message: string, type?: "info" | "warning" | "error"): void {
+        notifications.push({ message, type });
+      },
+    },
+  } as unknown as ExtensionCommandContext;
+
+  await command.handler("maxParallelAgents=8", ctx);
+
+  assert.match(notifications.at(-1)?.message ?? "", /set to 8/);
+  assert.deepEqual(JSON.parse(await readFile(path.join(project, ".pi", "settings.json"), "utf8")), {
+    workflow: { maxParallelAgents: 8 },
+  });
 });
 
 void test("existing_workflow_freeform_input_is_steered_in_current_session", async () => {

@@ -41,6 +41,16 @@ You can also point a project at external workflow directories with `.pi/settings
 
 Each entry is a workflow root containing `<workflow-name>/workflow.js` children. Relative paths resolve from the project root. Project-local `.pi/workflows` is always searched first.
 
+Workflow child-agent launches are globally capped by `.pi/settings.json`; fan-outs and direct concurrent `agent(...)` calls queue extra agents until a slot opens. The default cap is 4 concurrent agents. Configure it with `/workflow-settings` in the TUI or edit JSON directly:
+
+```json
+{
+  "workflow": {
+    "maxParallelAgents": 4
+  }
+}
+```
+
 ## Authoring
 
 `workflow.js` exports required metadata and a default function. `metadata.inputInstructions` tells the input resolver how to interpret natural-language command input; the workflow function JSDoc and parameter signature are the single argument contract.
@@ -131,6 +141,7 @@ Agents spawned from workflows can call `run_workflow` to invoke an existing work
 /workflow:<workflow-name> [--save-log] [input]
 /workflow <natural-language request>
 /workflow-review <workflow-name>
+/workflow-settings [maxParallelAgents=<positive-integer>]
 ```
 
 Examples:
@@ -141,9 +152,10 @@ Examples:
 /workflow:review prompt="focus on auth edge cases" files=src/auth.ts,tests/auth.test.ts
 /workflow review the auth flow and create a reusable workflow if needed
 /workflow-review review
+/workflow-settings maxParallelAgents=8
 ```
 
-Named workflow commands (`/workflow <name>` and `/workflow:<name>`) run the saved workflow directly for JSON and `key=value`/`--key value` input. Freeform named-workflow input is sent into the current session as a normal visible, steerable conversation: pi-workflow displays the exact prompt it passes to the agent, including `metadata.inputInstructions`, the workflow function JSDoc/signature contract, and the user's input. The agent asks if required fields are missing and calls `run_workflow` only when the input is complete. Missing required args in direct JSON/key-value calls produce an actionable message instead of starting the workflow and crashing. Every child agent launched for a workflow stores logs under `~/.pi/agent/sessions/<project-key>/<parent-run-id>/<agent-key>/`, with `metadata.json`, in-flight `events.jsonl`, and the pi session JSONL. Token counts are never estimated; pi-workflow reports provider usage from events/session JSONL when available. Pass `--save-log` to also save the workflow-level debugging trajectory under `.pi/workflow-runs/<parent-run-id>/` with `metadata.json`, `input.json`, `workflow.js`, `events.jsonl`, `final-snapshot.json`, and the final `result.json` or `error.json`. While a workflow is running in the TUI, pi-workflow shows a compact `args ...` preview of the normalized run input, phase history, expanded active phase children, collapsed completed phases, and model, thinking, input tokens, assistant output tokens, tool calls, and NET totals.
+Named workflow commands (`/workflow <name>` and `/workflow:<name>`) run the saved workflow directly for JSON and `key=value`/`--key value` input. Freeform named-workflow input is sent into the current session as a normal visible, steerable conversation: pi-workflow displays the exact prompt it passes to the agent, including `metadata.inputInstructions`, the workflow function JSDoc/signature contract, and the user's input. The agent asks if required fields are missing and calls `run_workflow` only when the input is complete. Missing required args in direct JSON/key-value calls produce an actionable message instead of starting the workflow and crashing. Every child agent launched for a workflow stores logs under `~/.pi/agent/sessions/<project-key>/<parent-run-id>/<agent-key>/`, with `metadata.json`, in-flight `events.jsonl`, and the pi session JSONL. Token counts are never estimated; pi-workflow reports provider usage from events/session JSONL when available. Pass `--save-log` to also save the workflow-level debugging trajectory under `.pi/workflow-runs/<parent-run-id>/` with `metadata.json`, `input.json`, `workflow.js`, `events.jsonl`, `final-snapshot.json`, and the final `result.json` or `error.json`. On completion, pi-workflow posts the workflow session-log directory back to the main session and also injects that path as a normal user message so the parent agent has it in context; that directory contains `workflow-summary.json` plus child-agent directories whose slugs include phase, fan-out, agent id, and label for searchable follow-up analysis. While a workflow is running in the TUI, pi-workflow shows a compact `args ...` preview of the normalized run input, phase history, expanded active phase children, collapsed completed phases, and model, thinking, input tokens, assistant output tokens, tool calls, and NET totals. Press `Ctrl+\\` (or `F2` / legacy `Alt-O`) to split the running workflow view into a tmux-style progress/transcript pane; use arrows/PageUp/PageDown to scroll, Tab or left/right to switch agents, and Esc/q/Ctrl+\\ to close the transcript pane without aborting the workflow.
 
 ## Development
 

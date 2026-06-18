@@ -56,7 +56,7 @@ void test("workflow_progress_table_collapses_completed_phase_children_and_expand
 
   const display = progressDisplay(snapshot, 112);
 
-  assert.equal(display.statusLine, "review: RUNNING · 2/3 agents · in 2.4k · out 1.3k · tools 6 · Esc abort");
+  assert.equal(display.statusLine, "review: RUNNING · 2/3 agents · in 2.4k · out 1.3k · tools 6 · Esc abort · Ctrl+\\ transcript");
   assert.ok(display.widgetLines.some((line) => line.includes('args {"files":["a.ts","b.ts"],"focus":"auth"}')));
   assert.ok(display.widgetLines.some((line) => line.includes("RUNNING") && line.includes("Esc abort")));
   assert.ok(
@@ -83,7 +83,7 @@ void test("workflow_progress_table_falls_back_to_startup_phase_before_explicit_p
 
   const display = progressDisplay(snapshot, 88);
 
-  assert.equal(display.statusLine, "select: RUNNING · 0/1 agents · in 0 · out 0 · tools 0 · Esc abort");
+  assert.equal(display.statusLine, "select: RUNNING · 0/1 agents · in 0 · out 0 · tools 0 · Esc abort · Ctrl+\\ transcript");
   assert.ok(display.widgetLines.some((line) => line.includes("▸ setup") && line.includes("0/1 agents")));
   assert.ok(display.widgetLines.some((line) => line.includes("#1 selector")));
 });
@@ -111,7 +111,7 @@ void test("workflow_progress_table_numbers_repeated_phase_titles_by_original_ord
 void test("initial_workflow_progress_uses_empty_net_summary", () => {
   const display = initialProgressDisplay("review", 72, undefined, { files: ["src/a.ts"], focus: "auth" });
 
-  assert.equal(display.statusLine, "review: STARTING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort");
+  assert.equal(display.statusLine, "review: STARTING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort · Ctrl+\\ transcript");
   assert.ok(display.widgetLines.some((line) => line.includes('args {"files":["src/a.ts"],"focus":"auth"}')));
   assert.ok(display.widgetLines.some((line) => line.includes("waiting for workflow runtime events")));
   assert.ok(display.widgetLines.some((line) => line.includes("Esc abort")));

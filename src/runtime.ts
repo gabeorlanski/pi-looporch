@@ -282,8 +282,13 @@ export function resolveWorkflowDirectory(cwd: string, workflowName: string, work
   throw new Error(`Workflow '${workflowName}' not found`);
 }
 
-export function resolveInsideWorkflow(workflowDir: string, relativePath: string): string {
-  return resolveInsideRoot(workflowDir, relativePath, "Workflow file escapes workflow directory");
+export function resolveWorkflowReadPath(cwd: string, workflowDir: string, filePath: string): string {
+  if (typeof filePath !== "string" || !filePath.trim()) throw new Error("Workflow file path must be non-empty");
+  if (filePath === "@workflow" || filePath.startsWith("@workflow/")) {
+    const workflowPath = filePath === "@workflow" ? "." : filePath.slice("@workflow/".length);
+    return resolveInsideRoot(workflowDir, workflowPath, "Workflow-local file escapes workflow directory");
+  }
+  return path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(cwd, filePath);
 }
 
 export function validateWorkflowMetadata(metadata: unknown, workflowName: string): asserts metadata is WorkflowMetadata {
@@ -315,8 +320,9 @@ function metadataGlobals(options: RunWorkflowOptions, workflowDir: string): Reco
     phase: unavailableMetadataPrimitive("phase"),
     log: unavailableMetadataPrimitive("log"),
     trace: unavailableMetadataPrimitive("trace"),
-    readText: (relativePath: string) => readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8"),
-    readJson: (relativePath: string) => JSON.parse(readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8")) as unknown,
+    readText: (filePath: string) => readFileSync(resolveWorkflowReadPath(options.cwd, workflowDir, filePath), "utf8"),
+    readJson: (filePath: string) =>
+      JSON.parse(readFileSync(resolveWorkflowReadPath(options.cwd, workflowDir, filePath), "utf8")) as unknown,
     renderPrompt: (templatePath: string, values: unknown) => renderWorkflowPrompt(workflowDir, templatePath, values),
     parallel: unavailableMetadataPrimitive("parallel"),
     pipeline: unavailableMetadataPrimitive("pipeline"),
@@ -356,8 +362,9 @@ function workflowGlobals(runtime: ActiveWorkflowRuntime, workflowDir: string): R
       runtime.emit();
     },
     trace: (label: string, value?: unknown) => recordTrace(runtime, label, value),
-    readText: (relativePath: string) => readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8"),
-    readJson: (relativePath: string) => JSON.parse(readFileSync(resolveInsideWorkflow(workflowDir, relativePath), "utf8")) as unknown,
+    readText: (filePath: string) => readFileSync(resolveWorkflowReadPath(runtime.options.cwd, workflowDir, filePath), "utf8"),
+    readJson: (filePath: string) =>
+      JSON.parse(readFileSync(resolveWorkflowReadPath(runtime.options.cwd, workflowDir, filePath), "utf8")) as unknown,
     renderPrompt: (templatePath: string, values: unknown) => renderWorkflowPrompt(workflowDir, templatePath, values),
     parallel: <T, R>(items: readonly T[], worker: (item: T, index: number) => Promise<R> | R, fanOutOptions: { label?: string } = {}) =>
       runParallel(runtime, items, worker, fanOutOptions.label),

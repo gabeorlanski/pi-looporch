@@ -73,6 +73,34 @@ export default async function workflow() {
   assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /Actual tokens used: 0/);
 });
 
+void test("debug_workflow_tool_reads_project_absolute_and_workflow_files", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
+  const outside = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-readable-"));
+  const absolutePath = path.join(outside, "absolute.txt");
+  await mkdir(path.join(project, "fixtures"), { recursive: true });
+  await writeFile(path.join(project, "fixtures", "project.txt"), "project", "utf8");
+  await writeFile(absolutePath, "absolute", "utf8");
+  const source = `export const metadata = { name: "readable", description: "Readable debug draft", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return {
+    project: readText("fixtures/project.txt"),
+    absolute: readText(args.absolutePath),
+    workflowSourceIncludesMetadata: readText("@workflow/workflow.js").includes("Readable debug draft"),
+  };
+}`;
+  const tool = createWorkflowTools({ cwd: project }).find((candidate) => candidate.name === "debug_workflow");
+  assert.ok(tool);
+
+  const result = await tool.execute("call-1", { name: "readable", source, input: { absolutePath } }, undefined, undefined, {} as never);
+
+  assert.equal((result.details as { status: string }).status, "complete");
+  assert.deepEqual((result.details as { result: unknown }).result, {
+    project: "project",
+    absolute: "absolute",
+    workflowSourceIncludesMetadata: true,
+  });
+});
+
 void test("debug_workflow_tool_returns_errors_without_throwing", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const source = `export const metadata = { name: "broken", description: "Broken draft", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
@@ -93,11 +121,20 @@ void test("workflow_primitives_tool_returns_docs_and_examples", async () => {
   assert.ok(tool);
 
   const all = await tool.execute("call-1", {}, undefined, undefined, {} as never);
-  assert.match(all.content[0]?.type === "text" ? all.content[0].text : "", /Available workflow globals/);
-  assert.match(all.content[0]?.type === "text" ? all.content[0].text : "", /debugging tip/i);
-  assert.match(all.content[0]?.type === "text" ? all.content[0].text : "", /does not pass prior agent responses/i);
+  const allText = all.content[0]?.type === "text" ? all.content[0].text : "";
+  assert.match(allText, /Available workflow globals/);
+  assert.match(allText, /debugging tip/i);
+  assert.match(allText, /does not pass prior agent responses/i);
+  assert.match(allText, /bare relative paths resolve from project cwd/);
+  assert.match(allText, /@workflow\/\.\.\. resolves inside the workflow directory/);
 
-  const coerce = await tool.execute("call-2", { primitive: "coerce" }, undefined, undefined, {} as never);
+  const readText = await tool.execute("call-2", { primitive: "readText" }, undefined, undefined, {} as never);
+  const readTextDocs = readText.content[0]?.type === "text" ? readText.content[0].text : "";
+  assert.match(readTextDocs, /readText\(filePath: string\)/);
+  assert.match(readTextDocs, /const projectFile = readText\("src\/index\.ts"\)/);
+  assert.match(readTextDocs, /const workflowFixture = readJson\("@workflow\/fixtures\/example\.json"\)/);
+
+  const coerce = await tool.execute("call-3", { primitive: "coerce" }, undefined, undefined, {} as never);
   const text = coerce.content[0]?.type === "text" ? coerce.content[0].text : "";
   assert.match(text, /coerce\(/);
   assert.doesNotMatch(text, /verifier\(/);

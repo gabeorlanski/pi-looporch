@@ -14,6 +14,7 @@ const workflowSourceRequirements = [
   "Lean into power-user runbook code: top-level constants, inline schemas, prompt builders, and local paths are fine when they make the workflow easier to tweak.",
   "Keep runtime logic explicit; use local helpers only when they remove real duplication or clarify a multi-step transformation.",
   "Phases are progress markers, not shared memory; pass data between phases by storing agent results and rendering them into later prompts.",
+  "For file reads, use readText/readJson: absolute paths resolve as absolute, bare relative paths resolve from project cwd, and @workflow/... resolves inside the workflow directory.",
 ];
 
 const workflowPrimitiveExamples: Record<string, string> = {
@@ -55,6 +56,9 @@ const workflowPrimitiveExamples: Record<string, string> = {
   focus: args.focus,
 });
 return agent(prompt, { label: "review", reasoning: "medium" });`,
+  readText: `const projectFile = readText("src/index.ts");
+const workflowFixture = readJson("@workflow/fixtures/example.json");
+const absoluteFile = readText(args.absolutePath);`,
   dataflow: `phase("research");
 const research = await agent("Research " + args.topic, { label: "research" });
 
@@ -135,8 +139,9 @@ const workflowPrimitiveDocs: AuthoringDoc[] = [
   },
   {
     name: "readText / readJson",
-    signature: "readText(relativePath: string): string; readJson(relativePath: string): unknown",
-    docstring: "Reads supporting files inside the workflow directory. Paths are sandboxed to the workflow directory.",
+    signature: "readText(filePath: string): string; readJson(filePath: string): unknown",
+    docstring:
+      "Reads files from disk. Absolute paths resolve as absolute, bare relative paths resolve from project cwd, and @workflow/... resolves inside the workflow directory.",
   },
   {
     name: "renderPrompt",

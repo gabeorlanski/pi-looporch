@@ -53,8 +53,8 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Keep generated workflows review-gated before save or run.
 - Require workflow metadata to include `phases: [{ title, detail? }]`; this planned runbook outline is required preview data, while runtime `phase()` calls are actual progress.
 - Require agent-generated workflow source to document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
-- Keep workflow file helpers sandboxed inside the workflow directory.
-- Keep prompt templates behind `renderPrompt` and the workflow's own `prompts/` directory; do not expand workflow-local file helpers to read arbitrary shared files.
+- Let workflow `readText`/`readJson` read files anywhere the pi process can read: absolute paths as absolute, bare relative paths from project `cwd`, and `@workflow/...` paths from the workflow directory.
+- Keep prompt templates behind `renderPrompt` and the workflow's own `prompts/` directory.
 - When a requested behavior change is a cutover, remove the old path instead of adding compatibility fallback.
 - Lean into power-user workflow style: top-level constants, inline schemas, prompt-builder helpers, and local runbook assumptions are acceptable when they make workflows easier for agents to inspect and tweak.
 - Prefer `agent(prompt, { schema, maxAttempts? })` for child agents that do real work and must return typed JSON; reserve `coerce` for no-tools extraction/normalization.

@@ -58,8 +58,8 @@ Initial global primitives should include at least:
 - `args`
 - `cwd`
 - `budget`
-- `readText(relativePath)`
-- `readJson(relativePath)`
+- `readText(filePath)`
+- `readJson(filePath)`
 - `renderPrompt(templatePath, values)`
 
 Every `workflow.js` must export metadata with a planned phase outline. `metadata.inputInstructions` gives the resolver workflow-specific guidance without duplicating the argument list, and required `metadata.phases` makes the runbook shape visible before execution. The authoring model intentionally favors power-user/agent-authored runbooks over package-like shareability: inline schemas, prompt builders, top-level constants, and local paths are acceptable when they improve observability and ease of tweaking. Agent-generated workflows must document the default workflow function with JSDoc that covers purpose, input fields/defaults, phases, child agent usage, file reads, and result shape:
@@ -107,11 +107,11 @@ Each workflow gets a directory so it can include supporting files it needs, such
 Because workflows run sandboxed, support files are accessed through narrow runtime helpers instead of unrestricted imports or filesystem APIs:
 
 ```js
-const prompt = readText("prompts/review.md");
-const schema = readJson("schemas/finding.schema.json");
+const prompt = readText("@workflow/prompts/review.md");
+const schema = readJson("@workflow/schemas/finding.schema.json");
 ```
 
-Prompt templates owned by a workflow live under the workflow's `prompts/` directory. Workflows render those templates through `renderPrompt(templatePath, values)`, which uses simple `{{name}}` placeholder substitution. `readText`, `readJson`, and `renderPrompt` all stay scoped to the workflow directory.
+Prompt templates owned by a workflow live under the workflow's `prompts/` directory. Workflows render those templates through `renderPrompt(templatePath, values)`, which uses simple `{{name}}` placeholder substitution. `readText` and `readJson` can read any file the pi process can read: absolute paths resolve as absolute, bare relative paths resolve from project `cwd`, and `@workflow/...` resolves inside the workflow directory. `renderPrompt` stays scoped to the workflow prompt directory.
 
 Structured agent helpers stay inside the same sandbox. `agent(prompt, { schema, maxAttempts? })` is the power-user path for child agents that do real work and must return a typed JSON result; the runtime wraps the task with the schema, retries with validation feedback, records validation failures as events/traces, and returns the parsed JSON value. `coerce` uses a no-tools child agent and JSON Schema validation retries for pure extraction. `mapreduce` first coerces an input prompt into a bare `{ items: [...] }` shape before map fan-out and reduction. `verifier` validates criteria objects with `name`, `description`, `guidelines`, `reasoning`, and optional `voters`, then runs criterion voter agents before a reduction agent. `trace(label, value?)` records workflow-local debug state in snapshots and run events for easier tweaking.
 

@@ -24,7 +24,7 @@ void test("workflow_runs_with_core_primitives", async () => {
     `export const metadata = { name: "review", description: "Review files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
   phase("fanout");
-  const reviewed = await parallel(args.files, (file) => agent(readText("prompt.txt") + file, { label: file }), { label: "file reviews" });
+  const reviewed = await parallel(args.files, (file) => agent(readText("@workflow/prompt.txt") + file, { label: file }), { label: "file reviews" });
   return pipeline(reviewed, [async (item) => ({ item, cwd })]);
 }`,
     { "prompt.txt": "review " },
@@ -550,8 +550,13 @@ export default async function workflow() {
   ]);
 });
 
-void test("workflow_sandbox_blocks_ambient_authority_and_file_escapes", async () => {
+void test("workflow_sandbox_blocks_ambient_authority_but_read_helpers_can_read_anywhere", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  const outside = await mkdtemp(path.join(tmpdir(), "pi-workflow-readable-"));
+  const absolutePath = path.join(outside, "absolute.txt");
+  await mkdir(path.join(project, "fixtures"), { recursive: true });
+  await writeFile(path.join(project, "fixtures", "project.txt"), "project", "utf8");
+  await writeFile(absolutePath, "absolute", "utf8");
   const agent: WorkflowAgent = () => Promise.resolve("unused");
   await writeWorkflow(
     project,
@@ -568,16 +573,22 @@ export default async function workflow() {
 
   await writeWorkflow(
     project,
-    "escape",
-    `export const metadata = { name: "escape", description: "Escape access", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+    "read-anywhere",
+    `export const metadata = { name: "read-anywhere", description: "Read anywhere", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
-  return readText("../secret.txt");
+  return [readText("fixtures/project.txt"), readText(args.absolutePath), readJson("@workflow/data.json")];
 }`,
+    { "data.json": '{"workflow":true}' },
   );
-  await assert.rejects(
-    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "escape", input: {}, agent }),
-    /escapes workflow directory/,
-  );
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "read-anywhere",
+    input: { absolutePath },
+    agent,
+  });
+
+  assert.deepEqual(result.result, ["project", "absolute", { workflow: true }]);
 
   await writeWorkflow(
     project,

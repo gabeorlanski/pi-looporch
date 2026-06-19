@@ -26,7 +26,7 @@ Workflows live in one directory per workflow:
 .pi/workflows/<workflow-name>/
   workflow.js  # required executable workflow and metadata
   prompts/     # optional renderPrompt templates
-  ...          # optional schemas, fixtures, examples, and readText/readJson support files
+  ...          # optional schemas, fixtures, examples, and @workflow readText/readJson files
 ```
 
 You can also point a project at external workflow directories with `.pi/settings.json`:
@@ -81,7 +81,7 @@ export default async function workflow({ files, focus = "general review" }) {
   const reviews = await parallel(
     files,
     async (file) => {
-      return agent(readText("prompts/review.txt") + "\n\nFile: " + file, {
+      return agent(readText("@workflow/prompts/review.txt") + "\n\nFile: " + file, {
         label: file,
         reasoning: "high",
         taskFile: file,
@@ -98,7 +98,7 @@ export default async function workflow({ files, focus = "general review" }) {
 }
 ```
 
-Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `trace`, `args`, `cwd`, `budget`, `readText`, `readJson`, and `renderPrompt`. Workflow-local file helpers are constrained to the workflow directory. New workflows should receive input through the default function parameter; the global `args` remains for compatibility. Agent-generated workflows must document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape before they can be saved.
+Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `trace`, `args`, `cwd`, `budget`, `readText`, `readJson`, and `renderPrompt`. Workflow code cannot import modules or access ambient Node globals like `process`, but `readText` and `readJson` can read any file the pi process can read: absolute paths resolve as absolute, bare relative paths resolve from the project `cwd`, and `@workflow/...` resolves inside the workflow directory. New workflows should receive input through the default function parameter; the global `args` remains for compatibility. Agent-generated workflows must document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape before they can be saved.
 
 Workflow discovery skips invalid workflow definitions so one broken `.pi/workflows/<name>/workflow.js` cannot prevent pi startup or command completion registration. Fix or remove the invalid workflow file to make it appear in `/workflow` suggestions again.
 
@@ -126,7 +126,7 @@ Focus: {{focus}}
 const prompt = renderPrompt("review/base.txt", { file: args.file, focus: args.focus });
 ```
 
-Use `readText` and `readJson` for support files inside the workflow directory. Use `renderPrompt` for prompt templates owned by the workflow under its `prompts/` directory.
+Use `readText` and `readJson` for plain file reads. Absolute paths resolve as absolute, bare relative paths resolve from project `cwd`, and `@workflow/...` resolves inside the workflow directory. Use `renderPrompt` for prompt templates owned by the workflow under its `prompts/` directory; `renderPrompt` remains scoped to that prompt directory.
 
 ### Structured primitives and observability
 

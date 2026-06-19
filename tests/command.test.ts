@@ -12,6 +12,8 @@ void test("natural_language_workflow_command_steers_current_session_to_tools", (
   assert.match(message, /JSDoc/);
   assert.match(message, /Available workflow globals/);
   assert.match(message, /phase, log, trace, args/);
+  assert.match(message, /bare relative paths resolve from project cwd/);
+  assert.match(message, /@workflow\/\.\.\. resolves inside the workflow directory/);
   assert.match(message, /echo/);
 });
 
@@ -22,4 +24,6 @@ void test("workflow_selection_prompt_includes_rendered_authoring_guide", () => {
   assert.match(message, /JSDoc/);
   assert.match(message, /Available workflow globals/);
   assert.match(message, /agent\(prompt: string/);
+  assert.match(message, /bare relative paths resolve from project cwd/);
+  assert.match(message, /@workflow\/\.\.\. resolves inside the workflow directory/);
 });

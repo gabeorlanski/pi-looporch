@@ -24,7 +24,7 @@ npm run check
 - Keep generated workflow authoring docs in `authoring-guide.ts`; render them into prompts through placeholders.
 - Require generated workflow source to document the default workflow function with JSDoc covering input fields/defaults, phases, child agents, file reads, and result shape.
 - Keep helpers purposeful; inline short functions that only obscure flow.
-- Preserve workflow sandbox constraints: workflow file reads must stay inside the workflow directory, and prompt templates must resolve only through the workflow's own `prompts/` directory.
+- Preserve workflow sandbox constraints around ambient authority: workflows cannot import modules or use Node globals, `renderPrompt` must resolve only through the workflow's own `prompts/` directory, and `readText`/`readJson` may read absolute paths, project-cwd-relative paths, or `@workflow/...` paths.
 - Never estimate token counts; only report provider/session usage or zero/unknown when actual usage is unavailable.
 - Update tests and docs when exported behavior or workflow primitives change.
 

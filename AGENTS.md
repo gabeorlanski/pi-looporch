@@ -110,7 +110,7 @@ TypeScript interfaces/types are the source of truth:
 - Keep command/UI parsing at boundaries; keep core runtime strict.
 - Keep prompt copy in raw `.txt` files under `src/prompts/`.
 - Keep generated workflow authoring guidance in TypeScript and inject it into raw prompts through placeholders.
-- Keep workflow-local file reads in `readText`/`readJson`; use `renderPrompt` for prompt templates under the workflow's own `prompts/` directory.
+- Let `readText`/`readJson` read absolute paths, project-cwd-relative paths, and `@workflow/...` paths; use `renderPrompt` for prompt templates under the workflow's own `prompts/` directory.
 - Agent-generated workflow source must include required `metadata.phases` as the planned runbook outline and document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
 - Optimize workflow authoring for power-user/agent-authored executable runbooks: top-level constants, inline schemas, prompt-builder helpers, and local paths are fine when they improve observability and ease of tweaking.
 - Prefer `agent(prompt, { schema, maxAttempts? })` for structured child-agent work; use `trace(label, value?)` for workflow-local debug state that should show up in snapshots/run events.

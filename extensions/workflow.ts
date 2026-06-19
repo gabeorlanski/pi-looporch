@@ -456,32 +456,60 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function emptySnapshot(): WorkflowSnapshot {
-  return { workflowName: "", description: "", plannedPhases: [], phases: [], logs: [], traces: [], agents: [], fanOuts: [] };
+  return { workflowName: "", description: "", plannedPhases: [], phases: [], logs: [], traces: [], agents: [], fanOuts: [], messages: [] };
 }
+
+interface RunningWorkflowUiState {
+  displayForWidth: (width: number, theme?: ProgressTheme) => ProgressDisplay;
+  inspector: WorkflowInspector;
+  requestRender?: () => void;
+  statusLine?: string;
+}
+
+const runningWorkflowUiStates = new WeakMap<ExtensionCommandContext, RunningWorkflowUiState>();
 
 function updateRunningWorkflowUi(
   ctx: ExtensionCommandContext,
   displayForWidth: (width: number, theme?: ProgressTheme) => ProgressDisplay,
   inspector: WorkflowInspector,
 ): void {
-  const statusLine = displayForWidth(96).statusLine;
-  ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, statusLine);
+  const existing = runningWorkflowUiStates.get(ctx);
+  if (existing) {
+    existing.displayForWidth = displayForWidth;
+    existing.inspector = inspector;
+    updateRunningWorkflowStatus(ctx, existing);
+    existing.requestRender?.();
+    return;
+  }
+
+  const state: RunningWorkflowUiState = { displayForWidth, inspector };
+  runningWorkflowUiStates.set(ctx, state);
+  updateRunningWorkflowStatus(ctx, state);
   ctx.ui.setWidget(
     RUNNING_WORKFLOW_WIDGET,
-    (tui, theme) => ({
-      render: (width: number) => {
-        const display = displayForWidth(width, theme);
-        return inspector.render(tui, theme, width, display.widgetLines);
-      },
-      invalidate: () => {
-        ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, displayForWidth(96).statusLine);
-      },
-    }),
+    (tui, theme) => {
+      state.requestRender = () => tui.requestRender();
+      return {
+        render: (width: number) => {
+          const display = state.displayForWidth(width, theme);
+          return state.inspector.render(tui, theme, width, display.widgetLines);
+        },
+        invalidate: () => updateRunningWorkflowStatus(ctx, state),
+      };
+    },
     { placement: "aboveEditor" },
   );
 }
 
+function updateRunningWorkflowStatus(ctx: ExtensionCommandContext, state: RunningWorkflowUiState): void {
+  const statusLine = state.displayForWidth(96).statusLine;
+  if (statusLine === state.statusLine) return;
+  state.statusLine = statusLine;
+  ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, statusLine);
+}
+
 function clearRunningWorkflowUi(ctx: ExtensionCommandContext): void {
+  runningWorkflowUiStates.delete(ctx);
   ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, undefined);
   ctx.ui.setWidget(RUNNING_WORKFLOW_WIDGET, undefined);
 }

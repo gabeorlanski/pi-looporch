@@ -1,8 +1,9 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { WorkflowAgentSnapshot, WorkflowSnapshot, WorkflowTraceSnapshot } from "../runtime.ts";
+import type { WorkflowAgentSnapshot, WorkflowRunMessageSnapshot, WorkflowSnapshot } from "../runtime.ts";
 
 const DEFAULT_WIDTH = 96;
 const MIN_WIDTH = 64;
+const MAX_EXPANDED_PHASE_AGENTS = 8;
 
 type DisplayColor = "accent" | "borderMuted" | "dim" | "error" | "muted" | "success" | "text" | "warning";
 
@@ -33,6 +34,12 @@ interface PhaseSection {
   isCurrent: boolean;
   agents: WorkflowAgentSnapshot[];
   isExpanded: boolean;
+}
+
+interface MiniLogEntry {
+  context: string;
+  message: string;
+  color: DisplayColor;
 }
 
 const plainTheme: ProgressTheme = {
@@ -71,7 +78,7 @@ export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDT
     summaryLine(snapshot, stats, state, safeWidth, theme),
     "",
     ...phaseSections(snapshot).flatMap((section) => renderPhaseSection(section, safeWidth, theme)),
-    ...traceLines(snapshot.traces, safeWidth, theme),
+    ...miniLogLines(snapshot, safeWidth, theme),
     "",
     netLine(snapshot, stats, safeWidth, theme),
   ];
@@ -140,7 +147,33 @@ function renderPhaseSection(section: PhaseSection, width: number, theme: Progres
     width,
   );
   if (section.agents.length === 0 || !section.isExpanded) return [phaseLine];
-  return [phaseLine, ...section.agents.flatMap((agent) => renderAgentRow(agent, width, theme))];
+  const visibleAgents = visiblePhaseAgents(section.agents);
+  return [
+    phaseLine,
+    ...visibleAgents.agents.flatMap((agent) => renderAgentRow(agent, width, theme)),
+    ...(visibleAgents.hidden > 0 ? [hiddenAgentsLine(visibleAgents.hidden, width, theme)] : []),
+  ];
+}
+
+function visiblePhaseAgents(agents: WorkflowAgentSnapshot[]): { agents: WorkflowAgentSnapshot[]; hidden: number } {
+  if (agents.length <= MAX_EXPANDED_PHASE_AGENTS) return { agents, hidden: 0 };
+  const selected = new Set<number>();
+  for (const agent of agents) {
+    if (selected.size >= MAX_EXPANDED_PHASE_AGENTS) break;
+    if (agent.status !== "done") selected.add(agent.id);
+  }
+  for (const agent of [...agents].reverse()) {
+    if (selected.size >= MAX_EXPANDED_PHASE_AGENTS) break;
+    selected.add(agent.id);
+  }
+  return { agents: agents.filter((agent) => selected.has(agent.id)), hidden: agents.length - selected.size };
+}
+
+function hiddenAgentsLine(hidden: number, width: number, theme: ProgressTheme): string {
+  return fit(
+    `     ${theme.fg("dim", `… ${String(hidden)} more ${hidden === 1 ? "agent" : "agents"} hidden · Ctrl+\\ transcript for all`)}`,
+    width,
+  );
 }
 
 function renderAgentRow(agent: WorkflowAgentSnapshot, width: number, theme: ProgressTheme): string[] {
@@ -162,21 +195,93 @@ function renderAgentRow(agent: WorkflowAgentSnapshot, width: number, theme: Prog
   return lines;
 }
 
-function traceLines(traces: WorkflowTraceSnapshot[], width: number, theme: ProgressTheme): string[] {
-  const recent = traces.slice(-3);
-  if (recent.length === 0) return [];
+function miniLogLines(snapshot: WorkflowSnapshot, width: number, theme: ProgressTheme): string[] {
+  const entries = miniLogEntries(snapshot).slice(-6);
+  if (entries.length === 0) return [];
   return [
     "",
-    ...recent.map((trace) => {
-      const value = trace.value === undefined ? "" : ` ${traceValueText(trace.value)}`;
-      const phase = trace.phase ? ` · ${trace.phase}` : "";
-      return fit(`  ${theme.fg("muted", "trace")} ${theme.fg("text", trace.label)}${theme.fg("dim", `${phase}${value}`)}`, width);
+    fit(
+      `  ${theme.fg("borderMuted", "┌─")} ${theme.fg("accent", theme.bold("runtime log"))} ${theme.fg("dim", `last ${String(entries.length)}`)}`,
+      width,
+    ),
+    ...entries.flatMap((entry) => renderMiniLogEntry(entry, width, theme)),
+    fit(`  ${theme.fg("borderMuted", "└─")} ${theme.fg("dim", "wrapped messages")}`, width),
+  ];
+}
+
+function miniLogEntries(snapshot: WorkflowSnapshot): MiniLogEntry[] {
+  if (snapshot.messages?.length) return snapshot.messages.map(miniLogEntryFromRunMessage);
+  return [
+    ...snapshot.logs.map((message, index) => ({ context: `LOG${String(index + 1)}`, message: `log ${message}`, color: "text" as const })),
+    ...snapshot.traces.map((trace) => ({
+      context: phaseContext(trace.phaseIndex),
+      message: `trace ${trace.label}${trace.value === undefined ? "" : ` ${traceValueText(trace.value)}`}`,
+      color: "text" as const,
+    })),
+    ...snapshot.agents.flatMap((agent) => {
+      const message = agent.error ?? agent.message;
+      if (!message?.trim()) return [];
+      return [
+        {
+          context: agentContext(agent.phaseIndex, agent.id),
+          message: `${agent.label}: ${message.trim()}`,
+          color: agent.error ? ("error" as const) : agent.status === "running" ? ("warning" as const) : ("muted" as const),
+        },
+      ];
     }),
   ];
 }
 
+function miniLogEntryFromRunMessage(message: WorkflowRunMessageSnapshot): MiniLogEntry {
+  return {
+    context: message.agentId === undefined ? phaseContext(message.phaseIndex) : agentContext(message.phaseIndex, message.agentId),
+    message: message.message,
+    color: message.level === "error" ? "error" : message.level === "warning" ? "warning" : message.level === "debug" ? "muted" : "text",
+  };
+}
+
+function renderMiniLogEntry(entry: MiniLogEntry, width: number, theme: ProgressTheme): string[] {
+  const prefix = `[${entry.context}] `;
+  const indent = " ".repeat(visibleWidth(prefix));
+  const bodyWidth = Math.max(12, width - 6 - visibleWidth(prefix));
+  return wrapWords(entry.message, bodyWidth).map((line, index) => {
+    const visiblePrefix = index === 0 ? prefix : indent;
+    return fit(`  ${theme.fg("borderMuted", "│")} ${theme.fg("muted", visiblePrefix)}${theme.fg(entry.color, line)}`, width);
+  });
+}
+
+function phaseContext(phaseIndex: number): string {
+  return phaseIndex === 0 ? "P0" : `P${String(phaseIndex)}`;
+}
+
+function agentContext(phaseIndex: number, agentId: number): string {
+  return `${phaseContext(phaseIndex)} A${String(agentId)}`;
+}
+
 function traceValueText(value: unknown): string {
   return compactJson(value) ?? "[unrenderable]";
+}
+
+function wrapWords(text: string, width: number): string[] {
+  const lines: string[] = [];
+  for (const rawLine of text.split("\n")) {
+    const words = rawLine.split(/(\s+)/).filter((part) => part.length > 0);
+    let line = "";
+    for (const word of words) {
+      if (visibleWidth(line + word) <= width) {
+        line += word;
+        continue;
+      }
+      if (line.trim()) lines.push(line.trimEnd());
+      line = word.trimStart();
+      while (visibleWidth(line) > width) {
+        lines.push(line.slice(0, width));
+        line = line.slice(width);
+      }
+    }
+    lines.push(line.trimEnd());
+  }
+  return lines.length ? lines : [""];
 }
 
 function netLine(snapshot: WorkflowSnapshot, stats: NetStats, width: number, theme: ProgressTheme): string {

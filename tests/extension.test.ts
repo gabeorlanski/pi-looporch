@@ -22,7 +22,11 @@ const plainTheme = {
   bold: (text: string) => text,
 };
 
-type TestWidgetFactory = (tui: { requestRender(): void }, theme: typeof plainTheme) => { render(width: number): string[] };
+interface TestWidgetComponent {
+  render(width: number): string[];
+}
+
+type TestWidgetFactory = (tui: { requestRender(): void }, theme: typeof plainTheme) => TestWidgetComponent;
 
 function isTestWidgetFactory(content: unknown): content is TestWidgetFactory {
   return typeof content === "function";
@@ -51,6 +55,8 @@ export default async function workflow() {
   const sentUserMessages: unknown[] = [];
   const statusUpdates: (string | undefined)[] = [];
   const widgetUpdates: (string[] | undefined)[] = [];
+  let activeWidget: TestWidgetComponent | undefined;
+  let widgetInstallCount = 0;
   const pi = {
     registerTool(tool: unknown): void {
       void tool;
@@ -93,10 +99,19 @@ export default async function workflow() {
       setWidget(key: string, content: unknown): void {
         if (key !== "pi-workflow-running") return;
         if (isTestWidgetFactory(content)) {
-          const component = content({ requestRender: requestRenderNoop }, plainTheme);
-          widgetUpdates.push(component.render(72));
+          widgetInstallCount++;
+          activeWidget = content(
+            {
+              requestRender(): void {
+                if (activeWidget) widgetUpdates.push(activeWidget.render(72));
+              },
+            },
+            plainTheme,
+          );
+          widgetUpdates.push(activeWidget.render(72));
           return;
         }
+        activeWidget = undefined;
         widgetUpdates.push(content as string[] | undefined);
       },
       onTerminalInput(): () => void {
@@ -111,6 +126,7 @@ export default async function workflow() {
   assert.match(String(sentUserMessages[0]), /^Workflow session logs: /);
   assert.ok(statusUpdates.includes("echo: RUNNING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort · Ctrl+\\ transcript"));
   assert.deepEqual(statusUpdates.at(-1), undefined);
+  assert.equal(widgetInstallCount, 1);
   assert.ok(
     widgetUpdates.some(
       (update) =>

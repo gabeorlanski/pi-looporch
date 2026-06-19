@@ -16,6 +16,7 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
     phases: ["scan"],
     logs: [],
     traces: [{ label: "selected files", phaseIndex: 1, phase: "scan", value: { count: 1, files: ["src/runtime.ts"] } }],
+    messages: [{ phaseIndex: 1, phase: "scan", agentId: 1, agentLabel: "worker", level: "debug", message: "worker: reading" }],
     agents: [
       {
         id: 1,
@@ -40,6 +41,7 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
   const summary = JSON.parse(await readFile(path.join(runDir, "workflow-summary.json"), "utf8")) as {
     phases: unknown;
     traces: unknown;
+    messages: unknown;
     agents: unknown;
     result: unknown;
   };
@@ -48,6 +50,9 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
   assert.deepEqual(summary.phases, [{ index: 1, title: "scan" }]);
   assert.deepEqual(summary.traces, [
     { label: "selected files", phaseIndex: 1, phase: "scan", value: { count: 1, files: ["src/runtime.ts"] } },
+  ]);
+  assert.deepEqual(summary.messages, [
+    { phaseIndex: 1, phase: "scan", agentId: 1, agentLabel: "worker", level: "debug", message: "worker: reading" },
   ]);
   assert.deepEqual(summary.agents, [
     {

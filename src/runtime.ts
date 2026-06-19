@@ -102,6 +102,15 @@ export interface WorkflowTraceSnapshot {
   value?: unknown;
 }
 
+export interface WorkflowRunMessageSnapshot {
+  phaseIndex: number;
+  phase?: string;
+  agentId?: number;
+  agentLabel?: string;
+  level: "debug" | "error" | "info" | "warning";
+  message: string;
+}
+
 export interface WorkflowSnapshot {
   workflowName: string;
   description: string;
@@ -111,6 +120,7 @@ export interface WorkflowSnapshot {
   traces: WorkflowTraceSnapshot[];
   agents: WorkflowAgentSnapshot[];
   fanOuts: WorkflowFanOutSnapshot[];
+  messages?: WorkflowRunMessageSnapshot[];
   input?: unknown;
   result?: unknown;
 }
@@ -231,6 +241,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     traces: [],
     agents: [],
     fanOuts: [],
+    messages: [],
     input: cloneSerializable(options.input),
   };
   const activeRuntime: ActiveWorkflowRuntime = {
@@ -242,6 +253,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
   };
   const compiled = compileWorkflow(source, entryFile, workflowGlobals(activeRuntime, workflowDir));
   validateWorkflowMetadata(compiled.metadata, workflowName);
+  appendRunMessage(activeRuntime, { phaseIndex: 0, level: "info", message: `workflow ${workflowName} started` });
   activeRuntime.emitEvent({
     type: "run_started",
     workflowName,
@@ -252,6 +264,12 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
   try {
     const result = cloneSerializable(await compiled.workflow(options.input));
     snapshot.result = result;
+    appendRunMessage(activeRuntime, {
+      phaseIndex: snapshot.phases.length,
+      phase: snapshot.phases.at(-1),
+      level: "info",
+      message: "workflow completed",
+    });
     activeRuntime.emitEvent({ type: "run_completed", result });
     activeRuntime.emit();
     return { workflowName, workflowDir, metadata, result, snapshot: cloneSnapshot(snapshot) };
@@ -353,11 +371,19 @@ function workflowGlobals(runtime: ActiveWorkflowRuntime, workflowDir: string): R
     agent: (prompt: string, agentOptions: WorkflowAgentOptions = {}) => runAgent(runtime, prompt, agentOptions),
     phase: (title: string) => {
       runtime.snapshot.phases.push(title);
-      runtime.emitEvent({ type: "phase", title, index: runtime.snapshot.phases.length });
+      const phaseIndex = runtime.snapshot.phases.length;
+      appendRunMessage(runtime, { phaseIndex, phase: title, level: "info", message: `phase ${title}` });
+      runtime.emitEvent({ type: "phase", title, index: phaseIndex });
       runtime.emit();
     },
     log: (message: string) => {
       runtime.snapshot.logs.push(message);
+      appendRunMessage(runtime, {
+        phaseIndex: runtime.snapshot.phases.length,
+        phase: runtime.snapshot.phases.at(-1),
+        level: "info",
+        message: `log ${message}`,
+      });
       runtime.emitEvent({ type: "log", message });
       runtime.emit();
     },
@@ -386,8 +412,20 @@ function recordTrace(runtime: ActiveWorkflowRuntime, label: string, value?: unkn
     ...(value !== undefined ? { value: traceValue(value) } : {}),
   };
   runtime.snapshot.traces.push(trace);
+  appendRunMessage(runtime, {
+    phaseIndex: trace.phaseIndex,
+    ...(trace.phase ? { phase: trace.phase } : {}),
+    level: "debug",
+    message: `trace ${trace.label}${trace.value === undefined ? "" : ` ${traceValueText(trace.value)}`}`,
+  });
   runtime.emitEvent({ type: "trace", trace });
   runtime.emit();
+}
+
+function appendRunMessage(runtime: ActiveWorkflowRuntime, message: WorkflowRunMessageSnapshot): void {
+  const messages = runtime.snapshot.messages ?? (runtime.snapshot.messages = []);
+  messages.push(message);
+  if (messages.length > 200) messages.splice(0, messages.length - 200);
 }
 
 function traceValue(value: unknown): unknown {
@@ -396,6 +434,12 @@ function traceValue(value: unknown): unknown {
   } catch {
     return String(value);
   }
+}
+
+function traceValueText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === undefined) return "undefined";
+  return JSON.stringify(value);
 }
 
 async function runParallel<T, R>(
@@ -413,6 +457,12 @@ async function runParallel<T, R>(
     error: 0,
   };
   runtime.snapshot.fanOuts.push(fanOut);
+  appendRunMessage(runtime, {
+    phaseIndex: runtime.snapshot.phases.length,
+    phase: runtime.snapshot.phases.at(-1),
+    level: "info",
+    message: `fan-out ${fanOut.label} started with ${String(fanOut.total)} items`,
+  });
   runtime.emitEvent({ type: "fanout_started", fanOut: { ...fanOut } });
   runtime.emit();
   return runQueuedParallel(items, runtime.options.maxParallelAgents, async (item, index) => {
@@ -752,6 +802,14 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       fanOutId: fanOutScope.getStore(),
     };
     runtime.snapshot.agents.push(agent);
+    appendRunMessage(runtime, {
+      phaseIndex: agent.phaseIndex,
+      ...(agent.phase ? { phase: agent.phase } : {}),
+      agentId: agent.id,
+      agentLabel: agent.label,
+      level: "info",
+      message: `${agent.label} started`,
+    });
     runtime.emitEvent({ type: "agent_started", agent: { ...agent } });
     runtime.emit();
     try {
@@ -759,6 +817,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       let result: unknown;
       try {
         result = await runtime.options.agent(prompt, workflowAgentOptionsForLaunch(runtime, agent, agentOptions), (progress) => {
+          const previousMessage = agent.message;
           if (progress.statusMessage !== undefined) agent.message = progress.statusMessage;
           if (progress.inputTokenCount !== undefined) agent.inputTokenCount = progress.inputTokenCount;
           if (progress.outputTokenCount !== undefined) agent.outputTokenCount = progress.outputTokenCount;
@@ -768,6 +827,16 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
           if (progress.eventsFile !== undefined) agent.eventsFile = progress.eventsFile;
           if (progress.messages !== undefined) agent.messages = progress.messages;
           agent.tokenCount = progress.tokenCount ?? agent.inputTokenCount + agent.outputTokenCount;
+          if (agent.message !== undefined && agent.message !== previousMessage) {
+            appendRunMessage(runtime, {
+              phaseIndex: agent.phaseIndex,
+              ...(agent.phase ? { phase: agent.phase } : {}),
+              agentId: agent.id,
+              agentLabel: agent.label,
+              level: "debug",
+              message: `${agent.label}: ${agent.message}`,
+            });
+          }
           runtime.emitEvent({
             type: "agent_progress",
             agentId: agent.id,
@@ -785,6 +854,14 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       if (runtime.options.signal?.aborted) throw new Error("Workflow aborted");
       agent.status = "done";
       agent.endedAt = Date.now();
+      appendRunMessage(runtime, {
+        phaseIndex: agent.phaseIndex,
+        ...(agent.phase ? { phase: agent.phase } : {}),
+        agentId: agent.id,
+        agentLabel: agent.label,
+        level: "info",
+        message: `${agent.label} done`,
+      });
       runtime.emitEvent({ type: "agent_done", agentId: agent.id });
       runtime.emit();
       return result;
@@ -792,6 +869,14 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       agent.status = "error";
       agent.endedAt = Date.now();
       agent.error = error instanceof Error ? error.message : String(error);
+      appendRunMessage(runtime, {
+        phaseIndex: agent.phaseIndex,
+        ...(agent.phase ? { phase: agent.phase } : {}),
+        agentId: agent.id,
+        agentLabel: agent.label,
+        level: "error",
+        message: `${agent.label} error: ${agent.error}`,
+      });
       runtime.emitEvent({ type: "agent_error", agentId: agent.id, error: agent.error });
       runtime.emit();
       throw error;
@@ -961,6 +1046,7 @@ function cloneSnapshot(snapshot: WorkflowSnapshot): WorkflowSnapshot {
     traces: snapshot.traces.map((trace) => ({ ...trace, ...(trace.value !== undefined ? { value: cloneSerializable(trace.value) } : {}) })),
     agents: snapshot.agents.map((agent) => ({ ...agent })),
     fanOuts: snapshot.fanOuts.map((fanOut) => ({ ...fanOut })),
+    messages: snapshot.messages?.map((message) => ({ ...message })),
   };
 }
 

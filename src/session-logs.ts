@@ -43,6 +43,7 @@ function workflowSessionSummary(options: WorkflowSessionSummaryOptions): Record<
     plannedPhases: options.snapshot.plannedPhases,
     phases: options.snapshot.phases.map((title, index) => ({ index: index + 1, title })),
     traces: options.snapshot.traces,
+    messages: options.snapshot.messages ?? [],
     agents: options.snapshot.agents.map((agent) => ({
       id: agent.id,
       label: agent.label,

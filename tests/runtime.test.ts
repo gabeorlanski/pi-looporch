@@ -311,6 +311,12 @@ export default async function workflow() {
   assert.deepEqual(result.snapshot.traces, [
     { label: "selected inputs", phaseIndex: 1, phase: "Inspect", value: { count: 2, first: "one" } },
   ]);
+  assert.deepEqual(result.snapshot.messages, [
+    { phaseIndex: 0, level: "info", message: "workflow traceable started" },
+    { phaseIndex: 1, phase: "Inspect", level: "info", message: "phase Inspect" },
+    { phaseIndex: 1, phase: "Inspect", level: "debug", message: 'trace selected inputs {"count":2,"first":"one"}' },
+    { phaseIndex: 1, phase: "Inspect", level: "info", message: "workflow completed" },
+  ]);
   assert.deepEqual(events, ["run_started", "phase", "trace", "run_completed"]);
 });
 

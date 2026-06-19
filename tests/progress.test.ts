@@ -9,7 +9,7 @@ void test("workflow_progress_table_collapses_completed_phase_children_and_expand
     description: "Review files",
     plannedPhases: [],
     phases: ["collect", "fanout"],
-    logs: ["hidden from compact progress"],
+    logs: ["visible in runtime log"],
     traces: [{ label: "selected inputs", phaseIndex: 2, phase: "fanout", value: { count: 2 } }],
     agents: [
       agent({
@@ -70,10 +70,76 @@ void test("workflow_progress_table_collapses_completed_phase_children_and_expand
   assert.ok(!display.widgetLines.some((line) => line.includes("#1 inventory")));
   assert.ok(display.widgetLines.some((line) => line.includes("#3 b.ts") && line.includes("medium")));
   assert.ok(display.widgetLines.some((line) => line.includes("↳ using read")));
+  assert.ok(display.widgetLines.some((line) => line.includes("runtime log") && line.includes("last")));
   assert.ok(
-    display.widgetLines.some((line) => line.includes("trace selected inputs") && line.includes("fanout") && line.includes('"count":2')),
+    display.widgetLines.some((line) => line.includes("[P2]") && line.includes("trace selected inputs") && line.includes('"count":2')),
   );
+  assert.ok(display.widgetLines.some((line) => line.includes("[P2 A3]") && line.includes("b.ts: using read")));
   assert.ok(display.widgetLines.some((line) => line.includes("NET 2/3 agents") && line.includes("2.4k in") && line.includes("6 tools")));
+});
+
+void test("workflow_progress_caps_expanded_phase_agents_but_keeps_active_and_error_rows", () => {
+  const agents = Array.from({ length: 12 }, (_unused, index) =>
+    agent({
+      id: index + 1,
+      phaseIndex: 1,
+      phase: "fanout",
+      label: `file-${String(index + 1)}`,
+      status: index === 10 ? "running" : index === 11 ? "error" : "done",
+      error: index === 11 ? "failed" : undefined,
+    }),
+  );
+  const snapshot: WorkflowSnapshot = {
+    workflowName: "many",
+    description: "Many agents",
+    plannedPhases: [],
+    phases: ["fanout"],
+    logs: [],
+    traces: [],
+    agents,
+    fanOuts: [],
+  };
+
+  const display = progressDisplay(snapshot, 96);
+  const renderedAgents = display.widgetLines.filter((line) => line.includes("#") && line.includes("file-"));
+
+  assert.equal(renderedAgents.length, 8);
+  assert.ok(display.widgetLines.some((line) => line.includes("#11 file-11")));
+  assert.ok(display.widgetLines.some((line) => line.includes("#12 file-12")));
+  assert.ok(display.widgetLines.some((line) => line.includes("… 4 more agents hidden")));
+  assert.ok(display.widgetLines.some((line) => line.includes("Ctrl+\\ transcript for all")));
+  assert.ok(!display.widgetLines.some((line) => line.includes("#1 file-1")));
+});
+
+void test("workflow_progress_mini_log_wraps_long_running_messages", () => {
+  const snapshot: WorkflowSnapshot = {
+    workflowName: "wrap",
+    description: "Wrap messages",
+    plannedPhases: [],
+    phases: ["review"],
+    logs: [],
+    traces: [],
+    agents: [],
+    fanOuts: [],
+    messages: [
+      {
+        phaseIndex: 1,
+        phase: "review",
+        agentId: 7,
+        agentLabel: "reviewer",
+        level: "debug",
+        message:
+          "reviewer is inspecting a deliberately long status update with enough words to require multiple terminal rows instead of truncation",
+      },
+    ],
+  };
+
+  const display = progressDisplay(snapshot, 64);
+  const logLines = display.widgetLines.filter((line) => line.includes("│"));
+
+  assert.ok(logLines.some((line) => line.includes("[P1 A7]") && line.includes("reviewer is")));
+  assert.ok(logLines.length > 1);
+  assert.ok(logLines.every((line) => line.length <= 64));
 });
 
 void test("workflow_progress_table_falls_back_to_startup_phase_before_explicit_phase", () => {

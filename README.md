@@ -154,6 +154,8 @@ const finding = await agent("Review the run and return a finding object", {
 
 Agents spawned from workflows can call `run_workflow` to invoke an existing workflow, `workflow_primitives` to look up workflow globals and examples, `debug_workflow` to run a small workflow draft in a temporary sandbox with fake child-agent responses, or `propose_workflow` to submit a new `.pi/workflows/<name>/workflow.js` draft. `debug_workflow` is for controlled checks only: keep snippets simple, pass fake `agentResponses`, and prefer minimal/low-thinking model labels. Generated workflows are review-gated. Pi shows a natural-language proposal before saving under `.pi/workflows/<name>/workflow.js` or running it, and reviewer-updated source is what gets saved.
 
+Generated workflows should encode expert runbook judgment in their child-agent prompts, not just wire primitives together. Strong workflow prompts are self-contained task packets: they name the mission, source-of-truth files, prior results, non-negotiable invariants, pass/fail gates, commands or search strategies, evidence requirements, and exact artifacts to read or write. Important generated artifacts should have adversarial verifier/repair stages that cite evidence and distinguish major correctness failures from recommendations.
+
 ## Commands
 
 ```text

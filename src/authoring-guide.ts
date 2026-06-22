@@ -17,6 +17,16 @@ const workflowSourceRequirements = [
   "For file reads, use readText/readJson: absolute paths resolve as absolute, bare relative paths resolve from project cwd, and @workflow/... resolves inside the workflow directory.",
 ];
 
+const childAgentPromptRequirements = [
+  "Treat every child-agent prompt as a self-contained task packet: include the mission, source-of-truth files/paths, prior results that matter, and the exact artifact the child must read or write.",
+  "Put durable domain context in top-level constants or prompt-builder helpers instead of scattering one-line generic prompts; repeat the relevant context in each fan-out prompt because child agents do not share memory.",
+  "State non-negotiable invariants and failure gates explicitly: what must never happen, what counts as pass/fail, what evidence is required, and when to return a terminal status instead of hand-waving.",
+  "Give concrete operating instructions: commands or search strategies to try, files/directories to inspect, how exhaustive to be, what to save, and how to handle missing tools or unavailable evidence without inventing facts.",
+  "Define output contracts twice when useful: a JSON schema for machine handling plus prompt prose that explains the semantic meaning, allowed values, and evidence expected for each field.",
+  "Use verifier/red-team/repair stages for important generated artifacts. Reviewer prompts must be adversarial, cite evidence, distinguish major measurement-breaking issues from recommendations, and feed bounded repair loops.",
+  "Avoid thin prompts such as 'analyze this', 'summarize', or 'review'. A workflow is only reusable if its prompts encode the runbook judgment an expert would otherwise keep in their head.",
+];
+
 const workflowPrimitiveExamples: Record<string, string> = {
   agent: `const result = await agent("Analyze the run and return a finding object", {
   label: "analysis",
@@ -160,6 +170,9 @@ export function workflowAuthoringGuide(): string {
   return [
     "Workflow source requirements:",
     ...workflowSourceRequirements.map((requirement) => `- ${requirement}`),
+    "",
+    "Child-agent prompt quality requirements:",
+    ...childAgentPromptRequirements.map((requirement) => `- ${requirement}`),
     "",
     workflowPrimitiveDocsText(),
   ].join("\n");

@@ -57,6 +57,8 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Keep prompt templates behind `renderPrompt` and the workflow's own `prompts/` directory.
 - When a requested behavior change is a cutover, remove the old path instead of adding compatibility fallback.
 - Lean into power-user workflow style: top-level constants, inline schemas, prompt-builder helpers, and local runbook assumptions are acceptable when they make workflows easier for agents to inspect and tweak.
+- Generated workflow child-agent prompts must be self-contained expert task packets: include mission, source-of-truth paths, relevant prior results, invariants, concrete commands/search strategy, evidence requirements, pass/fail gates, and exact artifacts to read or write.
+- Use adversarial verifier/repair stages for important generated artifacts; reviewer prompts should cite evidence and separate major correctness failures from recommendations.
 - Prefer `agent(prompt, { schema, maxAttempts? })` for child agents that do real work and must return typed JSON; reserve `coerce` for no-tools extraction/normalization.
 - Use `trace(label, value?)` for durable workflow-local debugging state that should appear in snapshots/run events.
 - Keep workflow dataflow explicit: `phase()` is a progress marker, not shared memory, and later agents should receive earlier results only when the workflow renders those results into their prompts.

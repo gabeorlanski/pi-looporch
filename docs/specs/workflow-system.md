@@ -92,6 +92,8 @@ export default async function workflow({ files, focus = "general review" }) {
 
 The workflow directory name is the command name. `metadata.name` must match the directory name. `metadata.description` is used for discovery, review UI, and display. `metadata.inputInstructions` is passed to the current-session resolver when freeform named-command input needs to become workflow JSON. `metadata.phases` is a required list of `{ title, detail? }` entries used for preview and review; runtime `phase()` calls remain the source of actual progress.
 
+Generated workflow quality depends on the child-agent prompts as much as on the control flow. Each child-agent prompt should be a self-contained task packet with the mission, source-of-truth paths, relevant prior results, non-negotiable invariants, concrete operating instructions, evidence requirements, pass/fail gates, and the exact artifacts to read or write. Fan-out prompts must repeat the context their child needs because child agents do not share memory. Important artifact-producing workflows should include adversarial review and bounded repair stages whose prompts cite evidence and separate major correctness failures from recommendations.
+
 ## Storage Layout
 
 Project workflows should live in `.pi/workflows/<workflow-name>/`.

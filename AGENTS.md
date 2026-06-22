@@ -113,6 +113,8 @@ TypeScript interfaces/types are the source of truth:
 - Let `readText`/`readJson` read absolute paths, project-cwd-relative paths, and `@workflow/...` paths; use `renderPrompt` for prompt templates under the workflow's own `prompts/` directory.
 - Agent-generated workflow source must include required `metadata.phases` as the planned runbook outline and document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
 - Optimize workflow authoring for power-user/agent-authored executable runbooks: top-level constants, inline schemas, prompt-builder helpers, and local paths are fine when they improve observability and ease of tweaking.
+- Generated workflow child-agent prompts must be self-contained expert task packets: include mission, source-of-truth paths, prior results, non-negotiable invariants, concrete commands/search strategies, evidence requirements, pass/fail gates, and exact artifacts to read or write.
+- Use adversarial verifier/repair stages for important generated artifacts; reviewer prompts should cite evidence and separate major correctness failures from recommendations.
 - Prefer `agent(prompt, { schema, maxAttempts? })` for structured child-agent work; use `trace(label, value?)` for workflow-local debug state that should show up in snapshots/run events.
 - Give every function a clear job; inline short helpers that only hide one expression or rename a local concept.
 - Prefer simple functions over managers, frameworks, or class hierarchies.

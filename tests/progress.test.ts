@@ -69,12 +69,12 @@ void test("workflow_progress_table_collapses_completed_phase_children_and_expand
   assert.ok(display.widgetLines.some((line) => line.includes("▸ P2 fanout") && line.includes("1/2 agents")));
   assert.ok(!display.widgetLines.some((line) => line.includes("#1 inventory")));
   assert.ok(display.widgetLines.some((line) => line.includes("#3 b.ts") && line.includes("medium")));
-  assert.ok(display.widgetLines.some((line) => line.includes("↳ using read")));
+  assert.ok(!display.widgetLines.some((line) => line.includes("↳ using read")));
   assert.ok(display.widgetLines.some((line) => line.includes("runtime log") && line.includes("last")));
   assert.ok(
     display.widgetLines.some((line) => line.includes("[P2]") && line.includes("trace selected inputs") && line.includes('"count":2')),
   );
-  assert.ok(display.widgetLines.some((line) => line.includes("[P2 A3]") && line.includes("b.ts: using read")));
+  assert.ok(display.widgetLines.some((line) => line.includes("[A3]") && line.includes("b.ts: using read")));
   assert.ok(display.widgetLines.some((line) => line.includes("NET 2/3 agents") && line.includes("2.4k in") && line.includes("6 tools")));
 });
 
@@ -137,7 +137,7 @@ void test("workflow_progress_mini_log_wraps_long_running_messages", () => {
   const display = progressDisplay(snapshot, 64);
   const logLines = display.widgetLines.filter((line) => line.includes("│"));
 
-  assert.ok(logLines.some((line) => line.includes("[P1 A7]") && line.includes("reviewer is")));
+  assert.ok(logLines.some((line) => line.includes("[A7]") && line.includes("reviewer is")));
   assert.ok(logLines.length > 1);
   assert.ok(logLines.every((line) => line.length <= 64));
 });

@@ -50,6 +50,7 @@ export interface WorkflowAgentProgress {
   inputTokenCount?: number;
   outputTokenCount?: number;
   toolCallCount?: number;
+  model?: string;
   sessionDir?: string;
   sessionFile?: string;
   eventsFile?: string;
@@ -142,6 +143,7 @@ export type WorkflowEvent =
       inputTokenCount: number;
       outputTokenCount: number;
       toolCallCount: number;
+      model?: string;
     }
   | { type: "agent_done"; agentId: number }
   | { type: "agent_error"; agentId: number; error: string }
@@ -822,6 +824,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
           if (progress.inputTokenCount !== undefined) agent.inputTokenCount = progress.inputTokenCount;
           if (progress.outputTokenCount !== undefined) agent.outputTokenCount = progress.outputTokenCount;
           if (progress.toolCallCount !== undefined) agent.toolCallCount = progress.toolCallCount;
+          if (progress.model !== undefined) agent.model = progress.model;
           if (progress.sessionDir !== undefined) agent.sessionDir = progress.sessionDir;
           if (progress.sessionFile !== undefined) agent.sessionFile = progress.sessionFile;
           if (progress.eventsFile !== undefined) agent.eventsFile = progress.eventsFile;
@@ -845,6 +848,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
             inputTokenCount: agent.inputTokenCount,
             outputTokenCount: agent.outputTokenCount,
             toolCallCount: agent.toolCallCount,
+            ...(agent.model !== undefined ? { model: agent.model } : {}),
           });
           runtime.emit();
         });

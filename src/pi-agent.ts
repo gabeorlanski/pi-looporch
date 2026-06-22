@@ -54,11 +54,17 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       ...(model ? { model } : {}),
     });
 
-    if (loggedSession) {
+    const sessionModel = session.model ? displayModelName(session.model) : undefined;
+    if (sessionModel || loggedSession) {
       reportProgress({
-        sessionDir: loggedSession.sessionDir,
-        sessionFile: loggedSession.sessionFile,
-        eventsFile: loggedSession.eventsFile,
+        ...(sessionModel ? { model: sessionModel } : {}),
+        ...(loggedSession
+          ? {
+              sessionDir: loggedSession.sessionDir,
+              sessionFile: loggedSession.sessionFile,
+              eventsFile: loggedSession.eventsFile,
+            }
+          : {}),
       });
     }
     const progress = createProgressTracker(reportProgress, () => session.messages);
@@ -146,6 +152,10 @@ function resolveModel(modelRegistry: ModelRegistry, spec: string): ReturnType<Mo
   const slash = modelSpec.indexOf("/");
   if (slash >= 0) return modelRegistry.find(modelSpec.slice(0, slash), modelSpec.slice(slash + 1));
   return modelRegistry.getAll().find((model) => model.id === modelSpec || model.name === modelSpec);
+}
+
+function displayModelName(model: { name: string; provider: string; id: string }): string {
+  return model.name.trim() ? model.name : `${model.provider}/${model.id}`;
 }
 
 function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress) => void, getMessages: () => unknown[]) {

@@ -190,8 +190,7 @@ function renderAgentRow(agent: WorkflowAgentSnapshot, width: number, theme: Prog
   const lines = [
     fit(`     ${theme.fg(glyph.color, glyph.glyph)} ${theme.fg("text", identity)} ${theme.fg("dim", meta.join(" · "))}`, width),
   ];
-  const note = agent.error ?? (agent.status === "running" ? agent.message : undefined);
-  if (note?.trim()) lines.push(fit(`        ${theme.fg(agent.error ? "error" : "muted", `↳ ${note.trim()}`)}`, width));
+  if (agent.error?.trim()) lines.push(fit(`        ${theme.fg("error", `↳ ${agent.error.trim()}`)}`, width));
   return lines;
 }
 
@@ -201,11 +200,11 @@ function miniLogLines(snapshot: WorkflowSnapshot, width: number, theme: Progress
   return [
     "",
     fit(
-      `  ${theme.fg("borderMuted", "┌─")} ${theme.fg("accent", theme.bold("runtime log"))} ${theme.fg("dim", `last ${String(entries.length)}`)}`,
+      `${theme.fg("borderMuted", "┌─")} ${theme.fg("accent", theme.bold("runtime log"))} ${theme.fg("dim", `last ${String(entries.length)}`)}`,
       width,
     ),
     ...entries.flatMap((entry) => renderMiniLogEntry(entry, width, theme)),
-    fit(`  ${theme.fg("borderMuted", "└─")} ${theme.fg("dim", "wrapped messages")}`, width),
+    fit(`${theme.fg("borderMuted", "└─")} ${theme.fg("dim", "wrapped messages")}`, width),
   ];
 }
 
@@ -223,7 +222,7 @@ function miniLogEntries(snapshot: WorkflowSnapshot): MiniLogEntry[] {
       if (!message?.trim()) return [];
       return [
         {
-          context: agentContext(agent.phaseIndex, agent.id),
+          context: agentContext(agent.id),
           message: `${agent.label}: ${message.trim()}`,
           color: agent.error ? ("error" as const) : agent.status === "running" ? ("warning" as const) : ("muted" as const),
         },
@@ -234,7 +233,7 @@ function miniLogEntries(snapshot: WorkflowSnapshot): MiniLogEntry[] {
 
 function miniLogEntryFromRunMessage(message: WorkflowRunMessageSnapshot): MiniLogEntry {
   return {
-    context: message.agentId === undefined ? phaseContext(message.phaseIndex) : agentContext(message.phaseIndex, message.agentId),
+    context: message.agentId === undefined ? phaseContext(message.phaseIndex) : agentContext(message.agentId),
     message: message.message,
     color: message.level === "error" ? "error" : message.level === "warning" ? "warning" : message.level === "debug" ? "muted" : "text",
   };
@@ -243,10 +242,10 @@ function miniLogEntryFromRunMessage(message: WorkflowRunMessageSnapshot): MiniLo
 function renderMiniLogEntry(entry: MiniLogEntry, width: number, theme: ProgressTheme): string[] {
   const prefix = `[${entry.context}] `;
   const indent = " ".repeat(visibleWidth(prefix));
-  const bodyWidth = Math.max(12, width - 6 - visibleWidth(prefix));
+  const bodyWidth = Math.max(12, width - 2 - visibleWidth(prefix));
   return wrapWords(entry.message, bodyWidth).map((line, index) => {
     const visiblePrefix = index === 0 ? prefix : indent;
-    return fit(`  ${theme.fg("borderMuted", "│")} ${theme.fg("muted", visiblePrefix)}${theme.fg(entry.color, line)}`, width);
+    return fit(`${theme.fg("borderMuted", "│")} ${theme.fg("muted", visiblePrefix)}${theme.fg(entry.color, line)}`, width);
   });
 }
 
@@ -254,8 +253,8 @@ function phaseContext(phaseIndex: number): string {
   return phaseIndex === 0 ? "P0" : `P${String(phaseIndex)}`;
 }
 
-function agentContext(phaseIndex: number, agentId: number): string {
-  return `${phaseContext(phaseIndex)} A${String(agentId)}`;
+function agentContext(agentId: number): string {
+  return `A${String(agentId)}`;
 }
 
 function traceValueText(value: unknown): string {

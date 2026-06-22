@@ -30,7 +30,7 @@ export default async function workflow() {
     { "prompt.txt": "review " },
   );
   const agent: WorkflowAgent = (prompt, options, reportProgress) => {
-    reportProgress({ tokenCount: 7 });
+    reportProgress({ tokenCount: 7, model: "fake-model" });
     return Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
   };
 
@@ -62,6 +62,10 @@ export default async function workflow() {
   assert.deepEqual(
     result.snapshot.agents.map((agentSnapshot) => agentSnapshot.fanOutId),
     [1, 1],
+  );
+  assert.deepEqual(
+    result.snapshot.agents.map((agentSnapshot) => agentSnapshot.model),
+    ["fake-model", "fake-model"],
   );
   assert.deepEqual(result.snapshot.fanOuts, [{ id: 1, label: "file reviews", total: 2, running: 0, done: 2, error: 0 }]);
   assert.deepEqual(events, [

@@ -1,10 +1,7 @@
 import { readFileSync } from "node:fs";
-import type { WorkflowReference } from "./discovery.ts";
 import type { WorkflowInputContract } from "./input.ts";
 import type { WorkflowAgentOptions, WorkflowMetadata } from "./runtime.ts";
-import { workflowAuthoringGuide } from "./authoring-guide.ts";
 
-const selectionTemplate = readFileSync(new URL("./prompts/selection.txt", import.meta.url), "utf8").trim();
 const sessionRequestTemplate = readFileSync(new URL("./prompts/session-request.txt", import.meta.url), "utf8").trim();
 const agentTaskTemplate = readFileSync(new URL("./prompts/agent-task.txt", import.meta.url), "utf8").trim();
 
@@ -25,45 +22,23 @@ export function steerableInputResolutionMessage(options: SteerableInputResolutio
     "When the input is complete, call run_workflow with the workflow name and JSON input. Do not run the workflow before then.",
     "",
     "Workflow metadata:",
-    JSON.stringify(
-      {
-        name: options.workflowName,
-        description: options.metadata.description,
-        inputInstructions: options.metadata.inputInstructions,
-        phases: options.metadata.phases,
-      },
-      null,
-      2,
-    ),
+    JSON.stringify({
+      name: options.workflowName,
+      description: options.metadata.description,
+      inputInstructions: options.metadata.inputInstructions,
+      phases: options.metadata.phases,
+    }),
     "",
     "Workflow function input contract:",
-    JSON.stringify(options.contract, null, 2),
+    JSON.stringify(options.contract),
     "",
     "User command input:",
     options.rawInput,
   ].join("\n");
 }
 
-export function selectionPrompt(request: string, workflows: WorkflowReference[]): string {
-  return renderPromptTemplate(selectionTemplate, {
-    workflowAuthoringGuide: workflowAuthoringGuide(),
-    availableWorkflows: JSON.stringify(
-      workflows.map((workflow) => ({
-        name: workflow.name,
-        description: workflow.metadata.description,
-        inputInstructions: workflow.metadata.inputInstructions,
-        phases: workflow.metadata.phases,
-      })),
-      null,
-      2,
-    ),
-    request,
-  });
-}
-
 export function naturalLanguageRequestMessage(request: string, availableWorkflowNames: string[]): string {
   return renderPromptTemplate(sessionRequestTemplate, {
-    workflowAuthoringGuide: workflowAuthoringGuide(),
     availableWorkflowNames: availableWorkflowNames.length ? availableWorkflowNames.join(", ") : "none",
     request,
   });

@@ -283,7 +283,11 @@ function stageMeta(stage: OutlineStage, theme: ProgressTheme): string {
   if (stage.reasoning || MODEL_BEARING_KINDS.has(stage.kind)) {
     parts.push(theme.fg(stage.reasoning ? "warning" : "dim", `think ${stage.reasoning ?? "default"}`));
   }
-  if (stage.prompts.length) parts.push(theme.fg("dim", plural(stage.prompts.length, "prompt")));
+  if (stage.prompts.length) {
+    const promptChars = stage.prompts.reduce((total, prompt) => total + prompt.charCount, 0);
+    const hasLargePrompt = stage.prompts.some((prompt) => prompt.sizeWarning !== undefined);
+    parts.push(theme.fg(hasLargePrompt ? "warning" : "dim", `${plural(stage.prompts.length, "prompt")} · ${formatCharCount(promptChars)}`));
+  }
   if (stage.children.length) parts.push(theme.fg("dim", plural(stage.children.length, "child", "children")));
   return parts.length ? ` ${theme.fg("dim", "·")} ${parts.join(theme.fg("dim", " · "))}` : "";
 }
@@ -300,7 +304,7 @@ function promptLines(
   if (!prompt) return [];
   const open = expanded.has(node.id);
   const caret = open ? "▾" : "▸";
-  const tags = `${theme.fg("muted", prompt.role)} ${theme.fg("dim", `[${prompt.source}${prompt.editable ? "" : " · read-only"}]`)}`;
+  const tags = `${theme.fg("muted", prompt.role)} ${theme.fg("dim", `[${prompt.source}${prompt.editable ? "" : " · read-only"}]`)} ${promptSizeMeta(prompt, theme)}`;
   const note = commentMarker(node, comments, theme);
   if (!open) {
     const excerpt = theme.fg("dim", `"${collapseText(prompt.text, EXCERPT_LENGTH)}"`);
@@ -312,6 +316,21 @@ function promptLines(
   const body = wrap(prompt.text, Math.max(20, bodyWidth)).map((line) => fit(`  ${textIndent}${theme.fg("text", line)}`, width));
   if (prompt.templatePath) body.push(fit(`  ${textIndent}${theme.fg("dim", `template: ${prompt.templatePath}`)}`, width));
   return [head, ...body];
+}
+
+function promptSizeMeta(prompt: OutlinePrompt, theme: ProgressTheme): string {
+  const text = prompt.sizeWarning ? `⚠ ${formatCharCount(prompt.charCount)}` : formatCharCount(prompt.charCount);
+  return theme.fg(prompt.sizeWarning ? "warning" : "dim", `· ${text}`);
+}
+
+function formatCharCount(count: number): string {
+  if (count < 1000) return `${String(count)} chars`;
+  if (count < 1_000_000) return `${trimFixed(count / 1000)}k chars`;
+  return `${trimFixed(count / 1_000_000)}M chars`;
+}
+
+function trimFixed(value: number): string {
+  return value.toFixed(1).replace(/\.0$/, "");
 }
 
 function commentLines(node: ReviewNode, comments: ReadonlyMap<string, ReviewComment>, width: number, theme: ProgressTheme): string[] {

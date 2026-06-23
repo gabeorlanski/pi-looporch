@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseWorkflowOutline } from "../src/workflow-outline.ts";
+import { PROMPT_CHAR_WARNING_THRESHOLD, parseWorkflowOutline } from "../src/workflow-outline.ts";
 import {
   buildChangeRequest,
   defaultExpanded,
@@ -109,7 +109,33 @@ void test("render_shows_metadata_thinking_level_and_footer", () => {
   assert.match(text, /AGENT/);
   assert.match(text, /opus/);
   assert.match(text, /think high/);
+  assert.match(text, /55 chars/);
   assert.match(text, /a approve · r request changes/);
+});
+
+void test("render_warns_for_large_prompt_character_counts", () => {
+  const largePrompt = "x".repeat(PROMPT_CHAR_WARNING_THRESHOLD);
+  const parsed =
+    parseWorkflowOutline(`export const metadata = { name: "large", description: "Large workflow", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return agent(${JSON.stringify(largePrompt)}, { label: "large-review" });
+}`);
+  const lines = renderWorkflowReview(
+    parsed,
+    {
+      selectedIndex: 0,
+      expanded: defaultExpanded(parsed),
+      comments: new Map(),
+      generalComment: "",
+      height: 40,
+    },
+    120,
+  );
+  const text = lines.join("\n");
+
+  assert.match(text, /⚠/);
+  assert.match(text, /large-review prompt is 4k chars/);
+  assert.match(text, /1 prompt · 4k chars/);
 });
 
 void test("render_shows_editor_box_when_editing_general_comment", () => {

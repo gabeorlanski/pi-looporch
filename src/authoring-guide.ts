@@ -4,59 +4,88 @@ interface AuthoringDoc {
   docstring: string;
 }
 
-const workflowSourceRequirements = [
-  "Document the default workflow function with JSDoc before the function declaration.",
-  "The workflow function JSDoc and parameter signature are the input contract: document purpose, expected input fields, defaults, phases, agent calls, file reads, and result shape there.",
-  "Put input resolution guidance in metadata.inputInstructions; do not duplicate the argument list there.",
-  "List the planned runbook outline in metadata.phases; every workflow needs at least one phase with a title and optional detail.",
-  "Do not import modules or use require().",
-  "Export `metadata` with name, description, inputInstructions, and phases, plus one default workflow function.",
-  "Lean into power-user runbook code: top-level constants, inline schemas, prompt builders, and local paths are fine when they make the workflow easier to tweak.",
-  "Keep runtime logic explicit; use local helpers only when they remove real duplication or clarify a multi-step transformation.",
-  "Phases are progress markers, not shared memory; pass data between phases by storing agent results and rendering them into later prompts.",
-  "For file reads, use readText/readJson: absolute paths resolve as absolute, bare relative paths resolve from project cwd, and @workflow/... resolves inside the workflow directory.",
-];
-
-const childAgentPromptRequirements = [
-  "Treat every child-agent prompt as a self-contained task packet: include the mission, source-of-truth files/paths, prior results that matter, and the exact artifact the child must read or write.",
-  "Put durable domain context in top-level constants or prompt-builder helpers instead of scattering one-line generic prompts; repeat the relevant context in each fan-out prompt because child agents do not share memory.",
-  "State non-negotiable invariants and failure gates explicitly: what must never happen, what counts as pass/fail, what evidence is required, and when to return a terminal status instead of hand-waving.",
-  "Give concrete operating instructions: commands or search strategies to try, files/directories to inspect, how exhaustive to be, what to save, and how to handle missing tools or unavailable evidence without inventing facts.",
-  "Define output contracts twice when useful: a JSON schema for machine handling plus prompt prose that explains the semantic meaning, allowed values, and evidence expected for each field.",
-  "Use verifier/red-team/repair stages for important generated artifacts. Reviewer prompts must be adversarial, cite evidence, distinguish major measurement-breaking issues from recommendations, and feed bounded repair loops.",
-  "Avoid thin prompts such as 'analyze this', 'summarize', or 'review'. A workflow is only reusable if its prompts encode the runbook judgment an expert would otherwise keep in their head.",
-];
+const authoringPolicy = [
+  "Budget-aware workflow authoring policy:",
+  "- Draft the smallest reusable runbook that satisfies the request; do not add fan-out, verifier, repair, or synthesis stages unless they materially improve quality.",
+  "- Prefer paths, taskFile, cwd, concrete commands/search strategy, and explicit input/output contracts over pasted file contents or transcripts.",
+  "- If a child needs code or docs, give it source-of-truth paths and tell it to read them with tools; do not embed large project files in prompts.",
+  "- Pass compact summaries, structured JSON, artifact paths, counts, and evidence paths between stages; do not pass whole transcripts, full diffs, or full generated artifacts.",
+  "- Bound every fan-out before launching agents: select relevant inputs first, cap optional breadth, and log skipped scope. Never map over an unbounded project tree.",
+  "- Prefer compact schemas for child results: required fields, enums/booleans for status, maxLength, maxItems, and additionalProperties: false.",
+  "- Use coerce or agent(..., { tools: false }) for extraction/formatting tasks that do not need coding tools.",
+  "- Keep child prompts concise but self-contained: mission, exact paths, required evidence, pass/fail gates, and output contract. Do not repeat generic policy prose in every prompt.",
+  "- Use verifier/repair stages only for high-risk or artifact-producing workflows; default to one voter and at most one bounded repair pass unless the user asks for deeper assurance.",
+  "- Use budget.agentCount and budget.tokenCount as observed counters for optional-stage gates; never estimate tokens yourself.",
+  "- Keep helper functions local and compact. Use them for repeated multi-line prompt assembly, compacting handoffs, or a named multi-step transformation; inline one-expression helpers.",
+  "- For large generated outputs, route content to files. Prompts should name exact output paths and final responses should return artifactPaths plus concise summary/status.",
+].join("\n");
 
 const workflowPrimitiveExamples: Record<string, string> = {
-  agent: `const result = await agent("Analyze the run and return a finding object", {
-  label: "analysis",
-  reasoning: "medium",
+  agent: `const outputPath = "workflow-artifacts/review-findings.json";
+const finding = await agent(
+  [
+    "Review the file at the given path. Read it yourself from cwd; source is not pasted.",
+    "Source path: " + args.file,
+    "Write detailed findings to: " + outputPath,
+    "Return compact JSON only: status, <=160-char summary, up to 3 findings, and artifactPaths.",
+  ].join("\\n"),
+  {
+    label: "review " + args.file,
+    taskFile: args.file,
+    cwd,
+    maxAttempts: 2,
+    schema: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["pass", "fail"] },
+        summary: { type: "string", maxLength: 160 },
+        artifactPaths: { type: "array", maxItems: 3, items: { type: "string" } },
+        findings: {
+          type: "array",
+          maxItems: 3,
+          items: {
+            type: "object",
+            properties: {
+              path: { type: "string" },
+              line: { type: "integer", minimum: 1 },
+              severity: { type: "string", enum: ["blocker", "major", "minor"] },
+              message: { type: "string", maxLength: 200 },
+            },
+            required: ["path", "line", "severity", "message"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["status", "summary", "artifactPaths", "findings"],
+      additionalProperties: false,
+    },
+  },
+);`,
+  trace: `log("selected " + items.length + " inputs for review");
+trace("selected inputs", { count: items.length, first: items[0] });`,
+  coerce: `const data = await coerce({
   schema: {
     type: "object",
-    properties: { ok: { type: "boolean" }, summary: { type: "string" } },
-    required: ["ok", "summary"],
+    properties: { title: { type: "string", maxLength: 120 } },
+    required: ["title"],
     additionalProperties: false,
   },
-});`,
-  trace: `trace("selected inputs", { count: items.length, first: items[0] });`,
-  coerce: `const data = await coerce({
-  schema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
-  prompt: "Extract a title from: " + args.text,
+  prompt: "Extract one compact title from: " + args.text,
   label: "extract title",
   reasoning: "minimal",
 });`,
   mapreduce: `return mapreduce({
-  inputPrompt: "Split this into reviewable chunks: {{text}}",
-  mapPrompt: "Review chunk {{index}}: {{item}}",
-  reducePrompt: "Summarize these reviews: {{results}}",
+  inputPrompt: "Split this into at most 5 reviewable chunks: {{text}}",
+  mapPrompt: "Review chunk {{index}}. Return compact JSON: { ok: boolean, issue?: <=120 chars }: {{item}}",
+  reducePrompt: "Return a compact <=5 bullet synthesis from these compact review results: {{results}}",
   text: args.text,
   label: "review chunks",
   reasoning: "minimal",
 });`,
   verifier: `return verifier({
   criteria: [{ name: "accuracy", description: "Check facts", guidelines: "Quote evidence", reasoning: "Compare claims", voters: 1 }],
-  criteriaPrompt: "Evaluate {{name}} for {{artifact}} using {{guidelines}}",
-  reducePrompt: "Summarize these votes: {{votes}}",
+  criteriaPrompt: "Evaluate {{name}} for {{artifact}} using {{guidelines}}. Return compact JSON: { pass: boolean, evidence: <=160 chars }",
+  reducePrompt: "Return a compact verdict and at most 3 evidence bullets from these votes: {{votes}}",
   artifact: args.answer,
   label: "verify answer",
   reasoning: "minimal",
@@ -65,22 +94,36 @@ const workflowPrimitiveExamples: Record<string, string> = {
   file: args.file,
   focus: args.focus,
 });
-return agent(prompt, { label: "review", reasoning: "medium" });`,
-  readText: `const projectFile = readText("src/index.ts");
-const workflowFixture = readJson("@workflow/fixtures/example.json");
-const absoluteFile = readText(args.absolutePath);`,
-  dataflow: `phase("research");
-const research = await agent("Research " + args.topic, { label: "research" });
+return agent(prompt, { label: "review", taskFile: args.file });`,
+  readText: `const workflowPrompt = readText("@workflow/prompts/review.txt");
+const workflowSchema = readJson("@workflow/schemas/finding.schema.json");
+const smallFixture = readText("@workflow/fixtures/example.txt");
+// For large project source, pass the path to a child agent instead of embedding readText(path) in a prompt.`,
+  phase: `export default async function workflow({ topic }) {
+  phase("research");
+  const research = await agent("Research " + topic, { label: "research" });
+  trace("research complete", { chars: String(research).length });
 
-phase("synthesis");
-return agent("Use this research:\\n\\n" + research + "\\n\\nWrite the final answer.", {
-  label: "synthesis",
-});`,
+  phase("synthesis");
+  return agent("Use this prior research:\\n\\n" + compact(research, 4000) + "\\n\\nWrite the final answer.", {
+    label: "synthesis",
+  });
+}
+
+function compact(value, max = 4000) {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return text.length <= max ? text : text.slice(0, max) + "\\n… truncated";
+}`,
   debug:
     "Use debug_workflow only for small workflow snippets or simple draft checks. Prefer fake agentResponses, minimal reasoning, and cheap/low-thinking model labels.",
 };
 
 const workflowPrimitiveDocs: AuthoringDoc[] = [
+  {
+    name: "authoring",
+    signature: 'workflow_primitives({ primitive: "authoring" })',
+    docstring: authoringPolicy,
+  },
   {
     name: "metadata",
     signature:
@@ -98,30 +141,32 @@ const workflowPrimitiveDocs: AuthoringDoc[] = [
     name: "phase",
     signature: "phase(title: string): void",
     docstring:
-      "Marks a visible progress phase. It does not pass prior agent responses to later agents; store results and include them in later prompts explicitly.",
+      "Marks a visible progress phase. It does not pass prior agent responses to later agents; store results and include needed prior results or compact summaries in later prompts explicitly. Traces and phase history are not child-agent context.",
   },
   {
     name: "log",
     signature: "log(message: string): void",
-    docstring: "Adds a concise progress note. Use for durable milestones, not noisy per-item chatter.",
+    docstring:
+      "Adds a concise progress note to the live workflow log. Use before expensive/slow child-agent launches, after important decisions or returned artifact paths, and at visible handoff points. Avoid noisy per-item chatter and never log full generated artifacts.",
   },
   {
     name: "trace",
     signature: "trace(label: string, value?: unknown): void",
     docstring:
-      "Records workflow-local debug data in snapshots and run events. Use it for tweakable intermediate choices, counts, and structured handoff state.",
+      "Records workflow-local debug data in snapshots and run events. Use it for selected inputs, counts, paths, artifact paths, structured handoff state, and compact summaries of child-agent results; do not trace bulky contents.",
   },
   {
     name: "agent",
     signature:
-      "agent(prompt: string, options?: { label?: string, model?: string, reasoning?: string, taskFile?: string, schema?: JSONSchema, maxAttempts?: number }): Promise<unknown>",
+      "agent(prompt: string, options?: { label?: string, model?: string, reasoning?: string, taskFile?: string, cwd?: string, tools?: boolean, schema?: JSONSchema, maxAttempts?: number }): Promise<unknown>",
     docstring:
-      "Launches a child agent with only the prompt you provide and launch metadata. When schema is provided, retries until the response is JSON that validates and returns the parsed value. Always pass needed prior results in the prompt.",
+      "Launches a child agent with only the prompt you provide and launch metadata. Prefer source-of-truth paths, taskFile, cwd, commands/search strategy, and compact prior summaries over pasted file contents. Pass tools: false for extraction, formatting, or schema-only tasks that do not need coding tools. For artifact-producing tasks, give the child a concrete output path and require JSON with artifactPaths, summary, and status instead of full contents. When schema is provided, retries until the response is JSON that validates and returns the parsed value. Prefer compact schemas with maxLength, maxItems, enums, required fields, and additionalProperties: false.",
   },
   {
     name: "parallel",
     signature: "parallel(items, worker, { label?: string }): Promise<unknown[]>",
-    docstring: "Runs independent work concurrently and reports fan-out progress. Use only when items do not depend on each other.",
+    docstring:
+      "Runs independent work concurrently and reports fan-out progress. Use only when items do not depend on each other; select and cap the input set before launching agents.",
   },
   {
     name: "pipeline",
@@ -132,57 +177,58 @@ const workflowPrimitiveDocs: AuthoringDoc[] = [
     name: "coerce",
     signature: "coerce({ schema, prompt, label?, model?, reasoning?, maxAttempts? }): Promise<unknown>",
     docstring:
-      "Runs a no-tools agent call until the response is JSON that validates against the provided JSON Schema. Use for structured extraction.",
+      "Runs a no-tools agent call until the response is JSON that validates against the provided JSON Schema. Use for structured extraction. Keep extraction schemas bounded with maxLength, maxItems, and additionalProperties: false.",
   },
   {
     name: "mapreduce",
     signature:
       "mapreduce({ inputPrompt, mapPrompt, reducePrompt, label?, model?, reasoning?, maxAttempts?, ...templateValues }): Promise<unknown>",
     docstring:
-      "Coerces inputPrompt into { items: [] }, maps one agent per item, then runs one reduce agent. String prompts can use {{item}}, {{index}}, {{results}}, and extra template values.",
+      "Coerces inputPrompt into { items: [] }, maps one agent per item, then runs one reduce agent. String prompts can use {{item}}, {{index}}, {{results}}, and extra template values. Select and cap items before fan-out; keep map and reduce outputs compact.",
   },
   {
     name: "verifier",
     signature: "verifier({ criteria, criteriaPrompt, reducePrompt, label?, model?, reasoning?, ...templateValues }): Promise<unknown>",
     docstring:
-      "Runs one voter agent for each criterion voter and one reduction agent. Each criterion needs name, description, guidelines, reasoning, and optional voters.",
+      "Runs one voter agent for each criterion voter and one reduction agent. Each criterion needs name, description, guidelines, reasoning, and optional voters. Prefer one voter unless deeper review is explicitly required, and keep vote/reduce outputs compact.",
   },
   {
     name: "readText / readJson",
     signature: "readText(filePath: string): string; readJson(filePath: string): unknown",
     docstring:
-      "Reads files from disk. Absolute paths resolve as absolute, bare relative paths resolve from project cwd, and @workflow/... resolves inside the workflow directory.",
+      "Reads files from disk. Absolute paths resolve as absolute, bare relative paths resolve from project cwd, and @workflow/... resolves inside the workflow directory. Prefer these for workflow-owned prompts, schemas, fixtures, and small deterministic inputs; do not bulk-read project source just to paste it into child prompts.",
   },
   {
     name: "renderPrompt",
     signature: "renderPrompt(templatePath: string, values: object): string",
-    docstring: "Reads a prompt template from the workflow's prompts/ directory and substitutes {{name}} placeholders with provided values.",
+    docstring:
+      "Reads a prompt template from the workflow's prompts/ directory and substitutes {{name}} placeholders with provided values. Templates should encode concise runbook judgment and path/contract instructions, not giant repeated policy blocks.",
   },
   {
     name: "args / cwd / budget",
     signature: "args: unknown; cwd: string; budget: { agentCount: number, tokenCount: number }",
     docstring:
-      "Runtime context. Boundaries normalize args before execution; workflow logic should treat args as already shaped for this script. Prefer workflow(input) parameters for new workflow inputs.",
+      "Runtime context. budget.agentCount and budget.tokenCount are observed counters for gating optional work, not pre-run estimates. Use them to skip optional fan-out/verifier/repair stages or tighten scope after expensive stages. Boundaries normalize args before execution; workflow logic should treat args as already shaped for this script. Prefer workflow(input) parameters for new workflow inputs.",
   },
 ];
 
-export function workflowAuthoringGuide(): string {
+export function workflowPrimitiveIndex(): string {
   return [
-    "Workflow source requirements:",
-    ...workflowSourceRequirements.map((requirement) => `- ${requirement}`),
+    "Workflow primitives. Ask for `authoring` before drafting a new workflow, then request only the specific primitive docs you need.",
+    "Authoring headline: paths and contracts, not pasted context; compact structured outputs; artifact paths for large generated content.",
+    ...workflowPrimitiveDocs.map((doc) => `- ${doc.name}: ${doc.signature}`),
     "",
-    "Child-agent prompt quality requirements:",
-    ...childAgentPromptRequirements.map((requirement) => `- ${requirement}`),
-    "",
-    workflowPrimitiveDocsText(),
+    'Example: workflow_primitives({ primitive: "authoring" })',
+    'Example: workflow_primitives({ primitive: "agent" })',
   ].join("\n");
 }
 
 export function workflowPrimitiveGuide(primitive?: string): string {
-  const selected = primitive
-    ? workflowPrimitiveDocs.filter((doc) => doc.name.split(" / ").includes(primitive) || doc.signature.startsWith(`${primitive}(`))
-    : workflowPrimitiveDocs;
-  if (!selected.length) throw new Error(`Unknown workflow primitive: ${primitive ?? ""}`);
+  if (!primitive) return workflowPrimitiveIndex();
+  const selected = workflowPrimitiveDocs.filter(
+    (doc) => doc.name.split(" / ").includes(primitive) || doc.signature.startsWith(`${primitive}(`),
+  );
+  if (!selected.length) throw new Error(`Unknown workflow primitive: ${primitive}`);
   return [
     "Workflow primitive documentation for workflow authors.",
     "Debugging tip: use debug_workflow only for small snippets/simple tasks, with fake agentResponses and minimal/low-thinking model labels.",
@@ -191,7 +237,7 @@ export function workflowPrimitiveGuide(primitive?: string): string {
     "",
     "Examples:",
     ...Object.entries(workflowPrimitiveExamples)
-      .filter(([name]) => !primitive || name === primitive || name === "debug")
+      .filter(([name]) => name === primitive || name === "debug")
       .map(([name, example]) => `- ${name}:\n${example}`),
   ].join("\n");
 }

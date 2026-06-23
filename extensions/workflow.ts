@@ -42,6 +42,7 @@ import {
 } from "../src/display/workflow-review.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import { writeWorkflowSessionSummary } from "../src/session-logs.ts";
+import { loadSessionMessages } from "../src/session-transcript.ts";
 import { readProjectWorkflowSettings, writeProjectWorkflowSettings, type WorkflowSettings } from "../src/workflow-settings.ts";
 
 const MESSAGE_TYPE = "pi-workflow-message";
@@ -52,7 +53,7 @@ export default function piWorkflow(pi: ExtensionAPI) {
   const aliases = new Set<string>();
 
   for (const tool of createWorkflowTools({
-    agentForContext: (ctx) => createPiWorkflowAgent({ cwd: ctx.cwd, reviewer: createReviewer(ctx) }),
+    agentForContext: (ctx) => createPiWorkflowAgent({ cwd: ctx.cwd }),
     reviewerForContext: (ctx) => createReviewer(ctx),
   })) {
     pi.registerTool(tool);
@@ -123,7 +124,6 @@ async function runExistingWorkflowCommand(
   workflowName: string,
   rawInput: string,
 ): Promise<void> {
-  const reviewer = createReviewer(ctx);
   const workflow = (await discoverWorkflows(ctx.cwd)).find((candidate) => candidate.name === workflowName);
   if (!workflow) {
     ctx.ui.notify(`Workflow '${workflowName}' not found.`, "warning");
@@ -155,7 +155,7 @@ async function runExistingWorkflowCommand(
     const input = validateWorkflowInput(parsedInput.input, workflowName, inputContract);
     const parentRunId = createWorkflowRunId(workflowName);
     const workflowSettings = await readProjectWorkflowSettings(ctx.cwd);
-    const agent = createPiWorkflowAgent({ cwd: ctx.cwd, reviewer });
+    const agent = createPiWorkflowAgent({ cwd: ctx.cwd });
     if (commandOptions.saveLog) {
       runLog = await createWorkflowRunLog({
         cwd: ctx.cwd,
@@ -201,7 +201,6 @@ async function runExistingWorkflowCommand(
       display: true,
       details: { workflowName: result.workflowName, result: result.result, snapshot: result.snapshot, logPath, sessionLogDir },
     });
-    sendUserMessageWhenReady(pi, ctx, sessionLogMessage);
   } catch (error) {
     await runLog?.fail(error, lastSnapshot);
     const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
@@ -287,7 +286,7 @@ function createWorkflowInspector(ctx: ExtensionCommandContext): WorkflowInspecto
     selected = Math.min(selected, snapshot.agents.length - 1);
     const header = agentInspectorHeaderLines(snapshot, selected, width, theme);
     const agent = snapshot.agents[selected];
-    const messages = Array.isArray(agent.messages) ? agent.messages : [];
+    const messages = agent.sessionFile ? loadSessionMessages(agent.sessionFile) : [];
     const body =
       messages.length > 0 ? renderAgentTranscript(messages, tui, ctx.cwd, width) : [theme.fg("dim", "  (no activity captured yet)")];
     viewport = Math.max(3, height - header.length - 1);
@@ -536,14 +535,6 @@ function workflowSessionLogMessage(sessionLogDir: string): string {
   return `Workflow session logs: ${sessionLogDir}`;
 }
 
-function sendUserMessageWhenReady(pi: ExtensionAPI, ctx: ExtensionCommandContext, message: string): void {
-  if (ctx.isIdle()) {
-    pi.sendUserMessage(message);
-    return;
-  }
-  pi.sendUserMessage(message, { deliverAs: "followUp" });
-}
-
 function relativeToProject(cwd: string, target: string): string {
   return path.relative(cwd, target) || ".";
 }
@@ -573,7 +564,7 @@ async function reviewGeneratedWorkflow(ctx: ExtensionContext, draft: GeneratedWo
 }
 
 function tuiReviewWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft): Promise<WorkflowReviewDecision | "fallback"> {
-  const workflowDir = path.join(ctx.cwd, ".pi", "workflows", draft.name);
+  const workflowDir = draft.sourceDirectory ?? path.join(ctx.cwd, ".pi", "workflows", draft.name);
   const outline = parseWorkflowOutline(draft.source, { workflowDir });
   let height = 32;
   return ctx.ui.custom<WorkflowReviewDecision | "fallback">((tui, theme, _keybindings, done) => {

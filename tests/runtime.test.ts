@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { runWorkflowFromDirectory, type WorkflowAgent } from "../src/runtime.ts";
+import { parseWorkflowSourceMetadata, runWorkflowFromDirectory, type WorkflowAgent } from "../src/runtime.ts";
 
 async function writeWorkflow(project: string, name: string, source: string, files: Record<string, string> = {}): Promise<void> {
   const workflowDir = path.join(project, ".pi", "workflows", name);
@@ -228,6 +228,34 @@ export default async function workflow() {
     result.snapshot.agents.map((agentSnapshot) => agentSnapshot.label),
     ["extract result", "extract result"],
   );
+});
+
+void test("workflow_agent_cwd_option_resolves_relative_paths_from_project_cwd", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  const scratch = path.join(project, "scratch");
+  await mkdir(scratch, { recursive: true });
+  await writeWorkflow(
+    project,
+    "agent-cwd",
+    `export const metadata = { name: "agent-cwd", description: "Agent cwd", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return agent("inspect", { label: "scratch", cwd: "scratch" });
+}`,
+  );
+  const optionsSeen: unknown[] = [];
+  const agent: WorkflowAgent = (_prompt, options) => {
+    optionsSeen.push(options);
+    return Promise.resolve(options.cwd);
+  };
+
+  const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "agent-cwd", input: {}, agent });
+
+  assert.equal(result.result, scratch);
+  assert.deepEqual(
+    optionsSeen.map((options) => (options as { cwd?: unknown }).cwd),
+    [scratch],
+  );
+  assert.equal(result.snapshot.agents[0]?.cwd, scratch);
 });
 
 void test("workflow_agent_schema_retries_and_returns_parsed_json", async () => {
@@ -504,6 +532,35 @@ export default async function workflow() {
   assert.ok(snapshots >= 4);
 });
 
+void test("workflow_auto_logs_tool_name_agent_progress_messages", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "progress-log",
+    `export const metadata = { name: "progress-log", description: "Progress log", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return agent("work", { label: "worker" });
+}`,
+  );
+  const agent: WorkflowAgent = (_prompt, _options, reportProgress) => {
+    reportProgress({ statusMessage: "thinking" });
+    reportProgress({ statusMessage: "read", toolCallCount: 1 });
+    reportProgress({ statusMessage: "read", toolCallCount: 1 });
+    reportProgress({ statusMessage: "bash", toolCallCount: 2 });
+    reportProgress({ statusMessage: "done", toolCallCount: 2 });
+    return Promise.resolve("ok");
+  };
+
+  const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "progress-log", input: {}, agent });
+
+  assert.deepEqual(
+    result.snapshot.messages?.map((message) => message.message),
+    ["workflow progress-log started", "worker started", "read", "bash", "worker done", "workflow completed"],
+  );
+  assert.equal(result.snapshot.agents[0]?.message, "done");
+  assert.equal(result.snapshot.agents[0]?.toolCallCount, 2);
+});
+
 void test("workflow_passes_session_log_context_to_each_launched_agent", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
@@ -629,6 +686,19 @@ export default async function workflow() {
   const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "prompt-text", input: {}, agent });
 
   assert.equal(result.result, "Do not import the agent's code or write export default examples.");
+});
+
+void test("workflow_metadata_must_be_static", () => {
+  assert.throws(
+    () =>
+      parseWorkflowSourceMetadata(
+        `const name = "dynamic";
+export const metadata = { name, description: "Dynamic", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
+export default async function workflow() { return "ok"; }`,
+        "dynamic",
+      ),
+    /static/,
+  );
 });
 
 void test("workflow_module_syntax_check_blocks_actual_module_loads", async () => {

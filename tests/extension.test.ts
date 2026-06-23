@@ -122,8 +122,7 @@ export default async function workflow() {
 
   await command.handler('echo message=hello count=10 debug=true files=src/index.ts,tests/index.test.ts note="hello world"', ctx);
 
-  assert.equal(sentUserMessages.length, 1);
-  assert.match(String(sentUserMessages[0]), /^Workflow session logs: /);
+  assert.equal(sentUserMessages.length, 0);
   assert.ok(statusUpdates.includes("echo: RUNNING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort · Ctrl+\\ transcript"));
   assert.deepEqual(statusUpdates.at(-1), undefined);
   assert.equal(widgetInstallCount, 1);

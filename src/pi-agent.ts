@@ -12,8 +12,7 @@ import {
   type CreateAgentSessionOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { WorkflowReviewer } from "./request.ts";
-import type { WorkflowAgent, WorkflowAgentProgress, WorkflowAgentSessionLog } from "./runtime.ts";
+import { resolveWorkflowAgentCwd, type WorkflowAgent, type WorkflowAgentProgress, type WorkflowAgentSessionLog } from "./runtime.ts";
 import { createWorkflowTools, type WorkflowToolsOptions } from "./tools.ts";
 import { agentTaskPrompt } from "./prompt-templates.ts";
 import { workflowAgentSessionLogDirectory } from "./session-logs.ts";
@@ -21,7 +20,6 @@ import { workflowAgentSessionLogDirectory } from "./session-logs.ts";
 export interface PiWorkflowAgentOptions {
   cwd: string;
   tools?: ToolDefinition[];
-  reviewer?: WorkflowReviewer;
   session?: Partial<CreateAgentSessionOptions>;
 }
 
@@ -35,23 +33,25 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
     const authStorage = options.session?.authStorage ?? AuthStorage.create();
     const modelRegistry = options.session?.modelRegistry ?? ModelRegistry.create(authStorage);
     const model = agentOptions.model ? resolveModel(modelRegistry, agentOptions.model) : undefined;
-    const loggedSession = agentOptions.sessionLog ? await createLoggedSessionManager(options.cwd, agentOptions.sessionLog) : undefined;
+    const effectiveCwd = resolveWorkflowAgentCwd(options.cwd, agentOptions.cwd) ?? path.resolve(options.cwd);
+    const loggedSession = agentOptions.sessionLog
+      ? await createLoggedSessionManager(options.cwd, effectiveCwd, agentOptions.sessionLog)
+      : undefined;
     const sessionManager = options.session?.sessionManager ?? loggedSession?.sessionManager;
-    const customTools =
-      agentOptions.tools === false
-        ? []
-        : (options.tools ?? createPiWorkflowAgentTools(options.cwd, { agent: createPiWorkflowAgent(options), reviewer: options.reviewer }));
+    const noTools = agentOptions.tools === false ? "all" : undefined;
+    const customTools = noTools ? [] : (options.tools ?? (createCodingTools(effectiveCwd) as ToolDefinition[]));
     const { session } = await createAgentSession({
-      cwd: options.cwd,
+      cwd: effectiveCwd,
       agentDir,
       authStorage,
       modelRegistry,
-      sessionManager: sessionManager ?? SessionManager.inMemory(options.cwd),
-      settingsManager: SettingsManager.create(options.cwd, agentDir),
+      sessionManager: sessionManager ?? SessionManager.inMemory(effectiveCwd),
+      settingsManager: SettingsManager.create(effectiveCwd, agentDir),
       customTools,
       ...options.session,
       thinkingLevel: agentOptions.reasoning ?? options.session?.thinkingLevel,
       ...(model ? { model } : {}),
+      ...(noTools ? { noTools, tools: [], customTools: [] } : {}),
     });
 
     const sessionModel = session.model ? displayModelName(session.model) : undefined;
@@ -67,7 +67,7 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
           : {}),
       });
     }
-    const progress = createProgressTracker(reportProgress, () => session.messages);
+    const progress = createProgressTracker(reportProgress);
     const unsubscribe = session.subscribe((event) => {
       loggedSession?.recordEvent(event);
       progress.handleEvent(event);
@@ -86,7 +86,6 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       const usage = loggedSession ? parseSessionTokens(loggedSession.sessionManager.getSessionDir()) : null;
       reportProgress({
         statusMessage: "done",
-        messages: recentAgentMessages(session.messages),
         ...(usage ? { inputTokenCount: usage.input, outputTokenCount: usage.output, tokenCount: usage.total } : {}),
       });
       if (agentOptions.signal?.aborted) throw new Error("Workflow agent aborted");
@@ -107,12 +106,16 @@ interface LoggedSessionManager {
   recordEvent: (event: unknown) => void;
 }
 
-async function createLoggedSessionManager(cwd: string, sessionLog: WorkflowAgentSessionLog): Promise<LoggedSessionManager> {
-  const sessionDir = workflowAgentSessionLogDirectory(cwd, sessionLog.parentId, sessionLog.agentKey);
+async function createLoggedSessionManager(
+  projectCwd: string,
+  agentCwd: string,
+  sessionLog: WorkflowAgentSessionLog,
+): Promise<LoggedSessionManager> {
+  const sessionDir = workflowAgentSessionLogDirectory(projectCwd, sessionLog.parentId, sessionLog.agentKey);
   const eventsFile = path.join(sessionDir, "events.jsonl");
   await mkdir(sessionDir, { recursive: true });
   const sessionId = `workflow-agent-${String(sessionLog.agentId)}`;
-  const sessionManager = SessionManager.create(cwd, sessionDir, { id: sessionId });
+  const sessionManager = SessionManager.create(agentCwd, sessionDir, { id: sessionId });
   const sessionFile = sessionManager.getSessionFile() ?? path.join(sessionDir, `${sessionId}.jsonl`);
   await Promise.all([
     writeFile(
@@ -120,7 +123,8 @@ async function createLoggedSessionManager(cwd: string, sessionLog: WorkflowAgent
       `${JSON.stringify(
         {
           ...sessionLog,
-          cwd: path.resolve(cwd),
+          cwd: path.resolve(agentCwd),
+          projectCwd: path.resolve(projectCwd),
           sessionDir,
           sessionFile,
           eventsFile,
@@ -158,39 +162,31 @@ function displayModelName(model: { name: string; provider: string; id: string })
   return model.name.trim() ? model.name : `${model.provider}/${model.id}`;
 }
 
-function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress) => void, getMessages: () => unknown[]) {
+function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress) => void) {
   let inputTokenCount = 0;
   let outputTokenCount = 0;
   let toolCallCount = 0;
-  const report = (status: string, withMessages: boolean): void => {
-    reportProgress({
-      ...progressSnapshot(status, inputTokenCount, outputTokenCount, toolCallCount),
-      ...(withMessages ? { messages: recentAgentMessages(getMessages()) } : {}),
-    });
+  const reportStatus = (status: string): void => {
+    reportProgress(progressSnapshot(status, inputTokenCount, outputTokenCount, toolCallCount));
+  };
+  const reportCounts = (): void => {
+    reportProgress(progressCounts(inputTokenCount, outputTokenCount, toolCallCount));
   };
   return {
     handleEvent(event: unknown): void {
       if (!isEventObject(event)) return;
-      if (event.type === "turn_start") report("thinking", true);
-      if (event.type === "tool_execution_start" || event.type === "tool_execution_update") {
+      if (event.type === "tool_execution_start" || event.type === "tool_execution_update" || event.type === "tool_execution_end") {
         if (event.type === "tool_execution_start") toolCallCount++;
-        report(`using ${eventToolName(event)}`, event.type === "tool_execution_start");
+        reportStatus(eventToolName(event));
       }
-      if (event.type === "tool_execution_end") report(`finished ${eventToolName(event)}`, true);
       if (event.type === "message_end") {
         const usage = workflowTokenUsageFromMessage(event.message);
         inputTokenCount += usage.inputTokenCount;
         outputTokenCount += usage.outputTokenCount;
-        report("thinking", true);
+        reportCounts();
       }
     },
   };
-}
-
-const MAX_AGENT_MESSAGES = 60;
-
-export function recentAgentMessages(messages: unknown[]): unknown[] {
-  return messages.slice(-MAX_AGENT_MESSAGES);
 }
 
 function isEventObject(value: unknown): value is Record<string, unknown> {
@@ -252,6 +248,12 @@ function progressSnapshot(
 ): WorkflowAgentProgress {
   return {
     statusMessage,
+    ...progressCounts(inputTokenCount, outputTokenCount, toolCallCount),
+  };
+}
+
+function progressCounts(inputTokenCount: number, outputTokenCount: number, toolCallCount: number): WorkflowAgentProgress {
+  return {
     inputTokenCount,
     outputTokenCount,
     toolCallCount,

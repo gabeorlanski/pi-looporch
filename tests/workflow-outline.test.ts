@@ -4,13 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import {
+  PROMPT_CHAR_DANGER_THRESHOLD,
+  PROMPT_CHAR_WARNING_THRESHOLD,
   parseWorkflowOutline,
-  applyPromptEdits,
-  indexOutlinePrompts,
   indexOutlineStages,
-  type OutlinePrompt,
 } from "../src/workflow-outline.ts";
-import { parseWorkflowSourceMetadata } from "../src/runtime.ts";
 
 const DEMO_SOURCE = `/**
  * Purpose: demo workflow for outline parsing.
@@ -61,6 +59,8 @@ void test("outline_extracts_agent_options_and_classifies_prompts", () => {
   assert.equal(research.prompts[0].source, "literal");
   assert.equal(research.prompts[0].editable, true);
   assert.equal(research.prompts[0].text, "Research the topic.");
+  assert.equal(research.prompts[0].charCount, "Research the topic.".length);
+  assert.equal(research.prompts[0].sizeWarning, undefined);
 
   assert.equal(facts.prompts[0].source, "template-literal");
   assert.equal(facts.prompts[0].editable, false);
@@ -139,6 +139,29 @@ export default async function workflow() {
 
   assert.equal(prompt.source, "renderPrompt");
   assert.equal(prompt.text, "Review {{file}}.");
+  assert.equal(prompt.charCount, "Review {{file}}.".length);
+});
+
+void test("outline_warns_when_prompt_exceeds_character_thresholds", () => {
+  const warningPrompt = "w".repeat(PROMPT_CHAR_WARNING_THRESHOLD);
+  const dangerPrompt = "d".repeat(PROMPT_CHAR_DANGER_THRESHOLD);
+  const source = `export const metadata = { name: "large", description: "Large prompts", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  await agent(${JSON.stringify(warningPrompt)}, { label: "warn" });
+  return agent(${JSON.stringify(dangerPrompt)}, { label: "danger" });
+}`;
+
+  const outline = parseWorkflowOutline(source);
+  const [warningStage, dangerStage] = outline.sections[0].stages;
+  const warning = warningStage.prompts[0];
+  const danger = dangerStage.prompts[0];
+
+  assert.equal(warning.charCount, PROMPT_CHAR_WARNING_THRESHOLD);
+  assert.deepEqual(warning.sizeWarning, { severity: "warning", threshold: PROMPT_CHAR_WARNING_THRESHOLD });
+  assert.equal(danger.charCount, PROMPT_CHAR_DANGER_THRESHOLD);
+  assert.deepEqual(danger.sizeWarning, { severity: "danger", threshold: PROMPT_CHAR_DANGER_THRESHOLD });
+  assert.ok(outline.warnings.some((message) => message.includes("warn") && message.includes("4k chars")));
+  assert.ok(outline.warnings.some((message) => message.includes("danger") && message.includes("12k chars")));
 });
 
 void test("outline_warns_about_dynamic_control_flow", () => {
@@ -152,28 +175,6 @@ export default async function workflow() {
   const outline = parseWorkflowOutline(source);
 
   assert.ok(outline.warnings.some((warning) => warning.includes("loops or conditionals")));
-});
-
-void test("apply_prompt_edits_splices_editable_prompt_into_valid_source", () => {
-  const outline = parseWorkflowOutline(DEMO_SOURCE);
-  const prompts = indexOutlinePrompts(outline);
-  const editable = [...prompts.values()].find((prompt: OutlinePrompt) => prompt.editable && prompt.text === "Research the topic.");
-  assert.ok(editable);
-
-  const edited = applyPromptEdits(DEMO_SOURCE, outline, [{ promptId: editable.id, text: "Research the topic deeply." }]);
-
-  assert.notEqual(edited, DEMO_SOURCE);
-  assert.ok(edited.includes("Research the topic deeply."));
-  assert.equal(parseWorkflowSourceMetadata(edited, "demo").name, "demo");
-});
-
-void test("apply_prompt_edits_rejects_non_editable_prompt", () => {
-  const outline = parseWorkflowOutline(DEMO_SOURCE);
-  const prompts = indexOutlinePrompts(outline);
-  const readOnly = [...prompts.values()].find((prompt: OutlinePrompt) => !prompt.editable);
-  assert.ok(readOnly);
-
-  assert.throws(() => applyPromptEdits(DEMO_SOURCE, outline, [{ promptId: readOnly.id, text: "nope" }]), /not editable/);
 });
 
 void test("index_outline_stages_maps_ids_to_phase_context", () => {

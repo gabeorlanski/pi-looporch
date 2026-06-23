@@ -49,6 +49,7 @@ function workflowSessionSummary(options: WorkflowSessionSummaryOptions): Record<
       label: agent.label,
       phaseIndex: agent.phaseIndex,
       phase: agent.phase,
+      cwd: agent.cwd,
       fanOutId: agent.fanOutId,
       status: agent.status,
       sessionDir: agent.sessionDir,

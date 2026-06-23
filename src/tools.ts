@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Type } from "typebox";
@@ -14,6 +14,7 @@ import {
   type WorkflowSnapshot,
 } from "./runtime.ts";
 import { progressDisplay } from "./display/progress.ts";
+import { workflowResultPreview } from "./display/messages.ts";
 import { reviewAndSaveWorkflowDraft, type WorkflowProposal, type WorkflowReviewer } from "./request.ts";
 import { createWorkflowRunId } from "./run-logs.ts";
 import { workflowPrimitiveGuide } from "./authoring-guide.ts";
@@ -43,6 +44,7 @@ interface RunWorkflowToolDetails {
   status: "running" | "complete";
   snapshot: WorkflowSnapshot;
   result?: unknown;
+  sessionLogDir?: string;
 }
 
 function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
@@ -93,7 +95,7 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
         content: [
           {
             type: "text",
-            text: `Workflow ${result.workflowName} complete.\n\n${JSON.stringify(result.result, null, 2)}\n\nWorkflow session logs: ${sessionLogDir}`,
+            text: `Workflow ${result.workflowName} complete.\n\n${workflowResultPreview(result.result)}\n\nWorkflow session logs: ${sessionLogDir}`,
           },
         ],
         details: { workflowName: result.workflowName, status: "complete", snapshot: result.snapshot, result: result.result, sessionLogDir },
@@ -129,7 +131,7 @@ function createDebugWorkflowTool(options: WorkflowToolsOptions): ToolDefinition 
       await writeFile(path.join(workflowDir, "workflow.js"), params.source, "utf8");
 
       let lastSnapshot: WorkflowSnapshot | undefined;
-      const calls: { prompt: string; response: unknown }[] = [];
+      const calls: DebugAgentCall[] = [];
       const responses: unknown[] = Array.isArray(params.agentResponses) ? (params.agentResponses as unknown[]) : [];
       const agent: WorkflowAgent = (prompt) => {
         const response = responses[calls.length] ?? `debug response ${String(calls.length + 1)}`;
@@ -175,11 +177,16 @@ function createWorkflowPrimitivesTool(): ToolDefinition {
   });
 }
 
+interface DebugAgentCall {
+  prompt: string;
+  response: unknown;
+}
+
 function debugWorkflowResult(
   status: "complete" | "error",
   resultOrError: unknown,
   snapshot: WorkflowSnapshot | undefined,
-  agents: { prompt: string; response: unknown }[],
+  agents: DebugAgentCall[],
 ): { content: { type: "text"; text: string }[]; details: Record<string, unknown> } {
   const tokenCount = snapshot?.agents.reduce((total, agent) => total + agent.tokenCount, 0) ?? 0;
   const text =
@@ -188,19 +195,29 @@ function debugWorkflowResult(
       : `Debug workflow error.\n\nError:\n${String(resultOrError)}\n\nActual tokens used: ${String(tokenCount)}`;
   return {
     content: [{ type: "text", text }],
-    details: { status, snapshot, agents, ...(status === "complete" ? { result: resultOrError } : { error: resultOrError }) },
+    details: {
+      status,
+      snapshot,
+      agents: agents.map(debugAgentCallPreview),
+      ...(status === "complete" ? { result: resultOrError } : { error: resultOrError }),
+    },
   };
+}
+
+function debugAgentCallPreview(call: DebugAgentCall): { promptPreview: string; responsePreview: string } {
+  return { promptPreview: workflowResultPreview(call.prompt, 2000), responsePreview: workflowResultPreview(call.response, 2000) };
 }
 
 function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
   return defineTool({
     name: "propose_workflow",
     label: "Propose Workflow",
-    description: "Propose a new workflow source file for user review before it is saved.",
-    promptSnippet: "propose_workflow: Propose a new workflow for user review before saving.",
+    description: "Propose a new workflow draft directory or source file for user review before it is saved.",
+    promptSnippet: "propose_workflow: Propose a new workflow draft directory for user review before saving.",
     parameters: Type.Object({
       name: Type.String({ description: "Workflow slug to save under .pi/workflows/<slug>" }),
-      source: Type.String({ description: "Complete workflow.js source" }),
+      source: Type.Optional(Type.String({ description: "Complete workflow.js source. Prefer draftDir for large workflows." })),
+      draftDir: Type.Optional(Type.String({ description: "Project-relative draft workflow directory containing workflow.js" })),
       request: Type.Optional(Type.String({ description: "Original user request this workflow satisfies" })),
       summary: Type.Optional(Type.String({ description: "Natural-language summary shown to the user before save" })),
       steps: Type.Optional(Type.Array(Type.String(), { description: "Natural-language steps the workflow will take" })),
@@ -212,8 +229,15 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
       const cwd = options.cwd ?? ctx.cwd;
       const reviewer = options.reviewer ?? options.reviewerForContext?.(ctx);
       const name = normalizeWorkflowName(params.name);
-      const metadata = parseWorkflowSourceMetadata(params.source, name);
-      const draft = { name, source: params.source, metadata, proposal: workflowProposalFromParams(params, name) };
+      const { source, sourceDirectory } = await readProposalSource(cwd, params.source, params.draftDir);
+      const metadata = parseWorkflowSourceMetadata(source, name);
+      const draft = {
+        name,
+        source,
+        metadata,
+        proposal: workflowProposalFromParams(params, name),
+        ...(sourceDirectory ? { sourceDirectory } : {}),
+      };
       await reviewAndSaveWorkflowDraft({ cwd, request: params.request ?? name, draft, reviewer });
       return {
         content: [{ type: "text", text: `Saved reviewed workflow '${name}' to .pi/workflows/${name}/workflow.js.` }],
@@ -223,6 +247,41 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
   });
 }
 
+async function readProposalSource(
+  cwd: string,
+  source: string | undefined,
+  draftDir: string | undefined,
+): Promise<{ source: string; sourceDirectory?: string }> {
+  const hasSource = typeof source === "string";
+  const hasDraftDir = typeof draftDir === "string" && draftDir.trim().length > 0;
+  if (hasSource && hasDraftDir) throw new Error("propose_workflow requires exactly one of source or draftDir");
+  if (!hasSource && !hasDraftDir) throw new Error("propose_workflow requires exactly one of source or draftDir");
+  if (hasSource) return { source };
+  if (typeof draftDir !== "string" || !draftDir.trim()) throw new Error("propose_workflow requires exactly one of source or draftDir");
+  const sourceDirectory = resolveDraftWorkflowDirectory(cwd, draftDir);
+  const stats = await stat(sourceDirectory);
+  if (!stats.isDirectory()) throw new Error("propose_workflow draftDir must be a directory containing workflow.js");
+  return { source: await readFile(path.join(sourceDirectory, "workflow.js"), "utf8"), sourceDirectory };
+}
+
+function resolveDraftWorkflowDirectory(cwd: string, draftDir: string): string {
+  const projectRoot = path.resolve(cwd);
+  const resolved = path.resolve(projectRoot, draftDir);
+  const projectRelative = path.relative(projectRoot, resolved);
+  if (projectRelative.startsWith("..") || path.isAbsolute(projectRelative))
+    throw new Error("propose_workflow draftDir must stay inside the project directory");
+  const publishedRoot = path.join(projectRoot, ".pi", "workflows");
+  if (isInsideOrEqual(publishedRoot, resolved) || isInsideOrEqual(resolved, publishedRoot)) {
+    throw new Error("propose_workflow draftDir must not be inside, equal to, or an ancestor of .pi/workflows");
+  }
+  return resolved;
+}
+
+function isInsideOrEqual(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 function workflowProposalFromParams(
   params: { request?: string; summary?: string; steps?: string[]; willRun?: string[] },
   name: string,
@@ -230,6 +289,6 @@ function workflowProposalFromParams(
   return {
     summary: params.summary ?? `Create workflow '${name}'${params.request ? ` for: ${params.request}` : ""}`,
     steps: params.steps ?? ["Save the reviewed workflow source under the project workflow directory."],
-    willRun: params.willRun ?? [`Save .pi/workflows/${name}/workflow.js after approval.`],
+    willRun: params.willRun ?? [`Copy the approved draft to .pi/workflows/${name}/ after approval.`],
   };
 }

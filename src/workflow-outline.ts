@@ -3,6 +3,15 @@ import path from "node:path";
 import * as ts from "typescript";
 
 export type OutlinePromptSource = "literal" | "template-literal" | "renderPrompt" | "expression";
+export type OutlinePromptSizeSeverity = "warning" | "danger";
+
+export const PROMPT_CHAR_WARNING_THRESHOLD = 4000;
+export const PROMPT_CHAR_DANGER_THRESHOLD = 12000;
+
+export interface OutlinePromptSizeWarning {
+  severity: OutlinePromptSizeSeverity;
+  threshold: number;
+}
 
 export interface OutlinePrompt {
   id: string;
@@ -10,6 +19,8 @@ export interface OutlinePrompt {
   text: string;
   source: OutlinePromptSource;
   editable: boolean;
+  charCount: number;
+  sizeWarning?: OutlinePromptSizeWarning;
   loc?: { start: number; end: number };
   templatePath?: string;
 }
@@ -44,11 +55,6 @@ export interface ParseWorkflowOutlineOptions {
   workflowDir?: string;
 }
 
-export interface PromptEdit {
-  promptId: string;
-  text: string;
-}
-
 export interface OutlineStageContext {
   stage: OutlineStage;
   phase?: string;
@@ -78,20 +84,6 @@ export function indexOutlineStages(outline: WorkflowOutline): Map<string, Outlin
   return stages;
 }
 
-export function applyPromptEdits(source: string, outline: WorkflowOutline, edits: PromptEdit[]): string {
-  if (edits.length === 0) return source;
-  const prompts = indexOutlinePrompts(outline);
-  const replacements = edits.map((edit) => {
-    const prompt = prompts.get(edit.promptId);
-    if (!prompt) throw new Error(`Cannot apply edit: unknown prompt id '${edit.promptId}'`);
-    if (!prompt.editable || !prompt.loc) throw new Error(`Cannot apply edit: prompt '${edit.promptId}' is not editable`);
-    return { loc: prompt.loc, replacement: JSON.stringify(edit.text) };
-  });
-  return replacements
-    .sort((left, right) => right.loc.start - left.loc.start)
-    .reduce((updated, edit) => `${updated.slice(0, edit.loc.start)}${edit.replacement}${updated.slice(edit.loc.end)}`, source);
-}
-
 interface OutlineContext {
   sourceFile: ts.SourceFile;
   source: string;
@@ -116,6 +108,7 @@ export function parseWorkflowOutline(source: string, options: ParseWorkflowOutli
   const body = findWorkflowBody(sourceFile);
   const sections = body ? buildSections(body, ctx) : [];
   if (!body) ctx.warnings.add("Could not locate the workflow function body; showing metadata and raw source only.");
+  addPromptSizeWarnings(sections, ctx);
   return { metadata, ...(jsdoc ? { jsdoc } : {}), sections, warnings: [...ctx.warnings] };
 }
 
@@ -203,13 +196,20 @@ function collectChildStages(node: ts.Node | undefined, ctx: OutlineContext): Out
 
 function extractPrompt(arg: ts.Expression, role: string, ctx: OutlineContext): OutlinePrompt {
   const id = nextId(ctx, "prompt");
-  if (ts.isStringLiteral(arg)) return { id, role, text: arg.text, source: "literal", editable: true, loc: span(arg, ctx) };
+  if (ts.isStringLiteral(arg)) return outlinePrompt({ id, role, text: arg.text, source: "literal", editable: true, loc: span(arg, ctx) });
   if (ts.isNoSubstitutionTemplateLiteral(arg))
-    return { id, role, text: arg.text, source: "template-literal", editable: true, loc: span(arg, ctx) };
+    return outlinePrompt({ id, role, text: arg.text, source: "template-literal", editable: true, loc: span(arg, ctx) });
   if (ts.isTemplateExpression(arg))
-    return { id, role, text: reconstructTemplate(arg, ctx), source: "template-literal", editable: false, loc: span(arg, ctx) };
+    return outlinePrompt({
+      id,
+      role,
+      text: reconstructTemplate(arg, ctx),
+      source: "template-literal",
+      editable: false,
+      loc: span(arg, ctx),
+    });
   if (isRenderPromptCall(arg)) return renderPromptPrompt(arg, id, role, ctx);
-  return { id, role, text: nodeText(arg, ctx), source: "expression", editable: false, loc: span(arg, ctx) };
+  return outlinePrompt({ id, role, text: nodeText(arg, ctx), source: "expression", editable: false, loc: span(arg, ctx) });
 }
 
 function renderPromptPrompt(call: ts.CallExpression, id: string, role: string, ctx: OutlineContext): OutlinePrompt {
@@ -217,7 +217,54 @@ function renderPromptPrompt(call: ts.CallExpression, id: string, role: string, c
   const templatePath = templateArg && ts.isStringLiteral(templateArg) ? templateArg.text : undefined;
   const template = templatePath ? readPromptTemplate(ctx, templatePath) : undefined;
   const text = template ?? nodeText(call, ctx);
-  return { id, role, text, source: "renderPrompt", editable: false, ...(templatePath ? { templatePath } : {}) };
+  return outlinePrompt({ id, role, text, source: "renderPrompt", editable: false, ...(templatePath ? { templatePath } : {}) });
+}
+
+interface OutlinePromptInput {
+  id: string;
+  role: string;
+  text: string;
+  source: OutlinePromptSource;
+  editable: boolean;
+  loc?: { start: number; end: number };
+  templatePath?: string;
+}
+
+function outlinePrompt(input: OutlinePromptInput): OutlinePrompt {
+  const charCount = input.text.length;
+  const sizeWarning = promptSizeWarning(charCount);
+  return { ...input, charCount, ...(sizeWarning ? { sizeWarning } : {}) };
+}
+
+function promptSizeWarning(charCount: number): OutlinePromptSizeWarning | undefined {
+  if (charCount >= PROMPT_CHAR_DANGER_THRESHOLD) return { severity: "danger", threshold: PROMPT_CHAR_DANGER_THRESHOLD };
+  if (charCount >= PROMPT_CHAR_WARNING_THRESHOLD) return { severity: "warning", threshold: PROMPT_CHAR_WARNING_THRESHOLD };
+  return undefined;
+}
+
+function addPromptSizeWarnings(sections: OutlineSection[], ctx: OutlineContext): void {
+  const visit = (stage: OutlineStage): void => {
+    for (const prompt of stage.prompts) {
+      if (!prompt.sizeWarning) continue;
+      const stageLabel = stage.label ?? stage.kind;
+      const promptLabel = prompt.role === "prompt" ? "prompt" : `${prompt.role} prompt`;
+      ctx.warnings.add(
+        `${stageLabel} ${promptLabel} is ${formatCharCount(prompt.charCount)} (${prompt.sizeWarning.severity}; threshold ${formatCharCount(prompt.sizeWarning.threshold)})`,
+      );
+    }
+    stage.children.forEach(visit);
+  };
+  for (const section of sections) section.stages.forEach(visit);
+}
+
+function formatCharCount(count: number): string {
+  if (count < 1000) return `${String(count)} chars`;
+  if (count < 1_000_000) return `${trimFixed(count / 1000)}k chars`;
+  return `${trimFixed(count / 1_000_000)}M chars`;
+}
+
+function trimFixed(value: number): string {
+  return value.toFixed(1).replace(/\.0$/, "");
 }
 
 function readPromptTemplate(ctx: OutlineContext, templatePath: string): string | undefined {

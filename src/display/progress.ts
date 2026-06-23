@@ -4,6 +4,8 @@ import type { WorkflowAgentSnapshot, WorkflowRunMessageSnapshot, WorkflowSnapsho
 const DEFAULT_WIDTH = 96;
 const MIN_WIDTH = 64;
 const MAX_EXPANDED_PHASE_AGENTS = 8;
+const MAX_AGENT_IDENTITY_WIDTH = 52;
+const AGENT_METADATA_RESERVED_WIDTH = 40;
 
 type DisplayColor = "accent" | "borderMuted" | "dim" | "error" | "muted" | "success" | "text" | "warning";
 
@@ -178,7 +180,7 @@ function hiddenAgentsLine(hidden: number, width: number, theme: ProgressTheme): 
 
 function renderAgentRow(agent: WorkflowAgentSnapshot, width: number, theme: ProgressTheme): string[] {
   const glyph = agentGlyph(agent);
-  const labelWidth = Math.max(14, Math.min(30, width - 44));
+  const labelWidth = Math.max(14, Math.min(MAX_AGENT_IDENTITY_WIDTH, width - AGENT_METADATA_RESERVED_WIDTH));
   const identity = padVisible(fit(`#${String(agent.id)} ${agent.label}`, labelWidth), labelWidth);
   const meta = [
     agent.model ?? "default",

@@ -53,7 +53,7 @@ Workflow child-agent launches are globally capped by `.pi/settings.json`; fan-ou
 
 ## Authoring
 
-`workflow.js` exports required metadata and a default function. `metadata.inputInstructions` tells the input resolver how to interpret natural-language command input; `metadata.phases` is the planned runbook outline shown before runtime starts; the workflow function JSDoc and parameter signature are the single argument contract. Workflows are optimized for power-user/agent authoring, so top-level constants, inline schemas, prompt-builder helpers, and local runbook assumptions are encouraged when they make the workflow easier to inspect and tweak.
+`workflow.js` exports static object-literal metadata and a default function. `metadata.inputInstructions` tells the input resolver how to interpret natural-language command input; `metadata.phases` is the planned runbook outline shown before runtime starts; the workflow function JSDoc and parameter signature are the single argument contract. Metadata must be written directly as `export const metadata = { ... }` with JSON-like literals so discovery can parse it without executing workflow code. Workflows are optimized for power-user/agent authoring, so top-level constants, inline schemas, prompt-builder helpers, and local runbook assumptions are encouraged when they make the workflow easier to inspect and tweak. Keep helpers local and compact: use them for repeated multi-line prompt assembly, compacting handoffs, or multi-step transformations, and inline one-expression helpers or renames.
 
 ```js
 export const metadata = {
@@ -81,9 +81,9 @@ export default async function workflow({ files, focus = "general review" }) {
   const reviews = await parallel(
     files,
     async (file) => {
-      return agent(readText("@workflow/prompts/review.txt") + "\n\nFile: " + file, {
+      return agent(renderPrompt("review.txt", { file, focus }), {
         label: file,
-        reasoning: "high",
+        reasoning: "minimal",
         taskFile: file,
       });
     },
@@ -91,33 +91,43 @@ export default async function workflow({ files, focus = "general review" }) {
   );
 
   phase("synthesis");
-  return agent("Focus: " + focus + "\n\nSynthesize these reviews:\n" + reviews.join("\n\n"), {
+  return agent("Focus: " + focus + "\n\nSynthesize these compact reviews:\n" + compact(reviews, 8000), {
     label: "synthesis",
-    reasoning: "medium",
+    reasoning: "minimal",
   });
+}
+
+function compact(value, max = 4000) {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return text.length <= max ? text : text.slice(0, max) + "\n… truncated";
 }
 ```
 
-Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `trace`, `args`, `cwd`, `budget`, `readText`, `readJson`, and `renderPrompt`. Workflow code cannot import modules or access ambient Node globals like `process`, but `readText` and `readJson` can read any file the pi process can read: absolute paths resolve as absolute, bare relative paths resolve from the project `cwd`, and `@workflow/...` resolves inside the workflow directory. New workflows should receive input through the default function parameter; the global `args` remains for compatibility. Agent-generated workflows must document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape before they can be saved.
+Workflow code runs in a restricted sandbox. It receives direct globals instead of a context object: `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `trace`, `args`, `cwd`, `budget`, `readText`, `readJson`, and `renderPrompt`. Workflow code cannot import modules or access ambient Node globals like `process`, but `readText` and `readJson` can read any file the pi process can read: absolute paths resolve as absolute, bare relative paths resolve from the project `cwd`, and `@workflow/...` resolves inside the workflow directory. New workflows should receive input through the default function parameter; the global `args` remains for compatibility. Agent-generated workflows must document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape before they can be saved. Generated workflows should pass source-of-truth paths and contracts to child agents instead of pasting large source/docs contents; use `cwd`, `taskFile`, schemas, and evidence requirements, and paste only concise prior results.
 
 Workflow discovery skips invalid workflow definitions so one broken `.pi/workflows/<name>/workflow.js` cannot prevent pi startup or command completion registration. Fix or remove the invalid workflow file to make it appear in `/workflow` suggestions again.
 
-Phases are progress markers, not shared memory. Agents do not automatically receive earlier phase responses, so workflows should keep dataflow visible by storing results and rendering them into later prompts:
+Phases are progress markers, not shared memory. Agents do not automatically receive earlier phase responses, so workflows should keep dataflow visible by storing results and rendering them into later prompts. A prior-result handoff is explicit only when the workflow renders the result text, compact summary, or artifact path into the child prompt; traces and phase history do not become child-agent context:
 
 ```js
-phase("research");
-const research = await agent("Research " + args.topic, { label: "research" });
+export default async function workflow({ topic }) {
+  phase("research");
+  const research = await agent("Research " + topic, { label: "research" });
 
-phase("synthesis");
-return agent("Use this research:\n\n" + research + "\n\nWrite the final answer.", {
-  label: "synthesis",
-});
+  phase("synthesis");
+  return agent("Use this prior research:\n\n" + compact(research, 4000) + "\n\nWrite the final answer.", {
+    label: "synthesis",
+  });
+}
 ```
 
 `renderPrompt(templatePath, values)` reads a prompt template from the workflow's `prompts/` directory and replaces simple `{{name}}` placeholders with values. For `.pi/workflows/review/workflow.js`, templates live under `.pi/workflows/review/prompts/`:
 
 ```txt
 Review {{file}}.
+
+Read the file yourself from the repository; source content is not pasted.
+Return compact findings with file paths, line numbers, severity, and evidence.
 
 Focus: {{focus}}
 ```
@@ -130,31 +140,51 @@ Use `readText` and `readJson` for plain file reads. Absolute paths resolve as ab
 
 ### Structured primitives and observability
 
-`agent(prompt, { schema, maxAttempts?, label?, model?, reasoning? })` runs the child agent with the provided task, requires the final response to be JSON that validates against the schema, retries with validation feedback when needed, and returns the parsed JSON value. This is the preferred power-user style when a child agent owns both the work and the structured result contract.
+`agent(prompt, { schema, maxAttempts?, label?, model?, reasoning?, cwd?, taskFile?, tools? })` runs the child agent with the provided task, requires the final response to be JSON that validates against the schema, retries with validation feedback when needed, and returns the parsed JSON value. This is the preferred power-user style when a child agent owns both the work and the structured result contract. `cwd` optionally launches the child agent with a different working directory; absolute paths resolve as absolute, and relative paths resolve from the workflow project's `cwd`. Prefer compact schemas for child-agent results: required fields, enums/booleans for status, `maxLength`, `maxItems`, and `additionalProperties: false`; return paths, line numbers, counts, artifact paths, and short summaries instead of raw transcripts, full diffs, or full file contents.
 
 ```js
-const finding = await agent("Review the run and return a finding object", {
+const finding = await agent("Review the run. Return compact JSON only: status, <=160-char summary, and up to 3 findings.", {
   label: "review:run",
   schema: {
     type: "object",
-    properties: { ok: { type: "boolean" }, summary: { type: "string" } },
-    required: ["ok", "summary"],
+    properties: {
+      status: { type: "string", enum: ["pass", "fail"] },
+      summary: { type: "string", maxLength: 160 },
+      findings: {
+        type: "array",
+        maxItems: 3,
+        items: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            line: { type: "integer", minimum: 1 },
+            severity: { type: "string", enum: ["blocker", "major", "minor"] },
+            message: { type: "string", maxLength: 200 },
+          },
+          required: ["path", "line", "severity", "message"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["status", "summary", "findings"],
     additionalProperties: false,
   },
 });
 ```
 
-`trace(label, value?)` records workflow-local debug state in the live snapshot and run events. Use it for tweakable intermediate data such as selected files, candidate counts, normalized inputs, and handoff summaries.
+`log(message)` adds a concise progress note to the live workflow log. Use it before expensive child-agent launches, after important decisions or returned artifacts, and at handoff points so a running user can understand the workflow without opening transcripts. `trace(label, value?)` records workflow-local debug state in the live snapshot and run events. Use it for tweakable intermediate data such as selected files, candidate counts, normalized inputs, paths, and compact handoff summaries.
 
-`coerce({ schema, prompt, label?, model?, reasoning?, maxAttempts? })` runs a no-tools child agent until its response parses as JSON and validates against the JSON Schema. Use it for pure extraction/normalization tasks where the child agent does not need tools.
+`coerce({ schema, prompt, label?, model?, reasoning?, maxAttempts? })` runs a no-tools child agent until its response parses as JSON and validates against the JSON Schema. Use it for pure extraction/normalization tasks where the child agent does not need tools. Keep extraction schemas bounded with `maxLength`, `maxItems`, and `additionalProperties: false` so coercion produces small normalized values rather than verbose prose.
 
-`mapreduce({ inputPrompt, mapPrompt, reducePrompt, label?, model?, reasoning?, maxAttempts?, ...templateValues })` coerces `inputPrompt` into `{ items: [...] }`, runs one map agent per item, then runs one reduce agent. String prompts can use `{{item}}`, `{{index}}`, `{{results}}`, and any extra template values.
+`mapreduce({ inputPrompt, mapPrompt, reducePrompt, label?, model?, reasoning?, maxAttempts?, ...templateValues })` coerces `inputPrompt` into `{ items: [...] }`, runs one map agent per item, then runs one reduce agent. String prompts can use `{{item}}`, `{{index}}`, `{{results}}`, and any extra template values. Before map/reduce fan-out, select and cap the input set; keep map and reduce outputs compact.
 
-`verifier({ criteria, criteriaPrompt, reducePrompt, label?, model?, reasoning?, ...templateValues })` runs one voter agent per criterion voter and then reduces the votes. Each criterion must include `name`, `description`, `guidelines`, `reasoning`, and optional `voters`.
+`verifier({ criteria, criteriaPrompt, reducePrompt, label?, model?, reasoning?, ...templateValues })` runs one voter agent per criterion voter and then reduces the votes. Each criterion must include `name`, `description`, `guidelines`, `reasoning`, and optional `voters`. Prefer one verifier voter unless deeper review is explicitly required.
 
-Agents spawned from workflows can call `run_workflow` to invoke an existing workflow, `workflow_primitives` to look up workflow globals and examples, `debug_workflow` to run a small workflow draft in a temporary sandbox with fake child-agent responses, or `propose_workflow` to submit a new `.pi/workflows/<name>/workflow.js` draft. `debug_workflow` is for controlled checks only: keep snippets simple, pass fake `agentResponses`, and prefer minimal/low-thinking model labels. Generated workflows are review-gated. Pi shows a natural-language proposal before saving under `.pi/workflows/<name>/workflow.js` or running it, and reviewer-updated source is what gets saved.
+For large generated outputs, route content to files. Prompts should name exact output paths; schemas should require `artifactPaths` and a concise `summary`/`status`; final workflow results, traces, and logs should include paths rather than full artifact contents.
 
-Generated workflows should encode expert runbook judgment in their child-agent prompts, not just wire primitives together. Strong workflow prompts are self-contained task packets: they name the mission, source-of-truth files, prior results, non-negotiable invariants, pass/fail gates, commands or search strategies, evidence requirements, and exact artifacts to read or write. Important generated artifacts should have adversarial verifier/repair stages that cite evidence and distinguish major correctness failures from recommendations.
+Current-session agents can call `workflow_primitives` to look up workflow globals and examples, `debug_workflow` to run a small workflow draft in a temporary sandbox with fake child-agent responses, or `propose_workflow` to submit a new draft workflow directory. Workflow child agents get the normal coding tool surface by default, not workflow-authoring tools; pass `tools: false` for structured no-tool calls. `workflow_primitives` returns a compact primitive index unless a specific primitive is requested. `debug_workflow` is for controlled checks only: keep snippets simple, pass fake `agentResponses`, and prefer minimal/low-thinking model labels. Generated workflows are review-gated. Agents should write complete draft directories under a project-local path such as `.pi/workflow-drafts/<name>/` with `workflow.js` plus any `prompts/` or assets, then call `propose_workflow` with `draftDir`; inline `source` remains available for very small workflows. Pi shows a natural-language proposal before copying the approved draft to `.pi/workflows/<name>/`, and reviewer-updated `workflow.js` source is what gets saved.
+
+Generated workflows should encode expert runbook judgment in their child-agent prompts, not just wire primitives together. Strong workflow prompts are concise task packets: they name the mission, source-of-truth paths, only the relevant prior results or compact summaries, non-negotiable invariants, pass/fail gates, commands or search strategies, evidence requirements, exact artifact paths to read or write, and an output contract. Prefer paths, `taskFile`, `cwd`, and search instructions over embedded bulk content; return artifact paths plus compact summary/status for large outputs. Use adversarial verifier/repair stages only for high-risk or artifact-producing workflows, default to one voter and one bounded repair pass, and skip optional assurance stages when `budget.agentCount`/`budget.tokenCount` show the run is already expensive.
 
 ## Commands
 
@@ -177,7 +207,7 @@ Examples:
 /workflow-settings maxParallelAgents=8
 ```
 
-Named workflow commands (`/workflow <name>` and `/workflow:<name>`) run the saved workflow directly for JSON and `key=value`/`--key value` input. Freeform named-workflow input is sent into the current session as a normal visible, steerable conversation: pi-workflow displays the exact prompt it passes to the agent, including `metadata.inputInstructions`, the planned `metadata.phases`, the workflow function JSDoc/signature contract, and the user's input. The agent asks if required fields are missing and calls `run_workflow` only when the input is complete. Missing required args in direct JSON/key-value calls produce an actionable message instead of starting the workflow and crashing. Every child agent launched for a workflow stores logs under `~/.pi/agent/sessions/<project-key>/<parent-run-id>/<agent-key>/`, with `metadata.json`, in-flight `events.jsonl`, and the pi session JSONL. Token counts are never estimated; pi-workflow reports provider usage from events/session JSONL when available. Pass `--save-log` to also save the workflow-level debugging trajectory under `.pi/workflow-runs/<parent-run-id>/` with `metadata.json`, `input.json`, `workflow.js`, `events.jsonl`, `final-snapshot.json`, and the final `result.json` or `error.json`. On completion, pi-workflow posts the workflow session-log directory back to the main session and also injects that path as a normal user message so the parent agent has it in context; that directory contains `workflow-summary.json` with planned phases, runtime phases, traces, runtime messages, fan-outs, and child-agent directories whose slugs include phase, fan-out, agent id, and label for searchable follow-up analysis. While a workflow is running in the TUI, pi-workflow shows a compact `args ...` preview of the normalized run input, phase history, expanded active phase children, collapsed completed phases, model, thinking, input tokens, assistant output tokens, tool calls, and NET totals, plus a mini terminal-style runtime log where trace lines used to appear. Running agent rows omit the repeated status-message subline because the runtime log carries those updates. The runtime log wraps long messages and uses compact phase or agent prefixes such as `[P2]` or `[A3]`. Press `Ctrl+\\` (or `F2` / legacy `Alt-O`) to split the running workflow view into a tmux-style progress/transcript pane; use arrows/PageUp/PageDown to scroll, Tab or left/right to switch agents, and Esc/q/Ctrl+\\ to close the transcript pane without aborting the workflow.
+Named workflow commands (`/workflow <name>` and `/workflow:<name>`) run the saved workflow directly for JSON and `key=value`/`--key value` input. Freeform named-workflow input is sent into the current session as a normal visible, steerable conversation: pi-workflow displays a compact prompt with `metadata.inputInstructions`, the planned `metadata.phases`, the workflow function JSDoc/signature contract, and the user's input. The agent asks if required fields are missing and calls `run_workflow` only when the input is complete. Missing required args in direct JSON/key-value calls produce an actionable message instead of starting the workflow and crashing. Every child agent launched for a workflow stores logs under `~/.pi/agent/sessions/<project-key>/<parent-run-id>/<agent-key>/`, with `metadata.json`, in-flight `events.jsonl`, and the pi session JSONL. Token counts are never estimated; pi-workflow reports provider usage from events/session JSONL when available. Pass `--save-log` to also save the workflow-level debugging trajectory under `.pi/workflow-runs/<parent-run-id>/` with `metadata.json`, `input.json`, `workflow.js`, `events.jsonl`, `final-snapshot.json`, and the final `result.json` or `error.json`. On completion, pi-workflow posts a capped result preview plus the workflow session-log directory; that directory contains `workflow-summary.json` with planned phases, runtime phases, traces, runtime messages, fan-outs, and child-agent directories whose slugs include phase, fan-out, agent id, and label for searchable follow-up analysis. While a workflow is running in the TUI, pi-workflow shows a compact `args ...` preview of the normalized run input, phase history, expanded active phase children, collapsed completed phases, model, thinking, input tokens, assistant output tokens, tool calls, and NET totals, plus a mini terminal-style runtime log where trace lines used to appear. The runtime log auto-records child-agent tool names such as `bash` or `read`; detailed tool progress stays in counters and transcripts loaded from child session logs rather than being copied through workflow snapshots. The runtime log wraps long messages and uses compact phase or agent prefixes such as `[P2]` or `[A3]`. Press `Ctrl+\\` (or `F2` / legacy `Alt-O`) to split the running workflow view into a tmux-style progress/transcript pane; use arrows/PageUp/PageDown to scroll, Tab or left/right to switch agents, and Esc/q/Ctrl+\\ to close the transcript pane without aborting the workflow.
 
 ## Development
 

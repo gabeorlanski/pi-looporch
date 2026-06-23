@@ -2,176 +2,58 @@ import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
-import vm from "node:vm";
-import * as ts from "typescript";
 import { Value } from "typebox/value";
 import type { TSchema } from "typebox";
+import { parseStaticWorkflowMetadata } from "./workflow-metadata.ts";
+import {
+  normalizeWorkflowName,
+  resolveInsideRoot,
+  resolveWorkflowAgentCwd,
+  resolveWorkflowDirectory,
+  resolveWorkflowReadPath,
+} from "./workflow-paths.ts";
+import { compileWorkflow } from "./workflow-sandbox.ts";
 
-export type ReasoningLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type {
+  ReasoningLevel,
+  RunWorkflowOptions,
+  WorkflowAgent,
+  WorkflowAgentOptions,
+  WorkflowAgentProgress,
+  WorkflowAgentSessionLog,
+  WorkflowAgentSnapshot,
+  WorkflowEvent,
+  WorkflowFanOutSnapshot,
+  WorkflowMetadata,
+  WorkflowPhaseMetadata,
+  WorkflowRunMessageSnapshot,
+  WorkflowRunResult,
+  WorkflowSnapshot,
+  WorkflowTraceSnapshot,
+} from "./runtime-types.ts";
+export {
+  normalizeWorkflowName,
+  resolveInsideRoot,
+  resolveWorkflowAgentCwd,
+  resolveWorkflowDirectory,
+  resolveWorkflowReadPath,
+} from "./workflow-paths.ts";
 
-export interface WorkflowPhaseMetadata {
-  title: string;
-  detail?: string;
-}
+import type {
+  ReasoningLevel,
+  RunWorkflowOptions,
+  WorkflowAgentOptions,
+  WorkflowAgentSnapshot,
+  WorkflowEvent,
+  WorkflowFanOutSnapshot,
+  WorkflowMetadata,
+  WorkflowPhaseMetadata,
+  WorkflowRunMessageSnapshot,
+  WorkflowRunResult,
+  WorkflowSnapshot,
+  WorkflowTraceSnapshot,
+} from "./runtime-types.ts";
 
-export interface WorkflowMetadata {
-  name: string;
-  description: string;
-  inputInstructions: string;
-  phases: WorkflowPhaseMetadata[];
-}
-
-export interface WorkflowAgentOptions {
-  label?: string;
-  reasoning?: ReasoningLevel;
-  model?: string;
-  taskFile?: string;
-  schema?: unknown;
-  maxAttempts?: number;
-  signal?: AbortSignal;
-  sessionLog?: WorkflowAgentSessionLog;
-  tools?: boolean;
-}
-
-export interface WorkflowAgentSessionLog {
-  parentId: string;
-  agentId: number;
-  agentKey: string;
-  workflowName: string;
-  label: string;
-  phaseIndex: number;
-  phase?: string;
-  fanOutId?: number;
-}
-
-export interface WorkflowAgentProgress {
-  statusMessage?: string;
-  tokenCount?: number;
-  inputTokenCount?: number;
-  outputTokenCount?: number;
-  toolCallCount?: number;
-  model?: string;
-  sessionDir?: string;
-  sessionFile?: string;
-  eventsFile?: string;
-  /** Raw child-agent session messages, rendered natively in the inspector. */
-  messages?: unknown[];
-}
-
-export type WorkflowAgent = (
-  prompt: string,
-  options: WorkflowAgentOptions,
-  reportProgress: (progress: WorkflowAgentProgress) => void,
-) => Promise<unknown>;
-
-export interface WorkflowAgentSnapshot {
-  id: number;
-  label: string;
-  phaseIndex: number;
-  phase?: string;
-  model?: string;
-  reasoning?: ReasoningLevel;
-  status: "running" | "done" | "error";
-  startedAt: number;
-  endedAt?: number;
-  tokenCount: number;
-  inputTokenCount: number;
-  outputTokenCount: number;
-  toolCallCount: number;
-  fanOutId?: number;
-  sessionDir?: string;
-  sessionFile?: string;
-  eventsFile?: string;
-  message?: string;
-  error?: string;
-  messages?: unknown[];
-}
-
-export interface WorkflowFanOutSnapshot {
-  id: number;
-  label: string;
-  total: number;
-  running: number;
-  done: number;
-  error: number;
-}
-
-export interface WorkflowTraceSnapshot {
-  label: string;
-  phaseIndex: number;
-  phase?: string;
-  value?: unknown;
-}
-
-export interface WorkflowRunMessageSnapshot {
-  phaseIndex: number;
-  phase?: string;
-  agentId?: number;
-  agentLabel?: string;
-  level: "debug" | "error" | "info" | "warning";
-  message: string;
-}
-
-export interface WorkflowSnapshot {
-  workflowName: string;
-  description: string;
-  plannedPhases: WorkflowPhaseMetadata[];
-  phases: string[];
-  logs: string[];
-  traces: WorkflowTraceSnapshot[];
-  agents: WorkflowAgentSnapshot[];
-  fanOuts: WorkflowFanOutSnapshot[];
-  messages?: WorkflowRunMessageSnapshot[];
-  input?: unknown;
-  result?: unknown;
-}
-
-export type WorkflowEvent =
-  | { type: "run_started"; workflowName: string; description: string; plannedPhases: WorkflowPhaseMetadata[] }
-  | { type: "phase"; title: string; index: number }
-  | { type: "log"; message: string }
-  | { type: "trace"; trace: WorkflowTraceSnapshot }
-  | { type: "agent_schema_validation_failed"; agentId: number; attempt: number; error: string }
-  | { type: "fanout_started"; fanOut: WorkflowFanOutSnapshot }
-  | { type: "fanout_progress"; fanOut: WorkflowFanOutSnapshot }
-  | { type: "agent_started"; agent: WorkflowAgentSnapshot }
-  | {
-      type: "agent_progress";
-      agentId: number;
-      message?: string;
-      tokenCount: number;
-      inputTokenCount: number;
-      outputTokenCount: number;
-      toolCallCount: number;
-      model?: string;
-    }
-  | { type: "agent_done"; agentId: number }
-  | { type: "agent_error"; agentId: number; error: string }
-  | { type: "run_completed"; result: unknown }
-  | { type: "run_failed"; error: string };
-
-export interface RunWorkflowOptions {
-  cwd: string;
-  workflowName: string;
-  input: unknown;
-  agent: WorkflowAgent;
-  workflowRoots?: string[];
-  agentLogParentId?: string;
-  maxParallelAgents: number;
-  signal?: AbortSignal;
-  onSnapshot?: (snapshot: WorkflowSnapshot) => void;
-  onEvent?: (event: WorkflowEvent) => void;
-}
-
-export interface WorkflowRunResult {
-  workflowName: string;
-  workflowDir: string;
-  metadata: WorkflowMetadata;
-  result: unknown;
-  snapshot: WorkflowSnapshot;
-}
-
-type WorkflowFunction = (input: unknown) => unknown;
 type PipelineStage<T> = ((item: T, index: number) => Promise<T> | T) | { run: (item: T, index: number) => Promise<T> | T };
 
 interface CoerceOptions {
@@ -230,8 +112,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
   const workflowDir = resolveWorkflowDirectory(options.cwd, workflowName, options.workflowRoots);
   const entryFile = path.join(workflowDir, "workflow.js");
   const source = await readFile(entryFile, "utf8");
-  const { metadata } = compileWorkflow(source, entryFile, metadataGlobals(options, workflowDir));
-  validateWorkflowMetadata(metadata, workflowName);
+  const metadata = parseWorkflowSourceMetadata(source, workflowName, entryFile);
 
   const plannedPhases = cloneSerializable(metadata.phases) as WorkflowPhaseMetadata[];
   const snapshot: WorkflowSnapshot = {
@@ -254,7 +135,6 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     emitEvent: (event) => options.onEvent?.(cloneSerializable(event) as WorkflowEvent),
   };
   const compiled = compileWorkflow(source, entryFile, workflowGlobals(activeRuntime, workflowDir));
-  validateWorkflowMetadata(compiled.metadata, workflowName);
   appendRunMessage(activeRuntime, { phaseIndex: 0, level: "info", message: `workflow ${workflowName} started` });
   activeRuntime.emitEvent({
     type: "run_started",
@@ -282,33 +162,9 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
 }
 
 export function parseWorkflowSourceMetadata(source: string, workflowName: string, filePath = "workflow.js"): WorkflowMetadata {
-  const { metadata } = compileWorkflow(source, filePath, {});
+  const metadata = parseStaticWorkflowMetadata(source, workflowName, filePath);
   validateWorkflowMetadata(metadata, workflowName);
   return metadata;
-}
-
-export function normalizeWorkflowName(workflowName: string): string {
-  const normalized = workflowName.trim();
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(normalized)) throw new Error(`Invalid workflow name: ${workflowName}`);
-  return normalized;
-}
-
-export function resolveWorkflowDirectory(cwd: string, workflowName: string, workflowRoots: string[] | undefined): string {
-  for (const root of workflowRoots?.length ? workflowRoots : [path.resolve(cwd, ".pi", "workflows")]) {
-    const direct = path.resolve(root);
-    const child = path.join(direct, workflowName);
-    if (existsSync(path.join(child, "workflow.js"))) return child;
-  }
-  throw new Error(`Workflow '${workflowName}' not found`);
-}
-
-export function resolveWorkflowReadPath(cwd: string, workflowDir: string, filePath: string): string {
-  if (typeof filePath !== "string" || !filePath.trim()) throw new Error("Workflow file path must be non-empty");
-  if (filePath === "@workflow" || filePath.startsWith("@workflow/")) {
-    const workflowPath = filePath === "@workflow" ? "." : filePath.slice("@workflow/".length);
-    return resolveInsideRoot(workflowDir, workflowPath, "Workflow-local file escapes workflow directory");
-  }
-  return path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(cwd, filePath);
 }
 
 export function validateWorkflowMetadata(metadata: unknown, workflowName: string): asserts metadata is WorkflowMetadata {
@@ -329,33 +185,6 @@ export function validateWorkflowMetadata(metadata: unknown, workflowName: string
     if (planned.detail !== undefined && typeof planned.detail !== "string")
       throw new Error(`Workflow metadata phases[${String(index)}].detail must be a string when present`);
   });
-}
-
-function metadataGlobals(options: RunWorkflowOptions, workflowDir: string): Record<string, unknown> {
-  return {
-    args: options.input,
-    cwd: path.resolve(options.cwd),
-    budget: { agentCount: 0, tokenCount: 0 },
-    agent: unavailableMetadataPrimitive("agent"),
-    phase: unavailableMetadataPrimitive("phase"),
-    log: unavailableMetadataPrimitive("log"),
-    trace: unavailableMetadataPrimitive("trace"),
-    readText: (filePath: string) => readFileSync(resolveWorkflowReadPath(options.cwd, workflowDir, filePath), "utf8"),
-    readJson: (filePath: string) =>
-      JSON.parse(readFileSync(resolveWorkflowReadPath(options.cwd, workflowDir, filePath), "utf8")) as unknown,
-    renderPrompt: (templatePath: string, values: unknown) => renderWorkflowPrompt(workflowDir, templatePath, values),
-    parallel: unavailableMetadataPrimitive("parallel"),
-    pipeline: unavailableMetadataPrimitive("pipeline"),
-    coerce: unavailableMetadataPrimitive("coerce"),
-    mapreduce: unavailableMetadataPrimitive("mapreduce"),
-    verifier: unavailableMetadataPrimitive("verifier"),
-  };
-}
-
-function unavailableMetadataPrimitive(name: string): () => never {
-  return () => {
-    throw new Error(`Workflow ${name} primitive is not available during metadata loading`);
-  };
 }
 
 function workflowGlobals(runtime: ActiveWorkflowRuntime, workflowDir: string): Record<string, unknown> {
@@ -689,13 +518,6 @@ function resolvePromptTemplate(promptDir: string, templatePath: string): string 
   throw new Error(`Prompt template not found: ${templatePath}`);
 }
 
-function resolveInsideRoot(root: string, relativePath: string, escapeMessage: string): string {
-  const target = path.resolve(root, relativePath.replace(/^@/, ""));
-  const relative = path.relative(root, target);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`${escapeMessage}: ${relativePath}`);
-  return target;
-}
-
 function promptTemplateValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (value === undefined) return "";
@@ -772,7 +594,7 @@ function structuredAgentPrompt(prompt: string, schema: unknown, validationFailur
 function jsonSchemaPrompt(instruction: string, task: string, schema: unknown, validationFailure: string | undefined): string {
   return [
     instruction,
-    `Schema:\n${JSON.stringify(schema, null, 2)}`,
+    `Schema:\n${JSON.stringify(schema)}`,
     `Task:\n${task}`,
     ...(validationFailure ? [`Previous response failed validation:\n${validationFailure}\nReturn corrected JSON only.`] : []),
   ].join("\n\n");
@@ -785,6 +607,7 @@ function schemaValidationFailure(schema: unknown, value: unknown): string {
 
 async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
   if (runtime.options.signal?.aborted) throw new Error("Workflow aborted");
+  const agentCwd = resolveWorkflowAgentCwd(runtime.options.cwd, agentOptions.cwd);
   const releaseAgentSlot = await runtime.agentLaunchQueue.acquire(runtime.options.signal);
   try {
     if (runtime.options.signal?.aborted) throw new Error("Workflow aborted");
@@ -793,6 +616,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       label: agentOptions.label ?? `agent ${String(runtime.snapshot.agents.length + 1)}`,
       phaseIndex: runtime.snapshot.phases.length,
       phase: runtime.snapshot.phases.at(-1),
+      ...(agentCwd ? { cwd: agentCwd } : {}),
       model: agentOptions.model,
       reasoning: agentOptions.reasoning,
       status: "running",
@@ -818,7 +642,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       const heartbeat = setInterval(runtime.emit, 1000);
       let result: unknown;
       try {
-        result = await runtime.options.agent(prompt, workflowAgentOptionsForLaunch(runtime, agent, agentOptions), (progress) => {
+        result = await runtime.options.agent(prompt, workflowAgentOptionsForLaunch(runtime, agent, agentOptions, agentCwd), (progress) => {
           const previousMessage = agent.message;
           if (progress.statusMessage !== undefined) agent.message = progress.statusMessage;
           if (progress.inputTokenCount !== undefined) agent.inputTokenCount = progress.inputTokenCount;
@@ -828,16 +652,15 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
           if (progress.sessionDir !== undefined) agent.sessionDir = progress.sessionDir;
           if (progress.sessionFile !== undefined) agent.sessionFile = progress.sessionFile;
           if (progress.eventsFile !== undefined) agent.eventsFile = progress.eventsFile;
-          if (progress.messages !== undefined) agent.messages = progress.messages;
           agent.tokenCount = progress.tokenCount ?? agent.inputTokenCount + agent.outputTokenCount;
-          if (agent.message !== undefined && agent.message !== previousMessage) {
+          if (shouldAutoLogAgentProgress(agent.message, previousMessage)) {
             appendRunMessage(runtime, {
               phaseIndex: agent.phaseIndex,
               ...(agent.phase ? { phase: agent.phase } : {}),
               agentId: agent.id,
               agentLabel: agent.label,
               level: "debug",
-              message: `${agent.label}: ${agent.message}`,
+              message: agent.message,
             });
           }
           runtime.emitEvent({
@@ -890,14 +713,20 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
   }
 }
 
+function shouldAutoLogAgentProgress(message: string | undefined, previousMessage: string | undefined): message is string {
+  return message !== undefined && message !== previousMessage && message !== "thinking" && message !== "done" && message.trim().length > 0;
+}
+
 function workflowAgentOptionsForLaunch(
   runtime: ActiveWorkflowRuntime,
   agent: WorkflowAgentSnapshot,
   agentOptions: WorkflowAgentOptions,
+  agentCwd: string | undefined,
 ): WorkflowAgentOptions {
   const launchOptions: WorkflowAgentOptions = { ...agentOptions };
   delete launchOptions.schema;
   delete launchOptions.maxAttempts;
+  if (agentCwd) launchOptions.cwd = agentCwd;
   return {
     ...launchOptions,
     ...(runtime.options.signal ? { signal: runtime.options.signal } : {}),
@@ -952,93 +781,6 @@ async function runPipelineItem<T>(item: T, index: number, stages: PipelineStage<
   let current = item;
   for (const stage of stages) current = typeof stage === "function" ? await stage(current, index) : await stage.run(current, index);
   return current;
-}
-
-function compileWorkflow(
-  source: string,
-  filePath: string,
-  globals: Record<string, unknown>,
-): { metadata: unknown; workflow: WorkflowFunction } {
-  const context = vm.createContext({ ...globals });
-  const script = new vm.Script(
-    `${transformWorkflowModule(source)}\n;({ metadata: typeof metadata === "undefined" ? undefined : metadata, workflow: typeof workflow === "undefined" ? undefined : workflow });`,
-    { filename: filePath },
-  );
-  const exports = script.runInContext(context, { timeout: 1000 }) as { metadata?: unknown; workflow?: unknown };
-  if (typeof exports.workflow !== "function") throw new Error("workflow.js must export a default function");
-  return { metadata: exports.metadata, workflow: exports.workflow as WorkflowFunction };
-}
-
-function transformWorkflowModule(source: string): string {
-  const sourceFile = ts.createSourceFile("workflow.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-  const edits = workflowModuleEdits(sourceFile);
-  return applySourceEdits(source, edits);
-}
-
-interface SourceEdit {
-  start: number;
-  end: number;
-  replacement: string;
-}
-
-function workflowModuleEdits(sourceFile: ts.SourceFile): SourceEdit[] {
-  const edits: SourceEdit[] = [];
-  for (const statement of sourceFile.statements) {
-    if (ts.isImportDeclaration(statement) || ts.isImportEqualsDeclaration(statement)) throw new Error("workflow.js cannot import modules");
-    if (ts.isExportDeclaration(statement)) throw new Error("workflow.js may only export metadata and a default workflow function");
-    if (ts.isExportAssignment(statement)) {
-      if (statement.isExportEquals) throw new Error("workflow.js may only export metadata and a default workflow function");
-      edits.push({
-        start: statement.getStart(sourceFile),
-        end: statement.expression.getStart(sourceFile),
-        replacement: "const workflow = ",
-      });
-      continue;
-    }
-    const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
-    const exportModifier = modifiers?.find((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
-    if (!exportModifier) continue;
-    const defaultModifier = modifiers?.find((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
-    if (defaultModifier) {
-      edits.push({ start: exportModifier.getStart(sourceFile), end: defaultModifier.getEnd(), replacement: "const workflow =" });
-      continue;
-    }
-    if (ts.isVariableStatement(statement) && exportsOnlyMetadata(statement)) {
-      edits.push({ start: exportModifier.getStart(sourceFile), end: exportModifier.getEnd(), replacement: "" });
-      continue;
-    }
-    throw new Error("workflow.js may only export metadata and a default workflow function");
-  }
-  assertNoModuleLoadCalls(sourceFile);
-  return edits;
-}
-
-function exportsOnlyMetadata(statement: ts.VariableStatement): boolean {
-  const declarations = statement.declarationList.declarations;
-  if (declarations.length !== 1) return false;
-  const declaration = declarations[0];
-  return (
-    (statement.declarationList.flags & ts.NodeFlags.Const) !== 0 &&
-    ts.isIdentifier(declaration.name) &&
-    declaration.name.text === "metadata"
-  );
-}
-
-function assertNoModuleLoadCalls(sourceFile: ts.SourceFile): void {
-  const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node)) {
-      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) throw new Error("workflow.js cannot import modules");
-      if (ts.isIdentifier(node.expression) && node.expression.text === "require") throw new Error("workflow.js cannot use require()");
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
-}
-
-function applySourceEdits(source: string, edits: SourceEdit[]): string {
-  return [...edits]
-    .sort((left, right) => right.start - left.start)
-    .reduce((updated, edit) => `${updated.slice(0, edit.start)}${edit.replacement}${updated.slice(edit.end)}`, source);
 }
 
 function cloneSnapshot(snapshot: WorkflowSnapshot): WorkflowSnapshot {

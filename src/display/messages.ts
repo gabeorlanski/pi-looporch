@@ -5,7 +5,7 @@ export function startMessage(workflowName: string): string {
 }
 
 export function completeMessage(workflowName: string, result: unknown): string {
-  return `Workflow '${workflowName}' complete.\n\n${workflowResultText(result)}`;
+  return `Workflow '${workflowName}' complete.\n\n${workflowResultPreview(result)}`;
 }
 
 export function failureMessage(workflowName: string | undefined, error: unknown): string {
@@ -60,8 +60,10 @@ function agentChanged(previous: WorkflowAgentSnapshot | undefined, next: Workflo
   return previous?.status !== next.status || previous.message !== next.message;
 }
 
-function workflowResultText(result: unknown): string {
-  if (typeof result === "string") return result;
-  if (result === undefined) return "undefined";
-  return JSON.stringify(result, null, 2);
+const MAX_VISIBLE_RESULT_CHARS = 6000;
+
+export function workflowResultPreview(result: unknown, maxChars = MAX_VISIBLE_RESULT_CHARS): string {
+  const text = typeof result === "string" ? result : result === undefined ? "undefined" : JSON.stringify(result, null, 2);
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n… truncated. Full result is available in workflow session logs.`;
 }

@@ -17,7 +17,7 @@ const generatedWorkflowDocstring = `/**
  */
 `;
 
-void test("pi_workflow_agent_exposes_workflow_tools_by_default", () => {
+void test("pi_workflow_agent_tools_combines_coding_and_workflow_tools_when_requested", () => {
   const tools = createPiWorkflowAgentTools(process.cwd());
 
   assert.ok(
@@ -34,7 +34,7 @@ void test("pi_workflow_agent_exposes_workflow_tools_by_default", () => {
   );
 });
 
-void test("workflow_helper_tools_are_exposed_by_default", () => {
+void test("workflow_helper_tools_are_available_from_explicit_tool_factory", () => {
   const tools = createPiWorkflowAgentTools(process.cwd());
 
   assert.ok(
@@ -66,10 +66,10 @@ export default async function workflow() {
     {} as never,
   );
 
-  const details = result.details as { status: string; result: unknown; agents: { prompt: string; response: unknown }[] };
+  const details = result.details as { status: string; result: unknown; agents: { promptPreview: string; responsePreview: string }[] };
   assert.equal(details.status, "complete");
   assert.deepEqual(details.result, { answer: "fake summary", topic: "docs" });
-  assert.deepEqual(details.agents, [{ prompt: "summarize docs", response: "fake summary" }]);
+  assert.deepEqual(details.agents, [{ promptPreview: "summarize docs", responsePreview: "fake summary" }]);
   assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /Actual tokens used: 0/);
 });
 
@@ -122,21 +122,35 @@ void test("workflow_primitives_tool_returns_docs_and_examples", async () => {
 
   const all = await tool.execute("call-1", {}, undefined, undefined, {} as never);
   const allText = all.content[0]?.type === "text" ? all.content[0].text : "";
-  assert.match(allText, /Available workflow globals/);
-  assert.match(allText, /debugging tip/i);
-  assert.match(allText, /does not pass prior agent responses/i);
-  assert.match(allText, /bare relative paths resolve from project cwd/);
-  assert.match(allText, /@workflow\/\.\.\. resolves inside the workflow directory/);
+  assert.match(allText, /Workflow primitives/);
+  assert.match(allText, /workflow_primitives\(\{ primitive: "authoring" \}\)/);
+  assert.match(allText, /paths and contracts, not pasted context/);
+  assert.match(allText, /agent\(prompt: string/);
+  assert.doesNotMatch(allText, /Debugging tip/i);
 
-  const readText = await tool.execute("call-2", { primitive: "readText" }, undefined, undefined, {} as never);
+  const authoring = await tool.execute("call-2", { primitive: "authoring" }, undefined, undefined, {} as never);
+  const authoringDocs = authoring.content[0]?.type === "text" ? authoring.content[0].text : "";
+  assert.match(authoringDocs, /Budget-aware workflow authoring policy/);
+  assert.match(authoringDocs, /do not embed large project files/);
+  assert.match(authoringDocs, /artifactPaths/);
+
+  const agentDocs = await tool.execute("call-3", { primitive: "agent" }, undefined, undefined, {} as never);
+  const agentText = agentDocs.content[0]?.type === "text" ? agentDocs.content[0].text : "";
+  assert.match(agentText, /taskFile/);
+  assert.match(agentText, /tools\?: boolean/);
+  assert.match(agentText, /artifactPaths/);
+  assert.match(agentText, /source is not pasted/);
+
+  const readText = await tool.execute("call-4", { primitive: "readText" }, undefined, undefined, {} as never);
   const readTextDocs = readText.content[0]?.type === "text" ? readText.content[0].text : "";
   assert.match(readTextDocs, /readText\(filePath: string\)/);
-  assert.match(readTextDocs, /const projectFile = readText\("src\/index\.ts"\)/);
-  assert.match(readTextDocs, /const workflowFixture = readJson\("@workflow\/fixtures\/example\.json"\)/);
+  assert.match(readTextDocs, /workflowPrompt = readText\("@workflow\/prompts\/review\.txt"\)/);
+  assert.match(readTextDocs, /pass the path to a child agent/);
 
-  const coerce = await tool.execute("call-3", { primitive: "coerce" }, undefined, undefined, {} as never);
+  const coerce = await tool.execute("call-5", { primitive: "coerce" }, undefined, undefined, {} as never);
   const text = coerce.content[0]?.type === "text" ? coerce.content[0].text : "";
   assert.match(text, /coerce\(/);
+  assert.match(text, /maxLength/);
   assert.doesNotMatch(text, /verifier\(/);
 });
 
@@ -207,6 +221,81 @@ export default async function workflow() {
 
   assert.deepEqual(result.details, { workflowName: "summarize", saved: true });
   assert.equal((await readFile(workflowFile, "utf8")).trim(), source);
+});
+
+void test("propose_workflow_tool_accepts_draft_directory_and_copies_assets_after_review", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
+  const draftDir = path.join(project, ".pi", "workflow-drafts", "summarize");
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return renderPrompt("summary.txt", { prompt: args.prompt });
+}`;
+  await mkdir(path.join(draftDir, "prompts"), { recursive: true });
+  await Promise.all([
+    writeFile(path.join(draftDir, "workflow.js"), source, "utf8"),
+    writeFile(path.join(draftDir, "prompts", "summary.txt"), "Summarize {{prompt}}", "utf8"),
+  ]);
+  const workflowDir = path.join(project, ".pi", "workflows", "summarize");
+  const tool = createWorkflowTools({ cwd: project, reviewer: () => ({ action: "approve" }) }).find(
+    (candidate) => candidate.name === "propose_workflow",
+  );
+  assert.ok(tool);
+
+  await tool.execute(
+    "call-1",
+    { name: "summarize", draftDir: path.relative(project, draftDir), request: "summarize" },
+    undefined,
+    undefined,
+    {} as never,
+  );
+
+  assert.equal((await readFile(path.join(workflowDir, "workflow.js"), "utf8")).trim(), source);
+  assert.equal(await readFile(path.join(workflowDir, "prompts", "summary.txt"), "utf8"), "Summarize {{prompt}}");
+});
+
+void test("propose_workflow_tool_rejects_draft_directory_inside_published_workflows", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return { prompt: args.prompt };
+}`;
+  const draftDir = path.join(project, ".pi", "workflows", "summarize");
+  await mkdir(draftDir, { recursive: true });
+  await writeFile(path.join(draftDir, "workflow.js"), source, "utf8");
+  const tool = createWorkflowTools({ cwd: project, reviewer: () => ({ action: "approve" }) }).find(
+    (candidate) => candidate.name === "propose_workflow",
+  );
+  assert.ok(tool);
+
+  await assert.rejects(
+    tool.execute(
+      "call-1",
+      { name: "summarize", draftDir: path.relative(project, draftDir), request: "summarize" },
+      undefined,
+      undefined,
+      {} as never,
+    ),
+    /must not be inside, equal to, or an ancestor of \.pi\/workflows/,
+  );
+});
+
+void test("propose_workflow_tool_rejects_draft_directory_that_contains_published_workflows", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return { prompt: args.prompt };
+}`;
+  await mkdir(path.join(project, ".pi", "workflows"), { recursive: true });
+  await writeFile(path.join(project, "workflow.js"), source, "utf8");
+  const tool = createWorkflowTools({ cwd: project, reviewer: () => ({ action: "approve" }) }).find(
+    (candidate) => candidate.name === "propose_workflow",
+  );
+  assert.ok(tool);
+
+  await assert.rejects(
+    tool.execute("call-1", { name: "summarize", draftDir: ".", request: "summarize" }, undefined, undefined, {} as never),
+    /must not be inside, equal to, or an ancestor of \.pi\/workflows/,
+  );
 });
 
 void test("propose_workflow_tool_rejects_approved_source_without_docstring", async () => {

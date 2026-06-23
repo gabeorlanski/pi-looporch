@@ -78,6 +78,31 @@ void test("workflow_progress_table_collapses_completed_phase_children_and_expand
   assert.ok(display.widgetLines.some((line) => line.includes("NET 2/3 agents") && line.includes("2.4k in") && line.includes("6 tools")));
 });
 
+void test("workflow_progress_keeps_longer_agent_labels_visible_before_metadata", () => {
+  const snapshot: WorkflowSnapshot = {
+    workflowName: "labels",
+    description: "Readable labels",
+    plannedPhases: [],
+    phases: [],
+    logs: [],
+    traces: [],
+    agents: [
+      agent({
+        id: 1,
+        label: "review src/components/authentication/session-manager.ts",
+        status: "running",
+        model: "gpt-5",
+        reasoning: "medium",
+      }),
+    ],
+    fanOuts: [],
+  };
+
+  const display = progressDisplay(snapshot, 96);
+
+  assert.ok(display.widgetLines.some((line) => line.includes("#1 review src/components/authentication/session")));
+});
+
 void test("workflow_progress_caps_expanded_phase_agents_but_keeps_active_and_error_rows", () => {
   const agents = Array.from({ length: 12 }, (_unused, index) =>
     agent({

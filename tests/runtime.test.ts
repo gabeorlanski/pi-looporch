@@ -551,12 +551,21 @@ export default async function workflow() {
     return Promise.resolve("ok");
   };
 
-  const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "progress-log", input: {}, agent });
+  const events: string[] = [];
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "progress-log",
+    input: {},
+    agent,
+    onEvent: (event) => events.push(event.type),
+  });
 
   assert.deepEqual(
     result.snapshot.messages?.map((message) => message.message),
     ["workflow progress-log started", "worker started", "read", "bash", "worker done", "workflow completed"],
   );
+  assert.equal(events.filter((event) => event === "agent_progress").length, 4);
   assert.equal(result.snapshot.agents[0]?.message, "done");
   assert.equal(result.snapshot.agents[0]?.toolCallCount, 2);
 });

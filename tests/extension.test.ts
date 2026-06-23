@@ -26,7 +26,7 @@ interface TestWidgetComponent {
   render(width: number): string[];
 }
 
-type TestWidgetFactory = (tui: { requestRender(): void }, theme: typeof plainTheme) => TestWidgetComponent;
+type TestWidgetFactory = (tui: { requestRender(): void; terminal: { rows: number } }, theme: typeof plainTheme) => TestWidgetComponent;
 
 function isTestWidgetFactory(content: unknown): content is TestWidgetFactory {
   return typeof content === "function";
@@ -102,6 +102,7 @@ export default async function workflow() {
           widgetInstallCount++;
           activeWidget = content(
             {
+              terminal: { rows: 32 },
               requestRender(): void {
                 if (activeWidget) widgetUpdates.push(activeWidget.render(72));
               },
@@ -126,6 +127,7 @@ export default async function workflow() {
   assert.ok(statusUpdates.includes("echo: RUNNING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort · Ctrl+\\ transcript"));
   assert.deepEqual(statusUpdates.at(-1), undefined);
   assert.equal(widgetInstallCount, 1);
+  assert.ok(widgetUpdates.filter((update) => update !== undefined).every((update) => update.length === 13));
   assert.ok(
     widgetUpdates.some(
       (update) =>

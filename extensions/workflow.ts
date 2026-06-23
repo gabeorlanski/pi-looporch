@@ -410,6 +410,11 @@ function transcriptPaneHeight(termRows: number): number {
   return Math.max(10, Math.min(34, Math.floor(safeRows * 0.62)));
 }
 
+function runningWorkflowPaneHeight(termRows: number): number {
+  const safeRows = termRows > 0 ? termRows : 32;
+  return Math.max(10, Math.min(22, Math.floor(safeRows * 0.42)));
+}
+
 function fitProgressPane(lines: string[], width: number, height: number, theme: ProgressTheme): string[] {
   if (lines.length <= height) return fillPane(lines, width, height);
   const hidden = lines.length - height + 1;
@@ -491,7 +496,8 @@ function updateRunningWorkflowUi(
       return {
         render: (width: number) => {
           const display = state.displayForWidth(width, theme);
-          return state.inspector.render(tui, theme, width, display.widgetLines);
+          const progressLines = fitProgressPane(display.widgetLines, width, runningWorkflowPaneHeight(tui.terminal.rows), theme);
+          return state.inspector.render(tui, theme, width, progressLines);
         },
         invalidate: () => updateRunningWorkflowStatus(ctx, state),
       };

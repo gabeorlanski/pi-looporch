@@ -43,6 +43,7 @@ import type {
   ReasoningLevel,
   RunWorkflowOptions,
   WorkflowAgentOptions,
+  WorkflowAgentProgress,
   WorkflowAgentSnapshot,
   WorkflowEvent,
   WorkflowFanOutSnapshot,
@@ -644,15 +645,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       try {
         result = await runtime.options.agent(prompt, workflowAgentOptionsForLaunch(runtime, agent, agentOptions, agentCwd), (progress) => {
           const previousMessage = agent.message;
-          if (progress.statusMessage !== undefined) agent.message = progress.statusMessage;
-          if (progress.inputTokenCount !== undefined) agent.inputTokenCount = progress.inputTokenCount;
-          if (progress.outputTokenCount !== undefined) agent.outputTokenCount = progress.outputTokenCount;
-          if (progress.toolCallCount !== undefined) agent.toolCallCount = progress.toolCallCount;
-          if (progress.model !== undefined) agent.model = progress.model;
-          if (progress.sessionDir !== undefined) agent.sessionDir = progress.sessionDir;
-          if (progress.sessionFile !== undefined) agent.sessionFile = progress.sessionFile;
-          if (progress.eventsFile !== undefined) agent.eventsFile = progress.eventsFile;
-          agent.tokenCount = progress.tokenCount ?? agent.inputTokenCount + agent.outputTokenCount;
+          if (!applyAgentProgress(agent, progress)) return;
           if (shouldAutoLogAgentProgress(agent.message, previousMessage)) {
             appendRunMessage(runtime, {
               phaseIndex: agent.phaseIndex,
@@ -711,6 +704,48 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
   } finally {
     releaseAgentSlot();
   }
+}
+
+function applyAgentProgress(agent: WorkflowAgentSnapshot, progress: WorkflowAgentProgress): boolean {
+  let changed = false;
+  if (progress.statusMessage !== undefined && progress.statusMessage !== agent.message) {
+    agent.message = progress.statusMessage;
+    changed = true;
+  }
+  if (progress.inputTokenCount !== undefined && progress.inputTokenCount !== agent.inputTokenCount) {
+    agent.inputTokenCount = progress.inputTokenCount;
+    changed = true;
+  }
+  if (progress.outputTokenCount !== undefined && progress.outputTokenCount !== agent.outputTokenCount) {
+    agent.outputTokenCount = progress.outputTokenCount;
+    changed = true;
+  }
+  if (progress.toolCallCount !== undefined && progress.toolCallCount !== agent.toolCallCount) {
+    agent.toolCallCount = progress.toolCallCount;
+    changed = true;
+  }
+  if (progress.model !== undefined && progress.model !== agent.model) {
+    agent.model = progress.model;
+    changed = true;
+  }
+  if (progress.sessionDir !== undefined && progress.sessionDir !== agent.sessionDir) {
+    agent.sessionDir = progress.sessionDir;
+    changed = true;
+  }
+  if (progress.sessionFile !== undefined && progress.sessionFile !== agent.sessionFile) {
+    agent.sessionFile = progress.sessionFile;
+    changed = true;
+  }
+  if (progress.eventsFile !== undefined && progress.eventsFile !== agent.eventsFile) {
+    agent.eventsFile = progress.eventsFile;
+    changed = true;
+  }
+  const tokenCount = progress.tokenCount ?? agent.inputTokenCount + agent.outputTokenCount;
+  if (tokenCount !== agent.tokenCount) {
+    agent.tokenCount = tokenCount;
+    changed = true;
+  }
+  return changed;
 }
 
 function shouldAutoLogAgentProgress(message: string | undefined, previousMessage: string | undefined): message is string {

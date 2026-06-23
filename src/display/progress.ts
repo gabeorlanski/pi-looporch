@@ -188,7 +188,7 @@ function renderAgentRow(agent: WorkflowAgentSnapshot, width: number, theme: Prog
     `${formatTokenCount(agent.inputTokenCount)}→${formatTokenCount(agent.outputTokenCount)}`,
     `${String(agent.toolCallCount)} ${agent.toolCallCount === 1 ? "tool" : "tools"}`,
   ];
-  if (agent.status === "running" && agent.startedAt > 0) meta.push(formatDuration(Date.now() - agent.startedAt));
+  if (agent.status === "running" && agent.startedAt > 0) meta.push(formatRunningDuration(Date.now() - agent.startedAt));
   const lines = [
     fit(`     ${theme.fg(glyph.color, glyph.glyph)} ${theme.fg("text", identity)} ${theme.fg("dim", meta.join(" · "))}`, width),
   ];
@@ -353,7 +353,7 @@ function runningElapsedText(agents: WorkflowAgentSnapshot[]): string {
   const runningAgents = agents.filter((agent) => agent.status === "running" && agent.startedAt > 0);
   if (!runningAgents.length) return "";
   const startedAt = Math.min(...runningAgents.map((agent) => agent.startedAt));
-  return ` · running ${formatDuration(Date.now() - startedAt)}`;
+  return ` · running ${formatRunningDuration(Date.now() - startedAt)}`;
 }
 
 export function formatDuration(ms: number): string {
@@ -364,6 +364,13 @@ export function formatDuration(ms: number): string {
   const wholeSeconds = Math.round(seconds);
   const minutes = Math.floor(wholeSeconds / 60);
   return `${String(minutes)}m ${String(wholeSeconds % 60).padStart(2, "0")}s`;
+}
+
+function formatRunningDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  if (totalSeconds < 60) return `${String(totalSeconds)}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  return `${String(minutes)}m ${String(totalSeconds % 60).padStart(2, "0")}s`;
 }
 
 interface WorkflowDisplayState {

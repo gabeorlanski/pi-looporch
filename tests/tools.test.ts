@@ -42,8 +42,8 @@ void test("workflow_helper_tools_are_available_from_explicit_tool_factory", () =
     "workflow drafts can be debugged by agents",
   );
   assert.ok(
-    tools.some((tool) => tool.name === "workflow_primitives"),
-    "workflow primitive docs are available to agents",
+    tools.some((tool) => tool.name === "workflow_design_guidance"),
+    "workflow design guidance is available to agents",
   );
 });
 
@@ -116,42 +116,44 @@ export default async function workflow() {
   assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /missingGlobal is not defined/);
 });
 
-void test("workflow_primitives_tool_returns_docs_and_examples", async () => {
-  const tool = createWorkflowTools({ cwd: process.cwd() }).find((candidate) => candidate.name === "workflow_primitives");
+void test("workflow_design_guidance_tool_returns_topic_index_and_focused_guidance", async () => {
+  const tool = createWorkflowTools({ cwd: process.cwd() }).find((candidate) => candidate.name === "workflow_design_guidance");
   assert.ok(tool);
 
   const all = await tool.execute("call-1", {}, undefined, undefined, {} as never);
   const allText = all.content[0]?.type === "text" ? all.content[0].text : "";
-  assert.match(allText, /Workflow primitives/);
-  assert.match(allText, /workflow_primitives\(\{ primitive: "authoring" \}\)/);
-  assert.match(allText, /paths and contracts, not pasted context/);
-  assert.match(allText, /agent\(prompt: string/);
-  assert.doesNotMatch(allText, /Debugging tip/i);
+  assert.match(allText, /Workflow design guidance/);
+  assert.match(allText, /overview/);
+  assert.match(allText, /workflow-api/);
+  assert.match(allText, /prompt-files/);
+  assert.doesNotMatch(allText, /Available workflow globals/);
+  assert.doesNotMatch(allText, /additionalProperties/);
 
-  const authoring = await tool.execute("call-2", { primitive: "authoring" }, undefined, undefined, {} as never);
-  const authoringDocs = authoring.content[0]?.type === "text" ? authoring.content[0].text : "";
-  assert.match(authoringDocs, /Budget-aware workflow authoring policy/);
-  assert.match(authoringDocs, /do not embed large project files/);
-  assert.match(authoringDocs, /artifactPaths/);
+  const overview = await tool.execute("call-2", { topic: "overview" }, undefined, undefined, {} as never);
+  const overviewText = overview.content[0]?.type === "text" ? overview.content[0].text : "";
+  assert.match(overviewText, /workflow_design_guidance: overview|Workflow design guidance: overview/);
+  assert.match(overviewText, /draftDir pointing at that directory/);
+  assert.match(overviewText, /prompts\/\*\.txt/);
 
-  const agentDocs = await tool.execute("call-3", { primitive: "agent" }, undefined, undefined, {} as never);
-  const agentText = agentDocs.content[0]?.type === "text" ? agentDocs.content[0].text : "";
-  assert.match(agentText, /taskFile/);
-  assert.match(agentText, /tools\?: boolean/);
-  assert.match(agentText, /artifactPaths/);
-  assert.match(agentText, /source is not pasted/);
+  const api = await tool.execute("call-3", { topic: "workflow-api" }, undefined, undefined, {} as never);
+  const apiText = api.content[0]?.type === "text" ? api.content[0].text : "";
+  assert.match(apiText, /Runtime globals are listed in the session prompt/);
+  assert.match(apiText, /cannot import modules/);
 
-  const readText = await tool.execute("call-4", { primitive: "readText" }, undefined, undefined, {} as never);
-  const readTextDocs = readText.content[0]?.type === "text" ? readText.content[0].text : "";
-  assert.match(readTextDocs, /readText\(filePath: string\)/);
-  assert.match(readTextDocs, /workflowPrompt = readText\("@workflow\/prompts\/review\.txt"\)/);
-  assert.match(readTextDocs, /pass the path to a child agent/);
+  const promptFiles = await tool.execute("call-4", { topic: "prompt-files" }, undefined, undefined, {} as never);
+  const promptFilesText = promptFiles.content[0]?.type === "text" ? promptFiles.content[0].text : "";
+  assert.match(promptFilesText, /Inputs, Purpose, Definitions, Rules, Task, and Output/);
+  assert.match(promptFilesText, /\{\{file\}\}/);
+  assert.match(promptFilesText, /do not write JS template variables/);
+  assert.match(promptFilesText, /Avoid unstructured global preamble dumps/);
 
-  const coerce = await tool.execute("call-5", { primitive: "coerce" }, undefined, undefined, {} as never);
-  const text = coerce.content[0]?.type === "text" ? coerce.content[0].text : "";
-  assert.match(text, /coerce\(/);
-  assert.match(text, /maxLength/);
-  assert.doesNotMatch(text, /verifier\(/);
+  const structured = await tool.execute("call-5", { topic: "structured-outputs" }, undefined, undefined, {} as never);
+  const structuredText = structured.content[0]?.type === "text" ? structured.content[0].text : "";
+  assert.match(structuredText, /agent\(prompt, \{ schema, maxAttempts \}\)/);
+  assert.match(structuredText, /maxLength/);
+  assert.match(structuredText, /control surface/);
+  assert.match(structuredText, /JSONL\/artifact files/);
+  assert.doesNotMatch(structuredText, /verifier\(/);
 });
 
 void test("run_workflow_tool_runs_existing_workflow", async () => {
@@ -189,6 +191,30 @@ export default async function workflow() {
   assert.ok(
     updates.some((update) => update.includes("workflow echo") && update.includes("#1 helper") && update.includes("NET 0/1 agents")),
   );
+});
+
+void test("run_workflow_tool_returns_string_workflow_result_as_parent_handoff", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
+  const workflowDir = path.join(project, ".pi", "workflows", "handoff");
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(
+    path.join(workflowDir, "workflow.js"),
+    `export const metadata = { name: "handoff", description: "Return handoff", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return "Synthesize the saved artifacts for the user.";
+}`,
+    "utf8",
+  );
+  const tool = createWorkflowTools({ cwd: project, agent: () => Promise.resolve("unused") }).find(
+    (candidate) => candidate.name === "run_workflow",
+  );
+  assert.ok(tool);
+
+  const result = await tool.execute("call-1", { name: "handoff", input: {} }, undefined, undefined, {} as never);
+
+  const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+  assert.match(text, /Workflow 'handoff' returned this handoff from workflow\(\):\n\nSynthesize the saved artifacts for the user\./);
+  assert.equal((result.details as { handoff?: string }).handoff, "Synthesize the saved artifacts for the user.");
 });
 
 void test("propose_workflow_tool_saves_only_after_review", async () => {

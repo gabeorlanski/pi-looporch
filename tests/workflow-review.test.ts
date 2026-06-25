@@ -110,6 +110,7 @@ void test("render_shows_metadata_thinking_level_and_footer", () => {
   assert.match(text, /opus/);
   assert.match(text, /think high/);
   assert.match(text, /55 chars/);
+  assert.match(text, /Ctrl\+O expand/);
   assert.match(text, /a approve · r request changes/);
 });
 

@@ -26,7 +26,7 @@ import { type GeneratedWorkflowDraft, type WorkflowReviewer, type WorkflowReview
 import { createWorkflowRunId, createWorkflowRunLog, type WorkflowRunLog } from "../src/run-logs.ts";
 import { normalizeWorkflowName, runWorkflowFromDirectory, type WorkflowSnapshot } from "../src/runtime.ts";
 import { WorkflowInputError, extractWorkflowInputContract, parseWorkflowInput, validateWorkflowInput } from "../src/input.ts";
-import { completeMessage, failureMessage } from "../src/display/messages.ts";
+import { completeMessage, failureMessage, workflowStringHandoffMessage } from "../src/display/messages.ts";
 import { initialProgressDisplay, progressDisplay, type ProgressDisplay, type ProgressTheme } from "../src/display/progress.ts";
 import { agentInspectorHeaderLines } from "../src/display/agent-inspector.ts";
 import { approvalLines } from "../src/display/approval.ts";
@@ -201,6 +201,7 @@ async function runExistingWorkflowCommand(
       display: true,
       details: { workflowName: result.workflowName, result: result.result, snapshot: result.snapshot, logPath, sessionLogDir },
     });
+    if (typeof result.result === "string") sendWorkflowStringHandoff(pi, ctx, result.workflowName, result.result);
   } catch (error) {
     await runLog?.fail(error, lastSnapshot);
     const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
@@ -557,6 +558,18 @@ function sendWhenReady(pi: ExtensionAPI, ctx: ExtensionCommandContext, message: 
   );
 }
 
+function sendWorkflowStringHandoff(pi: ExtensionAPI, ctx: ExtensionCommandContext, workflowName: string, handoff: string): void {
+  pi.sendMessage(
+    {
+      customType: MESSAGE_TYPE,
+      content: workflowStringHandoffMessage(workflowName, handoff),
+      display: false,
+      details: { kind: "workflow-string-handoff", workflowName },
+    },
+    ctx.isIdle() ? { triggerTurn: true } : { triggerTurn: true, deliverAs: "followUp" },
+  );
+}
+
 function createReviewer(ctx: ExtensionContext): WorkflowReviewer {
   return async ({ draft }) => {
     if (ctx.mode !== "tui") return { action: "reject", reason: "Generated workflows require TUI review before save or run" };
@@ -696,7 +709,7 @@ function tuiReviewWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft)
         } else if (matchesKey(data, Key.left) || data === "h") {
           expandNode(expanded, nodes[selectedIndex], false);
           refresh();
-        } else if (matchesKey(data, Key.space) || matchesKey(data, Key.enter)) {
+        } else if (matchesKey(data, Key.ctrl("o"))) {
           toggleNode(expanded, nodes[selectedIndex]);
           refresh();
         }

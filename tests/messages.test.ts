@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { completeMessage, failureMessage, snapshotMessages, startMessage } from "../src/display/messages.ts";
+import { completeMessage, failureMessage, snapshotMessages, startMessage, workflowStringHandoffMessage } from "../src/display/messages.ts";
 import type { WorkflowSnapshot } from "../src/runtime.ts";
 
 void test("workflow_boundary_messages_are_visible_text", () => {
@@ -13,6 +13,13 @@ void test("workflow_complete_message_renders_string_results_without_json_escapin
   assert.equal(
     completeMessage("review", "Summary\n\n```bash\nnpm test\n```"),
     "Workflow 'review' complete.\n\nSummary\n\n```bash\nnpm test\n```",
+  );
+});
+
+void test("workflow_string_handoff_message_names_workflow_function_source", () => {
+  assert.equal(
+    workflowStringHandoffMessage("review", "Summarize these artifacts for the user."),
+    "Workflow 'review' returned this handoff from workflow():\n\nSummarize these artifacts for the user.",
   );
 });
 

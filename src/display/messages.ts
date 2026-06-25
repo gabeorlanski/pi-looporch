@@ -8,6 +8,10 @@ export function completeMessage(workflowName: string, result: unknown): string {
   return `Workflow '${workflowName}' complete.\n\n${workflowResultPreview(result)}`;
 }
 
+export function workflowStringHandoffMessage(workflowName: string, handoff: string): string {
+  return `Workflow '${workflowName}' returned this handoff from workflow():\n\n${handoff}`;
+}
+
 export function failureMessage(workflowName: string | undefined, error: unknown): string {
   const label = workflowName ? `Workflow '${workflowName}'` : "Workflow";
   return `${label} failed: ${error instanceof Error ? error.message : String(error)}`;

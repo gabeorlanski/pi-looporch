@@ -55,14 +55,15 @@ read the user's goal
 if an existing workflow fits:
   call run_workflow(name, input)
 else:
-  call workflow_primitives if syntax/details are needed
-  draft .pi/workflows/<name>/workflow.js
-  include metadata { name, description, inputInstructions, phases }
+  call workflow_design_guidance({ topic: "overview" }) before authoring, then narrower topics only as needed
+  draft .pi/workflow-drafts/<name>/ as a complete workflow directory
+  put reusable child-agent prompt templates in prompts/*.txt and render them with renderPrompt
+  include workflow.js metadata { name, description, inputInstructions, phases }
   document workflow(input) with JSDoc:
     purpose, input fields/defaults, phases, child agents, file reads, result
   prefer workflow({ field, optional = default }) over global args for new code
   use debug_workflow only for small deterministic checks with fake agents
-  call propose_workflow so the human can review before save
+  call propose_workflow with draftDir pointing at the directory, not workflow.js, so the human can review before save
 ```
 
 When running an existing named workflow:
@@ -88,7 +89,7 @@ The workflow agent sees only what the workflow prompt gives it. Phases are progr
 - `extensions/`: pi command, tool, and TUI wiring. Parse/coerce user input here.
 - `src/`: testable workflow orchestration logic. Accept normalized inputs here.
 - `src/display/`: every TUI or visible text renderer lives in a focused display module.
-- `src/authoring-guide.ts`: on-demand workflow primitive index/details returned by `workflow_primitives`. Keep this synchronized with authoring conventions because workflow-authoring agents request it when needed.
+- `src/authoring-guide.ts`: on-demand workflow design guidance returned by `workflow_design_guidance`. Keep this synchronized with authoring conventions because workflow-authoring agents request it when needed.
 - `src/prompts/`: raw prompt text files only; TypeScript interpolation lives outside this directory.
 - `tests/`: deterministic `node:test` coverage with fake agents only.
 - `docs/specs/`: workflow system design notes.
@@ -113,12 +114,15 @@ TypeScript interfaces/types are the source of truth:
 - Keep the extension small and dependency-light.
 - Keep command/UI parsing at boundaries; keep core runtime strict.
 - Keep prompt copy in raw `.txt` files under `src/prompts/`.
-- Keep workflow authoring guidance in TypeScript and serve it on demand through `workflow_primitives`; do not eagerly inject the full guide into routing prompts.
+- Keep workflow authoring guidance in TypeScript and serve it on demand through `workflow_design_guidance`; do not eagerly inject the full guide into routing prompts.
 - Let `readText`/`readJson` read absolute paths, project-cwd-relative paths, and `@workflow/...` paths; use `renderPrompt` for prompt templates under the workflow's own `prompts/` directory.
 - Let `agent(prompt, { cwd })` launch child agents from alternate/scratch directories; resolve relative `cwd` values from the workflow project cwd.
+- Agent-generated workflows should be proposed as complete draft directories (`.pi/workflow-drafts/<name>/`) with `draftDir` pointing at the directory, not the `workflow.js` file.
 - Agent-generated workflow source must include required `metadata.phases` as the planned runbook outline and document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
 - Optimize workflow authoring for power-user/agent-authored executable runbooks: top-level constants, inline schemas, prompt-builder helpers, and local paths are fine when they improve observability and ease of tweaking.
 - Generated workflow child-agent prompts must be self-contained expert task packets: include mission, source-of-truth paths, prior results, non-negotiable invariants, concrete commands/search strategies, evidence requirements, pass/fail gates, and exact artifacts to read or write.
+- Shared prompt context is allowed, but format it as a compact contract (`Inputs`, `Purpose`, `Definitions`, `Rules`, `Task`, `Output`) instead of an unstructured global preamble dump; omit irrelevant globals for that stage.
+- Put reusable generated-workflow child-agent prompt templates in the workflow draft's `prompts/*.txt` files, use `{{name}}` placeholders, and render them with `renderPrompt`; reserve inline prompts for tiny one-off glue.
 - Use adversarial verifier/repair stages for important generated artifacts; reviewer prompts should cite evidence and separate major correctness failures from recommendations.
 - Prefer `agent(prompt, { schema, maxAttempts? })` for structured child-agent work; use `log(message)` for visible workflow milestones and `trace(label, value?)` for workflow-local structured debug state that should show up in snapshots/run events.
 - Give every function a clear job; inline short helpers that only hide one expression or rename a local concept.

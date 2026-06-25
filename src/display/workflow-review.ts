@@ -209,7 +209,7 @@ function editorBox(
 function footerLine(editing: boolean, theme: ProgressTheme, width: number): string {
   const keys = editing
     ? "enter save · esc cancel"
-    : "↑↓ move · space expand · c note · g general · a approve · r request changes · t text · esc";
+    : "↑↓ move · Ctrl+O expand · c note · g general · a approve · r request changes · t text · esc";
   return fit(`  ${theme.fg("dim", keys)}`, width);
 }
 

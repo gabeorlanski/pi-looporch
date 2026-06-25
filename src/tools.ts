@@ -14,10 +14,10 @@ import {
   type WorkflowSnapshot,
 } from "./runtime.ts";
 import { progressDisplay } from "./display/progress.ts";
-import { workflowResultPreview } from "./display/messages.ts";
+import { workflowResultPreview, workflowStringHandoffMessage } from "./display/messages.ts";
 import { reviewAndSaveWorkflowDraft, type WorkflowProposal, type WorkflowReviewer } from "./request.ts";
 import { createWorkflowRunId } from "./run-logs.ts";
-import { workflowPrimitiveGuide } from "./authoring-guide.ts";
+import { workflowDesignGuidance } from "./authoring-guide.ts";
 import { extractWorkflowInputContract, validateWorkflowInput } from "./input.ts";
 import { writeWorkflowSessionSummary } from "./session-logs.ts";
 import { DEFAULT_MAX_PARALLEL_AGENTS, readProjectWorkflowSettings } from "./workflow-settings.ts";
@@ -34,7 +34,7 @@ export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefiniti
   return [
     createRunWorkflowTool(options),
     createDebugWorkflowTool(options),
-    createWorkflowPrimitivesTool(),
+    createWorkflowDesignGuidanceTool(),
     createProposeWorkflowTool(options),
   ];
 }
@@ -91,14 +91,25 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
         snapshot: result.snapshot,
         result: result.result,
       });
+      const contentText =
+        typeof result.result === "string"
+          ? `${workflowStringHandoffMessage(result.workflowName, result.result)}\n\nWorkflow session logs: ${sessionLogDir}`
+          : `Workflow ${result.workflowName} complete.\n\n${workflowResultPreview(result.result)}\n\nWorkflow session logs: ${sessionLogDir}`;
       return {
         content: [
           {
             type: "text",
-            text: `Workflow ${result.workflowName} complete.\n\n${workflowResultPreview(result.result)}\n\nWorkflow session logs: ${sessionLogDir}`,
+            text: contentText,
           },
         ],
-        details: { workflowName: result.workflowName, status: "complete", snapshot: result.snapshot, result: result.result, sessionLogDir },
+        details: {
+          workflowName: result.workflowName,
+          status: "complete",
+          snapshot: result.snapshot,
+          result: result.result,
+          ...(typeof result.result === "string" ? { handoff: result.result } : {}),
+          sessionLogDir,
+        },
       };
     },
     renderResult(result, _options, theme) {
@@ -160,19 +171,23 @@ function createDebugWorkflowTool(options: WorkflowToolsOptions): ToolDefinition 
   });
 }
 
-function createWorkflowPrimitivesTool(): ToolDefinition {
+function createWorkflowDesignGuidanceTool(): ToolDefinition {
   return defineTool({
-    name: "workflow_primitives",
-    label: "Workflow Primitives",
-    description: "Show workflow authoring primitive documentation and examples.",
+    name: "workflow_design_guidance",
+    label: "Workflow Design Guidance",
+    description: "Show concise, topic-specific guidance for designing and authoring project workflows.",
     promptSnippet:
-      "workflow_primitives: Look up workflow globals such as agent, parallel, coerce, mapreduce, verifier, readText, renderPrompt.",
+      "workflow_design_guidance: Get concise workflow design guidance by topic, such as overview, workflow-api, prompt-files, structured-outputs, fanout, verification, artifacts, or debugging.",
     parameters: Type.Object({
-      primitive: Type.Optional(Type.String({ description: "Optional primitive name such as agent, coerce, mapreduce, or verifier" })),
+      topic: Type.Optional(
+        Type.String({
+          description: "Optional topic such as overview, workflow-api, draft-directory, prompt-files, structured-outputs, or debugging",
+        }),
+      ),
     }),
     execute(_toolCallId, params) {
-      const text = workflowPrimitiveGuide(params.primitive);
-      return Promise.resolve({ content: [{ type: "text", text }], details: { primitive: params.primitive ?? "all" } });
+      const text = workflowDesignGuidance(params.topic);
+      return Promise.resolve({ content: [{ type: "text", text }], details: { topic: params.topic ?? "index" } });
     },
   });
 }
@@ -212,12 +227,20 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
   return defineTool({
     name: "propose_workflow",
     label: "Propose Workflow",
-    description: "Propose a new workflow draft directory or source file for user review before it is saved.",
-    promptSnippet: "propose_workflow: Propose a new workflow draft directory for user review before saving.",
+    description: "Propose a new workflow draft directory for user review before it is saved.",
+    promptSnippet: "propose_workflow: Propose a new workflow draft directory, not a workflow.js file, for user review before saving.",
     parameters: Type.Object({
       name: Type.String({ description: "Workflow slug to save under .pi/workflows/<slug>" }),
-      source: Type.Optional(Type.String({ description: "Complete workflow.js source. Prefer draftDir for large workflows." })),
-      draftDir: Type.Optional(Type.String({ description: "Project-relative draft workflow directory containing workflow.js" })),
+      source: Type.Optional(
+        Type.String({
+          description: "Compatibility path for tiny workflows: complete workflow.js source without resource files. Prefer draftDir.",
+        }),
+      ),
+      draftDir: Type.Optional(
+        Type.String({
+          description: "Preferred: project-relative draft workflow directory containing workflow.js plus prompts/ or other resources",
+        }),
+      ),
       request: Type.Optional(Type.String({ description: "Original user request this workflow satisfies" })),
       summary: Type.Optional(Type.String({ description: "Natural-language summary shown to the user before save" })),
       steps: Type.Optional(Type.Array(Type.String(), { description: "Natural-language steps the workflow will take" })),
@@ -240,7 +263,7 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
       };
       await reviewAndSaveWorkflowDraft({ cwd, request: params.request ?? name, draft, reviewer });
       return {
-        content: [{ type: "text", text: `Saved reviewed workflow '${name}' to .pi/workflows/${name}/workflow.js.` }],
+        content: [{ type: "text", text: `Saved reviewed workflow '${name}' to .pi/workflows/${name}/.` }],
         details: { workflowName: name, saved: true },
       };
     },
@@ -288,7 +311,7 @@ function workflowProposalFromParams(
 ): WorkflowProposal {
   return {
     summary: params.summary ?? `Create workflow '${name}'${params.request ? ` for: ${params.request}` : ""}`,
-    steps: params.steps ?? ["Save the reviewed workflow source under the project workflow directory."],
-    willRun: params.willRun ?? [`Copy the approved draft to .pi/workflows/${name}/ after approval.`],
+    steps: params.steps ?? ["Save the reviewed workflow directory under the project workflow root."],
+    willRun: params.willRun ?? [`Copy the approved draft directory to .pi/workflows/${name}/ after approval.`],
   };
 }

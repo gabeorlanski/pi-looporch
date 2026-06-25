@@ -142,6 +142,85 @@ export default async function workflow() {
   assert.match(sentMessages[0].content, /Workflow 'echo' complete\.\n\n\{[\s\S]*"note": "hello world"[\s\S]*\}\n\nWorkflow session logs: /);
 });
 
+void test("string_result_from_workflow_function_is_injected_as_parent_agent_handoff", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const workflowDir = path.join(project, ".pi", "workflows", "handoff");
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(
+    path.join(workflowDir, "workflow.js"),
+    `export const metadata = { name: "handoff", description: "Return handoff", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return "Parent agent: summarize the workflow artifacts for the user.";
+}`,
+    "utf8",
+  );
+
+  const commands = new Map<string, RegisteredTestCommand>();
+  const sentMessages: { message: SentMessage; options?: { triggerTurn?: boolean; deliverAs?: string } }[] = [];
+  const pi = {
+    registerTool(tool: unknown): void {
+      void tool;
+    },
+    registerCommand(name: string, command: RegisteredTestCommand): void {
+      commands.set(name, command);
+    },
+    on(event: string, handler: unknown): void {
+      void event;
+      void handler;
+    },
+    sendMessage(message: SentMessage, options?: { triggerTurn?: boolean; deliverAs?: string }): void {
+      sentMessages.push({ message, options });
+    },
+    sendUserMessage(message: unknown): void {
+      void message;
+    },
+  } as unknown as ExtensionAPI;
+  piWorkflow(pi);
+
+  const command = commands.get("workflow");
+  assert.ok(command);
+  const ctx = {
+    cwd: project,
+    mode: "tui",
+    hasUI: true,
+    signal: undefined,
+    abort(): void {
+      void project;
+    },
+    isIdle: () => true,
+    ui: {
+      notify(message: string, type?: "info" | "warning" | "error"): void {
+        void message;
+        void type;
+      },
+      setStatus(key: string, text: string | undefined): void {
+        void key;
+        void text;
+      },
+      setWidget(key: string, content: unknown): void {
+        void key;
+        void content;
+      },
+      onTerminalInput(): () => void {
+        return () => undefined;
+      },
+    },
+  } as unknown as ExtensionCommandContext;
+
+  await command.handler("handoff", ctx);
+
+  assert.equal(sentMessages.length, 2);
+  assert.equal(sentMessages[0]?.message.display, true);
+  assert.match(sentMessages[0]?.message.content ?? "", /Workflow 'handoff' complete/);
+  assert.equal(sentMessages[1]?.message.display, false);
+  assert.equal(sentMessages[1]?.options?.triggerTurn, true);
+  assert.equal(
+    sentMessages[1]?.message.content,
+    "Workflow 'handoff' returned this handoff from workflow():\n\nParent agent: summarize the workflow artifacts for the user.",
+  );
+  assert.deepEqual(sentMessages[1]?.message.details, { kind: "workflow-string-handoff", workflowName: "handoff" });
+});
+
 void test("workflow_settings_command_writes_project_settings", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const commands = new Map<string, RegisteredTestCommand>();

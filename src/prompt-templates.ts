@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { workflowPrimitiveSummaryList } from "./authoring-guide.ts";
 import type { WorkflowInputContract } from "./input.ts";
 import type { WorkflowAgentOptions, WorkflowMetadata } from "./runtime.ts";
 
@@ -41,6 +42,7 @@ export function naturalLanguageRequestMessage(request: string, availableWorkflow
   return renderPromptTemplate(sessionRequestTemplate, {
     availableWorkflowNames: availableWorkflowNames.length ? availableWorkflowNames.join(", ") : "none",
     request,
+    workflowPrimitiveSummary: workflowPrimitiveSummaryList(),
   });
 }
 

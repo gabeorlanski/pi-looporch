@@ -49,6 +49,7 @@ void test("workflow_progress_table_collapses_completed_phase_children_and_expand
         inputTokenCount: 700,
         outputTokenCount: 100,
         toolCallCount: 3,
+        stepCount: 4,
         message: "using read",
       }),
     ],
@@ -68,13 +69,13 @@ void test("workflow_progress_table_collapses_completed_phase_children_and_expand
   );
   assert.ok(display.widgetLines.some((line) => line.includes("▸ P2 fanout") && line.includes("1/2 agents")));
   assert.ok(!display.widgetLines.some((line) => line.includes("#1 inventory")));
-  assert.ok(display.widgetLines.some((line) => line.includes("#3 b.ts") && line.includes("medium")));
+  assert.ok(display.widgetLines.some((line) => line.includes("#3 b.ts") && line.includes("medium") && line.includes("gpt-5")));
+  assert.ok(display.widgetLines.some((line) => line.includes("╰─ active") && line.includes("00:00") && line.includes("4 steps")));
+  assert.ok(display.widgetLines.some((line) => line.includes("↓   700") && line.includes("↑   100") && line.includes("3 tools")));
   assert.ok(!display.widgetLines.some((line) => line.includes("↳ using read")));
-  assert.ok(display.widgetLines.some((line) => line.includes("runtime log") && line.includes("last")));
-  assert.ok(
-    display.widgetLines.some((line) => line.includes("[P2]") && line.includes("trace selected inputs") && line.includes('"count":2')),
-  );
-  assert.ok(display.widgetLines.some((line) => line.includes("[A3]") && line.includes("b.ts: using read")));
+  assert.ok(!display.widgetLines.some((line) => line.includes("runtime log")));
+  assert.ok(!display.widgetLines.some((line) => line.includes("trace selected inputs")));
+  assert.ok(!display.widgetLines.some((line) => line.includes("b.ts: using read")));
   assert.ok(display.widgetLines.some((line) => line.includes("NET 2/3 agents") && line.includes("2.4k in") && line.includes("6 tools")));
 });
 
@@ -136,14 +137,14 @@ void test("workflow_progress_caps_expanded_phase_agents_but_keeps_active_and_err
   assert.ok(!display.widgetLines.some((line) => line.includes("#1 file-1")));
 });
 
-void test("workflow_progress_mini_log_wraps_long_running_messages", () => {
+void test("workflow_progress_omits_runtime_log_messages", () => {
   const snapshot: WorkflowSnapshot = {
-    workflowName: "wrap",
-    description: "Wrap messages",
+    workflowName: "quiet",
+    description: "Quiet progress",
     plannedPhases: [],
     phases: ["review"],
-    logs: [],
-    traces: [],
+    logs: ["visible milestone"],
+    traces: [{ phaseIndex: 1, phase: "review", label: "selected", value: { count: 1 } }],
     agents: [],
     fanOuts: [],
     messages: [
@@ -153,18 +154,16 @@ void test("workflow_progress_mini_log_wraps_long_running_messages", () => {
         agentId: 7,
         agentLabel: "reviewer",
         level: "debug",
-        message:
-          "reviewer is inspecting a deliberately long status update with enough words to require multiple terminal rows instead of truncation",
+        message: "reviewer is inspecting files",
       },
     ],
   };
 
   const display = progressDisplay(snapshot, 64);
-  const logLines = display.widgetLines.filter((line) => line.includes("│"));
 
-  assert.ok(logLines.some((line) => line.includes("[A7]") && line.includes("reviewer is")));
-  assert.ok(logLines.length > 1);
-  assert.ok(logLines.every((line) => line.length <= 64));
+  assert.ok(!display.widgetLines.some((line) => line.includes("runtime log")));
+  assert.ok(!display.widgetLines.some((line) => line.includes("visible milestone")));
+  assert.ok(!display.widgetLines.some((line) => line.includes("reviewer is inspecting")));
 });
 
 void test("workflow_progress_table_falls_back_to_startup_phase_before_explicit_phase", () => {
@@ -233,6 +232,7 @@ function agent(overrides: Partial<WorkflowAgentSnapshot> & Pick<WorkflowAgentSna
     inputTokenCount: 0,
     outputTokenCount: 0,
     toolCallCount: 0,
+    stepCount: 0,
     ...overrides,
   };
 }

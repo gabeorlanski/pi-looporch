@@ -44,6 +44,7 @@ import {
   type ReviewNode,
 } from "../src/display/workflow-review.ts";
 import { createWorkflowTools } from "../src/tools.ts";
+import { workflowLogReviewMessage } from "../src/log-review.ts";
 import { writeWorkflowSessionSummary } from "../src/session-logs.ts";
 import { loadSessionMessages } from "../src/session-transcript.ts";
 import {
@@ -75,8 +76,7 @@ export default function piWorkflow(pi: ExtensionAPI) {
   });
 
   pi.registerCommand("workflow-review", {
-    description: "Inspect an existing workflow definition",
-    getArgumentCompletions: (prefix) => workflowCompletions(process.cwd(), prefix),
+    description: "Review workflow session logs for token-cost reduction",
     handler: async (args, ctx) => reviewWorkflowCommand(pi, ctx, args),
   });
 
@@ -950,13 +950,13 @@ function workflowMaxParallelChoices(currentValue: number): string[] {
 }
 
 async function reviewWorkflowCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
-  const name = normalizeWorkflowName(args.trim());
-  const workflow = (await discoverWorkflows(ctx.cwd)).find((candidate) => candidate.name === name);
-  if (!workflow) {
-    ctx.ui.notify(`Workflow '${name}' not found.`, "warning");
-    return;
+  try {
+    ctx.ui.notify("Reviewing workflow session logs for token-cost reduction", "info");
+    const content = await workflowLogReviewMessage({ cwd: ctx.cwd, target: args.trim() });
+    pi.sendMessage({ customType: MESSAGE_TYPE, content, display: true, details: { kind: "workflow-log-review" } });
+  } catch (error) {
+    ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
   }
-  pi.sendMessage({ customType: MESSAGE_TYPE, content: await readFile(workflow.entryFile, "utf8"), display: true, details: undefined });
 }
 
 function splitFirstWord(text: string): [string, string] {

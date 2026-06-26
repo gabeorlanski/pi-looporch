@@ -73,6 +73,7 @@ function agent(overrides: Partial<WorkflowAgentSnapshot> & Pick<WorkflowAgentSna
     inputTokenCount: 0,
     outputTokenCount: 0,
     toolCallCount: 0,
+    stepCount: 0,
     ...overrides,
   };
 }

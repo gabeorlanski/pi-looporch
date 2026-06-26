@@ -532,7 +532,7 @@ export default async function workflow() {
   assert.ok(snapshots >= 4);
 });
 
-void test("workflow_auto_logs_tool_name_agent_progress_messages", async () => {
+void test("workflow_tracks_agent_progress_without_auto_logging_tool_names", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
@@ -563,7 +563,7 @@ export default async function workflow() {
 
   assert.deepEqual(
     result.snapshot.messages?.map((message) => message.message),
-    ["workflow progress-log started", "worker started", "read", "bash", "worker done", "workflow completed"],
+    ["workflow progress-log started", "worker started", "worker done", "workflow completed"],
   );
   assert.equal(events.filter((event) => event === "agent_progress").length, 4);
   assert.equal(result.snapshot.agents[0]?.message, "done");

@@ -248,18 +248,20 @@ function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress)
   let inputTokenCount = 0;
   let outputTokenCount = 0;
   let toolCallCount = 0;
+  let stepCount = 0;
   const reportStatus = (status: string): void => {
-    reportProgress(progressSnapshot(status, inputTokenCount, outputTokenCount, toolCallCount));
+    reportProgress(progressSnapshot(status, inputTokenCount, outputTokenCount, toolCallCount, stepCount));
   };
   const reportCounts = (): void => {
-    reportProgress(progressCounts(inputTokenCount, outputTokenCount, toolCallCount));
+    reportProgress(progressCounts(inputTokenCount, outputTokenCount, toolCallCount, stepCount));
   };
   return {
     handleEvent(event: unknown): void {
       if (!isEventObject(event)) return;
+      if (event.type === "message_start") reportStatus("thinking");
       if (event.type === "tool_execution_start" || event.type === "tool_execution_update" || event.type === "tool_execution_end") {
         if (event.type === "tool_execution_start") toolCallCount++;
-        reportStatus(eventToolName(event));
+        reportStatus("active");
       }
       if (event.type === "message_end") {
         const usage = workflowTokenUsageFromMessage(event.message);
@@ -267,16 +269,16 @@ function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress)
         outputTokenCount += usage.outputTokenCount;
         reportCounts();
       }
+      if (event.type === "turn_end") {
+        stepCount++;
+        reportStatus("waiting");
+      }
     },
   };
 }
 
 function isEventObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && typeof (value as { type?: unknown }).type === "string";
-}
-
-function eventToolName(event: Record<string, unknown>): string {
-  return typeof event.toolName === "string" && event.toolName.trim() ? event.toolName : "tool";
 }
 
 export function workflowDisplayTokensFromMessage(value: unknown): number {
@@ -327,18 +329,25 @@ function progressSnapshot(
   inputTokenCount: number,
   outputTokenCount: number,
   toolCallCount: number,
+  stepCount: number,
 ): WorkflowAgentProgress {
   return {
     statusMessage,
-    ...progressCounts(inputTokenCount, outputTokenCount, toolCallCount),
+    ...progressCounts(inputTokenCount, outputTokenCount, toolCallCount, stepCount),
   };
 }
 
-function progressCounts(inputTokenCount: number, outputTokenCount: number, toolCallCount: number): WorkflowAgentProgress {
+function progressCounts(
+  inputTokenCount: number,
+  outputTokenCount: number,
+  toolCallCount: number,
+  stepCount: number,
+): WorkflowAgentProgress {
   return {
     inputTokenCount,
     outputTokenCount,
     toolCallCount,
+    stepCount,
     tokenCount: inputTokenCount + outputTokenCount,
   };
 }

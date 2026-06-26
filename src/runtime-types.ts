@@ -42,6 +42,7 @@ export interface WorkflowAgentProgress {
   inputTokenCount?: number;
   outputTokenCount?: number;
   toolCallCount?: number;
+  stepCount?: number;
   model?: string;
   sessionDir?: string;
   sessionFile?: string;
@@ -69,6 +70,7 @@ export interface WorkflowAgentSnapshot {
   inputTokenCount: number;
   outputTokenCount: number;
   toolCallCount: number;
+  stepCount: number;
   fanOutId?: number;
   sessionDir?: string;
   sessionFile?: string;
@@ -133,6 +135,7 @@ export type WorkflowEvent =
       inputTokenCount: number;
       outputTokenCount: number;
       toolCallCount: number;
+      stepCount: number;
       model?: string;
     }
   | { type: "agent_done"; agentId: number }

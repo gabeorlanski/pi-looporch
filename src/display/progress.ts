@@ -1,11 +1,9 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { WorkflowAgentSnapshot, WorkflowRunMessageSnapshot, WorkflowSnapshot } from "../runtime.ts";
+import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime.ts";
 
 const DEFAULT_WIDTH = 96;
 const MIN_WIDTH = 64;
 const MAX_EXPANDED_PHASE_AGENTS = 8;
-const MAX_AGENT_IDENTITY_WIDTH = 52;
-const AGENT_METADATA_RESERVED_WIDTH = 40;
 
 type DisplayColor = "accent" | "borderMuted" | "dim" | "error" | "muted" | "success" | "text" | "warning";
 
@@ -36,12 +34,6 @@ interface PhaseSection {
   isCurrent: boolean;
   agents: WorkflowAgentSnapshot[];
   isExpanded: boolean;
-}
-
-interface MiniLogEntry {
-  context: string;
-  message: string;
-  color: DisplayColor;
 }
 
 const plainTheme: ProgressTheme = {
@@ -80,7 +72,6 @@ export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDT
     summaryLine(snapshot, stats, state, safeWidth, theme),
     "",
     ...phaseSections(snapshot).flatMap((section) => renderPhaseSection(section, safeWidth, theme)),
-    ...miniLogLines(snapshot, safeWidth, theme),
     "",
     netLine(snapshot, stats, safeWidth, theme),
   ];
@@ -180,109 +171,43 @@ function hiddenAgentsLine(hidden: number, width: number, theme: ProgressTheme): 
 
 function renderAgentRow(agent: WorkflowAgentSnapshot, width: number, theme: ProgressTheme): string[] {
   const glyph = agentGlyph(agent);
-  const labelWidth = Math.max(14, Math.min(MAX_AGENT_IDENTITY_WIDTH, width - AGENT_METADATA_RESERVED_WIDTH));
-  const identity = padVisible(fit(`#${String(agent.id)} ${agent.label}`, labelWidth), labelWidth);
-  const meta = [
-    agent.model ?? "default",
-    agent.reasoning ?? "default",
-    `${formatTokenCount(agent.inputTokenCount)}→${formatTokenCount(agent.outputTokenCount)}`,
-    `${String(agent.toolCallCount)} ${agent.toolCallCount === 1 ? "tool" : "tools"}`,
-  ];
-  if (agent.status === "running" && agent.startedAt > 0) meta.push(formatRunningDuration(Date.now() - agent.startedAt));
-  const lines = [
-    fit(`     ${theme.fg(glyph.color, glyph.glyph)} ${theme.fg("text", identity)} ${theme.fg("dim", meta.join(" · "))}`, width),
-  ];
+  const lines = [fit(`     ${theme.fg(glyph.color, glyph.glyph)} ${theme.fg("text", agentTitle(agent))}`, width)];
+  if (agent.status === "running") lines.push(agentStatusLine(agent, width, theme));
   if (agent.error?.trim()) lines.push(fit(`        ${theme.fg("error", `↳ ${agent.error.trim()}`)}`, width));
   return lines;
 }
 
-function miniLogLines(snapshot: WorkflowSnapshot, width: number, theme: ProgressTheme): string[] {
-  const entries = miniLogEntries(snapshot).slice(-6);
-  if (entries.length === 0) return [];
-  return [
-    "",
-    fit(
-      `${theme.fg("borderMuted", "┌─")} ${theme.fg("accent", theme.bold("runtime log"))} ${theme.fg("dim", `last ${String(entries.length)}`)}`,
-      width,
-    ),
-    ...entries.flatMap((entry) => renderMiniLogEntry(entry, width, theme)),
-    fit(`${theme.fg("borderMuted", "└─")} ${theme.fg("dim", "wrapped messages")}`, width),
-  ];
+function agentTitle(agent: WorkflowAgentSnapshot): string {
+  return [`#${String(agent.id)} ${agent.label}`, agent.reasoning ?? "default", agent.model]
+    .filter((part): part is string => part !== undefined)
+    .join(" · ");
 }
 
-function miniLogEntries(snapshot: WorkflowSnapshot): MiniLogEntry[] {
-  if (snapshot.messages?.length) return snapshot.messages.map(miniLogEntryFromRunMessage);
-  return [
-    ...snapshot.logs.map((message, index) => ({ context: `LOG${String(index + 1)}`, message: `log ${message}`, color: "text" as const })),
-    ...snapshot.traces.map((trace) => ({
-      context: phaseContext(trace.phaseIndex),
-      message: `trace ${trace.label}${trace.value === undefined ? "" : ` ${traceValueText(trace.value)}`}`,
-      color: "text" as const,
-    })),
-    ...snapshot.agents.flatMap((agent) => {
-      const message = agent.error ?? agent.message;
-      if (!message?.trim()) return [];
-      return [
-        {
-          context: agentContext(agent.id),
-          message: `${agent.label}: ${message.trim()}`,
-          color: agent.error ? ("error" as const) : agent.status === "running" ? ("warning" as const) : ("muted" as const),
-        },
-      ];
-    }),
-  ];
+function agentStatusLine(agent: WorkflowAgentSnapshot, width: number, theme: ProgressTheme): string {
+  const state = padVisible(agentActivityState(agent), 8);
+  const duration = agent.startedAt > 0 ? formatStatusDuration(Date.now() - agent.startedAt) : "00:00";
+  const steps = padStart(String(agent.stepCount), 3);
+  const input = padStart(formatTokenCount(agent.inputTokenCount), 5);
+  const output = padStart(formatTokenCount(agent.outputTokenCount), 5);
+  const tools = padStart(String(agent.toolCallCount), 3);
+  return fit(
+    `       ${theme.fg("borderMuted", "╰─")} ` +
+      `${theme.fg("warning", state)} ${theme.fg("muted", "·")} ` +
+      `${theme.fg("text", duration)} ${theme.fg("muted", "·")} ` +
+      `${theme.fg("text", steps)} ${theme.fg("muted", "steps ·")} ` +
+      `${theme.fg("accent", `↓ ${input}`)} ${theme.fg("warning", `↑ ${output}`)} ${theme.fg("muted", "·")} ` +
+      `${theme.fg("text", tools)} ${theme.fg("muted", agent.toolCallCount === 1 ? "tool" : "tools")}`,
+    width,
+  );
 }
 
-function miniLogEntryFromRunMessage(message: WorkflowRunMessageSnapshot): MiniLogEntry {
-  return {
-    context: message.agentId === undefined ? phaseContext(message.phaseIndex) : agentContext(message.agentId),
-    message: message.message,
-    color: message.level === "error" ? "error" : message.level === "warning" ? "warning" : message.level === "debug" ? "muted" : "text",
-  };
-}
-
-function renderMiniLogEntry(entry: MiniLogEntry, width: number, theme: ProgressTheme): string[] {
-  const prefix = `[${entry.context}] `;
-  const indent = " ".repeat(visibleWidth(prefix));
-  const bodyWidth = Math.max(12, width - 2 - visibleWidth(prefix));
-  return wrapWords(entry.message, bodyWidth).map((line, index) => {
-    const visiblePrefix = index === 0 ? prefix : indent;
-    return fit(`${theme.fg("borderMuted", "│")} ${theme.fg("muted", visiblePrefix)}${theme.fg(entry.color, line)}`, width);
-  });
-}
-
-function phaseContext(phaseIndex: number): string {
-  return phaseIndex === 0 ? "P0" : `P${String(phaseIndex)}`;
-}
-
-function agentContext(agentId: number): string {
-  return `A${String(agentId)}`;
-}
-
-function traceValueText(value: unknown): string {
-  return compactJson(value) ?? "[unrenderable]";
-}
-
-function wrapWords(text: string, width: number): string[] {
-  const lines: string[] = [];
-  for (const rawLine of text.split("\n")) {
-    const words = rawLine.split(/(\s+)/).filter((part) => part.length > 0);
-    let line = "";
-    for (const word of words) {
-      if (visibleWidth(line + word) <= width) {
-        line += word;
-        continue;
-      }
-      if (line.trim()) lines.push(line.trimEnd());
-      line = word.trimStart();
-      while (visibleWidth(line) > width) {
-        lines.push(line.slice(0, width));
-        line = line.slice(width);
-      }
-    }
-    lines.push(line.trimEnd());
-  }
-  return lines.length ? lines : [""];
+function agentActivityState(agent: WorkflowAgentSnapshot): "active" | "done" | "failed" | "thinking" | "waiting" {
+  if (agent.status === "done") return "done";
+  if (agent.status === "error") return "failed";
+  const message = agent.message?.trim().toLowerCase();
+  if (!message || message === "thinking") return "thinking";
+  if (message === "done") return "waiting";
+  return "active";
 }
 
 function netLine(snapshot: WorkflowSnapshot, stats: NetStats, width: number, theme: ProgressTheme): string {
@@ -373,6 +298,12 @@ function formatRunningDuration(ms: number): string {
   return `${String(minutes)}m ${String(totalSeconds % 60).padStart(2, "0")}s`;
 }
 
+function formatStatusDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  return `${String(minutes).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`;
+}
+
 interface WorkflowDisplayState {
   kind: "running" | "complete" | "error";
   label: string;
@@ -407,6 +338,10 @@ function agentGlyph(agent: WorkflowAgentSnapshot): { glyph: string; color: Displ
 
 function padVisible(text: string, width: number): string {
   return text + " ".repeat(Math.max(0, width - visibleWidth(text)));
+}
+
+function padStart(text: string, width: number): string {
+  return " ".repeat(Math.max(0, width - visibleWidth(text))) + text;
 }
 
 function fit(text: string, width: number): string {

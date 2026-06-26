@@ -626,6 +626,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       inputTokenCount: 0,
       outputTokenCount: 0,
       toolCallCount: 0,
+      stepCount: 0,
       fanOutId: fanOutScope.getStore(),
     };
     runtime.snapshot.agents.push(agent);
@@ -644,18 +645,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       let result: unknown;
       try {
         result = await runtime.options.agent(prompt, workflowAgentOptionsForLaunch(runtime, agent, agentOptions, agentCwd), (progress) => {
-          const previousMessage = agent.message;
           if (!applyAgentProgress(agent, progress)) return;
-          if (shouldAutoLogAgentProgress(agent.message, previousMessage)) {
-            appendRunMessage(runtime, {
-              phaseIndex: agent.phaseIndex,
-              ...(agent.phase ? { phase: agent.phase } : {}),
-              agentId: agent.id,
-              agentLabel: agent.label,
-              level: "debug",
-              message: agent.message,
-            });
-          }
           runtime.emitEvent({
             type: "agent_progress",
             agentId: agent.id,
@@ -664,6 +654,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
             inputTokenCount: agent.inputTokenCount,
             outputTokenCount: agent.outputTokenCount,
             toolCallCount: agent.toolCallCount,
+            stepCount: agent.stepCount,
             ...(agent.model !== undefined ? { model: agent.model } : {}),
           });
           runtime.emit();
@@ -724,6 +715,10 @@ function applyAgentProgress(agent: WorkflowAgentSnapshot, progress: WorkflowAgen
     agent.toolCallCount = progress.toolCallCount;
     changed = true;
   }
+  if (progress.stepCount !== undefined && progress.stepCount !== agent.stepCount) {
+    agent.stepCount = progress.stepCount;
+    changed = true;
+  }
   if (progress.model !== undefined && progress.model !== agent.model) {
     agent.model = progress.model;
     changed = true;
@@ -746,10 +741,6 @@ function applyAgentProgress(agent: WorkflowAgentSnapshot, progress: WorkflowAgen
     changed = true;
   }
   return changed;
-}
-
-function shouldAutoLogAgentProgress(message: string | undefined, previousMessage: string | undefined): message is string {
-  return message !== undefined && message !== previousMessage && message !== "thinking" && message !== "done" && message.trim().length > 0;
 }
 
 function workflowAgentOptionsForLaunch(

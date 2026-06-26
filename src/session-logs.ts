@@ -44,18 +44,11 @@ function workflowSessionSummary(options: WorkflowSessionSummaryOptions): Record<
     phases: options.snapshot.phases.map((title, index) => ({ index: index + 1, title })),
     traces: options.snapshot.traces,
     messages: options.snapshot.messages ?? [],
-    agents: options.snapshot.agents.map((agent) => ({
-      id: agent.id,
-      label: agent.label,
-      phaseIndex: agent.phaseIndex,
-      phase: agent.phase,
-      cwd: agent.cwd,
-      fanOutId: agent.fanOutId,
-      status: agent.status,
-      sessionDir: agent.sessionDir,
-      sessionFile: agent.sessionFile,
-      eventsFile: agent.eventsFile,
-    })),
+    agents: options.snapshot.agents.map((agent) => {
+      const summaryAgent = { ...agent };
+      delete summaryAgent.message;
+      return summaryAgent;
+    }),
     fanOuts: options.snapshot.fanOuts,
     ...(options.result !== undefined ? { result: options.result } : {}),
     ...(options.error !== undefined ? { error: errorMessage(options.error) } : {}),

@@ -3,7 +3,91 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { parseSessionTokens, workflowAgentSessionLogDirectory, workflowDisplayTokensFromMessage } from "../src/pi-agent.ts";
+import {
+  workflowAgentLogEvent,
+  parseSessionTokens,
+  workflowAgentSessionLogDirectory,
+  workflowDisplayTokensFromMessage,
+} from "../src/pi-agent.ts";
+
+void test("workflow_agent_event_log_omits_streamed_message_updates", () => {
+  assert.equal(
+    workflowAgentLogEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "hello" },
+      message: { role: "assistant", content: [{ type: "text", text: "hello" }] },
+    }),
+    undefined,
+  );
+});
+
+void test("workflow_agent_event_log_keeps_message_lifecycle_without_conversation_body", () => {
+  assert.deepEqual(
+    workflowAgentLogEvent({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "final full answer belongs in the session transcript" }],
+        usage: { input: 10, output: 3 },
+        provider: "openai-codex",
+        model: "gpt-5.5",
+      },
+    }),
+    {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        usage: { input: 10, output: 3 },
+        provider: "openai-codex",
+        model: "gpt-5.5",
+      },
+    },
+  );
+});
+
+void test("workflow_agent_event_log_keeps_agent_completion_without_transcript_copy", () => {
+  assert.deepEqual(
+    workflowAgentLogEvent({
+      type: "agent_end",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "prompt" }] },
+        { role: "assistant", content: [{ type: "text", text: "final" }] },
+      ],
+      willRetry: false,
+    }),
+    { type: "agent_end", messageCount: 2, willRetry: false },
+  );
+});
+
+void test("workflow_agent_event_log_keeps_tool_lifecycle_without_conversation_payloads", () => {
+  assert.deepEqual(
+    workflowAgentLogEvent({
+      type: "tool_execution_end",
+      toolCallId: "call-1",
+      toolName: "read",
+      args: { path: "large.md" },
+      result: { content: [{ type: "text", text: "large file content belongs in the session transcript" }] },
+      partialResult: { content: [{ type: "text", text: "partial" }] },
+      isError: false,
+    }),
+    { type: "tool_execution_end", toolCallId: "call-1", toolName: "read", isError: false },
+  );
+});
+
+void test("workflow_agent_event_log_keeps_turn_completion_without_transcript_copy", () => {
+  assert.deepEqual(
+    workflowAgentLogEvent({
+      type: "turn_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "final response" }],
+        usage: { input: 12, output: 4 },
+      },
+      toolResults: [{ content: [{ type: "text", text: "large tool output" }] }],
+    }),
+    { type: "turn_end", message: { role: "assistant", usage: { input: 12, output: 4 } }, toolResultCount: 1 },
+  );
+});
 
 void test("workflow_display_tokens_count_assistant_output_not_provider_total_input_or_cache", () => {
   assert.equal(

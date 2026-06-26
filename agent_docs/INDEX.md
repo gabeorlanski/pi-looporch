@@ -76,6 +76,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Workflow completion messages should keep parent-agent handoff compact: include the workflow session-log directory path, and save structured phase/fan-out/agent/session metadata inside that directory.
 - When a workflow's default `workflow()` function returns a string, treat it as the parent-agent handoff: tool runs return it to the calling orchestrator, and direct slash-command runs inject it as a hidden follow-up to the current session agent. Use object returns for machine-readable data that should stay in logs/details.
 - Auto-added child-agent runtime-log entries should show bare tool names such as `bash` or `read`; keep detailed tool progress in counters/transcripts unless the workflow explicitly logs it.
+- Child-agent `events.jsonl` logs are runtime metadata, not transcripts: do not persist streamed message deltas or duplicate conversation payloads there; keep final messages and tool results in the canonical pi session JSONL.
 - Advertised TUI shortcuts should be macOS-terminal friendly: prefer reliable control sequences over F-keys or Option/Alt-only bindings, and keep legacy fallbacks only when they do not conflict.
 
 ### Testing

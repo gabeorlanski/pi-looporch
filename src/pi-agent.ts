@@ -5,6 +5,7 @@ import {
   AuthStorage,
   createAgentSession,
   createCodingTools,
+  DefaultResourceLoader,
   getAgentDir,
   ModelRegistry,
   SessionManager,
@@ -16,6 +17,7 @@ import { resolveWorkflowAgentCwd, type WorkflowAgent, type WorkflowAgentProgress
 import { createWorkflowTools, type WorkflowToolsOptions } from "./tools.ts";
 import { agentTaskPrompt } from "./prompt-templates.ts";
 import { workflowAgentSessionLogDirectory } from "./session-logs.ts";
+import { readWorkflowSettings } from "./workflow-settings.ts";
 
 export interface PiWorkflowAgentOptions {
   cwd: string;
@@ -27,30 +29,62 @@ export function createPiWorkflowAgentTools(cwd: string, workflowOptions: Omit<Wo
   return [...(createCodingTools(cwd) as ToolDefinition[]), ...createWorkflowTools({ cwd, ...workflowOptions })];
 }
 
+export function createWorkflowAgentResourceLoader(
+  cwd: string,
+  agentDir: string,
+  settingsManager: SettingsManager,
+  childAgentExtensions: string[] = [],
+): DefaultResourceLoader {
+  return new DefaultResourceLoader({ cwd, agentDir, settingsManager, noExtensions: true, additionalExtensionPaths: childAgentExtensions });
+}
+
+export function resolveChildAgentExtensionPaths(projectCwd: string, childAgentExtensions: string[]): string[] {
+  return childAgentExtensions.map((extensionPath) =>
+    isProjectRelativeExtensionPath(extensionPath) ? path.resolve(projectCwd, extensionPath) : extensionPath,
+  );
+}
+
 export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): WorkflowAgent {
   return async (prompt, agentOptions, reportProgress) => {
     const agentDir = getAgentDir();
     const authStorage = options.session?.authStorage ?? AuthStorage.create();
     const modelRegistry = options.session?.modelRegistry ?? ModelRegistry.create(authStorage);
     const model = agentOptions.model ? resolveModel(modelRegistry, agentOptions.model) : undefined;
-    const effectiveCwd = resolveWorkflowAgentCwd(options.cwd, agentOptions.cwd) ?? path.resolve(options.cwd);
+    const projectCwd = path.resolve(options.cwd);
+    const effectiveCwd = resolveWorkflowAgentCwd(options.cwd, agentOptions.cwd) ?? projectCwd;
+    const workflowSettings = await readWorkflowSettings(projectCwd, agentDir);
+    const settingsManager = options.session?.settingsManager ?? SettingsManager.create(effectiveCwd, agentDir);
+    const resourceLoader =
+      options.session?.resourceLoader ??
+      createWorkflowAgentResourceLoader(
+        effectiveCwd,
+        agentDir,
+        settingsManager,
+        resolveChildAgentExtensionPaths(projectCwd, workflowSettings.childAgentExtensions),
+      );
+    if (!options.session?.resourceLoader) await resourceLoader.reload();
     const loggedSession = agentOptions.sessionLog
       ? await createLoggedSessionManager(options.cwd, effectiveCwd, agentOptions.sessionLog)
       : undefined;
     const sessionManager = options.session?.sessionManager ?? loggedSession?.sessionManager;
     const noTools = agentOptions.tools === false ? "all" : undefined;
-    const customTools = noTools ? [] : (options.tools ?? (createCodingTools(effectiveCwd) as ToolDefinition[]));
+    const customTools = noTools
+      ? []
+      : (options.session?.customTools ?? options.tools ?? (createCodingTools(effectiveCwd) as ToolDefinition[]));
+    const toolAllowlist = noTools ? [] : options.session?.tools;
     const { session } = await createAgentSession({
       cwd: effectiveCwd,
       agentDir,
       authStorage,
       modelRegistry,
       sessionManager: sessionManager ?? SessionManager.inMemory(effectiveCwd),
-      settingsManager: SettingsManager.create(effectiveCwd, agentDir),
+      settingsManager,
+      resourceLoader,
       customTools,
       ...options.session,
       thinkingLevel: agentOptions.reasoning ?? options.session?.thinkingLevel,
       ...(model ? { model } : {}),
+      tools: toolAllowlist,
       ...(noTools ? { noTools, tools: [], customTools: [] } : {}),
     });
 
@@ -153,6 +187,10 @@ async function createLoggedSessionManager(
 }
 
 export { workflowAgentSessionLogDirectory } from "./session-logs.ts";
+
+function isProjectRelativeExtensionPath(extensionPath: string): boolean {
+  return extensionPath.startsWith("./") || extensionPath.startsWith("../");
+}
 
 export function workflowAgentLogEvent(event: Record<string, unknown>): Record<string, unknown> | undefined {
   if (event.type === "message_update") return undefined;

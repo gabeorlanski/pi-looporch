@@ -1,7 +1,8 @@
 import type { GeneratedWorkflowDraft } from "../request.ts";
+import { parseWorkflowOutline } from "../workflow-outline.ts";
+import { workflowFlowchartLines } from "./workflow-flowchart.ts";
 
 const CONTENT_WIDTH = 84;
-const SOURCE_PREVIEW_LINES = 8;
 
 export interface ApprovalDisplayOptions {
   feedbackMode?: boolean;
@@ -17,6 +18,8 @@ interface SourceSummary {
 
 export function approvalLines(draft: GeneratedWorkflowDraft, options: ApprovalDisplayOptions = {}): string[] {
   const sourceSummary = summarizeWorkflowSource(draft.source);
+  const parsedOutline = parseWorkflowOutline(draft.source, { ...(draft.sourceDirectory ? { workflowDir: draft.sourceDirectory } : {}) });
+  const outline = { ...parsedOutline, metadata: draft.metadata };
   return [
     border("╭", `Review generated workflow: ${draft.name}`, "╮"),
     ...wrappedRows(`Description: ${draft.metadata.description}`),
@@ -24,14 +27,10 @@ export function approvalLines(draft: GeneratedWorkflowDraft, options: ApprovalDi
       `Source: ${String(sourceSummary.lineCount)} lines · ${String(sourceSummary.phaseCallCount)} phases · ${String(sourceSummary.agentCallCount)} agent calls` +
         (sourceSummary.readsWorkflowFiles ? " · reads workflow files" : ""),
     ),
-    border("├", "Intent", "┤"),
-    ...wrappedRows(draft.proposal.summary, 2),
-    border("├", "Plan", "┤"),
-    ...draft.proposal.steps.flatMap((step, index) => wrappedListRows(`${String(index + 1)}.`, step)),
-    border("├", "Runtime Surface", "┤"),
+    border("├", "Flowchart", "┤"),
+    ...workflowFlowchartLines(outline, { filePaths: draft.filePaths, maxLines: 24 }).map((line) => row(line, 2)),
+    border("├", "After Approval", "┤"),
     ...draft.proposal.willRun.flatMap((step) => wrappedListRows("-", step)),
-    border("├", "Source Preview", "┤"),
-    ...sourcePreviewRows(draft.source),
     border("├", options.feedbackMode ? "Feedback" : "Decision", "┤"),
     ...(options.feedbackMode ? feedbackRows(options.feedback ?? "") : decisionRows()),
     border("╰", "", "╯"),
@@ -54,13 +53,6 @@ function summarizeWorkflowSource(source: string): SourceSummary {
     phaseCallCount: countPattern(source, /\bphase\s*\(/g),
     readsWorkflowFiles: /\bread(?:Text|Json)\s*\(/.test(source),
   };
-}
-
-function sourcePreviewRows(source: string): string[] {
-  const lines = source.split(/\r?\n/).slice(0, SOURCE_PREVIEW_LINES);
-  const rows = lines.map((line, index) => row(`${String(index + 1).padStart(2)} │ ${line}`));
-  if (source.split(/\r?\n/).length > SOURCE_PREVIEW_LINES) rows.push(row("   │ ..."));
-  return rows.length > 0 ? rows : [row("   │ <empty>")];
 }
 
 function countPattern(source: string, pattern: RegExp): number {

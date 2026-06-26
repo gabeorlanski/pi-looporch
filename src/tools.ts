@@ -1,8 +1,8 @@
-import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Type } from "typebox";
-import { defineTool, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { defineTool, getAgentDir, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { workflowRootsForProject } from "./discovery.ts";
 import {
@@ -20,7 +20,7 @@ import { createWorkflowRunId } from "./run-logs.ts";
 import { workflowDesignGuidance } from "./authoring-guide.ts";
 import { extractWorkflowInputContract, validateWorkflowInput } from "./input.ts";
 import { writeWorkflowSessionSummary } from "./session-logs.ts";
-import { DEFAULT_MAX_PARALLEL_AGENTS, readProjectWorkflowSettings } from "./workflow-settings.ts";
+import { DEFAULT_MAX_PARALLEL_AGENTS, readWorkflowSettings } from "./workflow-settings.ts";
 
 export interface WorkflowToolsOptions {
   cwd?: string;
@@ -68,7 +68,7 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
       const source = await readFile(path.join(workflowDir, "workflow.js"), "utf8");
       const input = validateWorkflowInput(params.input ?? {}, workflowName, extractWorkflowInputContract(source));
       const parentRunId = createWorkflowRunId(workflowName);
-      const workflowSettings = await readProjectWorkflowSettings(cwd);
+      const workflowSettings = await readWorkflowSettings(cwd, getAgentDir());
       const result = await runWorkflowFromDirectory({
         cwd,
         workflowName,
@@ -252,13 +252,14 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
       const cwd = options.cwd ?? ctx.cwd;
       const reviewer = options.reviewer ?? options.reviewerForContext?.(ctx);
       const name = normalizeWorkflowName(params.name);
-      const { source, sourceDirectory } = await readProposalSource(cwd, params.source, params.draftDir);
+      const { source, sourceDirectory, filePaths } = await readProposalSource(cwd, params.source, params.draftDir);
       const metadata = parseWorkflowSourceMetadata(source, name);
       const draft = {
         name,
         source,
         metadata,
         proposal: workflowProposalFromParams(params, name),
+        filePaths,
         ...(sourceDirectory ? { sourceDirectory } : {}),
       };
       await reviewAndSaveWorkflowDraft({ cwd, request: params.request ?? name, draft, reviewer });
@@ -274,17 +275,40 @@ async function readProposalSource(
   cwd: string,
   source: string | undefined,
   draftDir: string | undefined,
-): Promise<{ source: string; sourceDirectory?: string }> {
+): Promise<{ source: string; filePaths: string[]; sourceDirectory?: string }> {
   const hasSource = typeof source === "string";
   const hasDraftDir = typeof draftDir === "string" && draftDir.trim().length > 0;
   if (hasSource && hasDraftDir) throw new Error("propose_workflow requires exactly one of source or draftDir");
   if (!hasSource && !hasDraftDir) throw new Error("propose_workflow requires exactly one of source or draftDir");
-  if (hasSource) return { source };
+  if (hasSource) return { source, filePaths: ["workflow.js"] };
   if (typeof draftDir !== "string" || !draftDir.trim()) throw new Error("propose_workflow requires exactly one of source or draftDir");
   const sourceDirectory = resolveDraftWorkflowDirectory(cwd, draftDir);
   const stats = await stat(sourceDirectory);
   if (!stats.isDirectory()) throw new Error("propose_workflow draftDir must be a directory containing workflow.js");
-  return { source: await readFile(path.join(sourceDirectory, "workflow.js"), "utf8"), sourceDirectory };
+  return {
+    source: await readFile(path.join(sourceDirectory, "workflow.js"), "utf8"),
+    sourceDirectory,
+    filePaths: await listDraftFiles(sourceDirectory),
+  };
+}
+
+async function listDraftFiles(root: string): Promise<string[]> {
+  const files: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true });
+    await Promise.all(
+      entries.map(async (entry) => {
+        const absolute = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(absolute);
+          return;
+        }
+        if (entry.isFile()) files.push(path.relative(root, absolute).split(path.sep).join("/"));
+      }),
+    );
+  };
+  await walk(root);
+  return files.sort((left, right) => left.localeCompare(right));
 }
 
 function resolveDraftWorkflowDirectory(cwd: string, draftDir: string): string {

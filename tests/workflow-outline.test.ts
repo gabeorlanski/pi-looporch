@@ -79,6 +79,31 @@ void test("outline_nests_parallel_worker_agents_as_children", () => {
   assert.equal(fanout.children[0].prompts[0].source, "expression");
 });
 
+void test("outline_resolves_simple_helper_function_stage_calls", () => {
+  const source = `export const metadata = { name: "helpers", description: "Helpers", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
+async function child(item) {
+  return agent("Review " + item, { label: "review helper", reasoning: "medium" });
+}
+async function build(item) {
+  const first = await child(item);
+  return agent("Summarize " + first, { label: "summarize helper", reasoning: "high" });
+}
+export default async function workflow() {
+  phase("Run");
+  return parallel(args.items, (item) => build(item), { label: "helper fanout" });
+}
+`;
+  const outline = parseWorkflowOutline(source);
+  const fanout = outline.sections[0].stages[0];
+
+  assert.equal(fanout.kind, "parallel");
+  assert.equal(fanout.children.length, 2);
+  assert.equal(fanout.children[0].label, "review helper");
+  assert.equal(fanout.children[0].reasoning, "medium");
+  assert.equal(fanout.children[1].label, "summarize helper");
+  assert.equal(fanout.children[1].reasoning, "high");
+});
+
 void test("outline_extracts_coerce_prompt_role", () => {
   const outline = parseWorkflowOutline(DEMO_SOURCE);
   const coerceStage = outline.sections[2].stages[0];

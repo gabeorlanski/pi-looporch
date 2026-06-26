@@ -3,12 +3,33 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import {
   workflowAgentLogEvent,
   parseSessionTokens,
   workflowAgentSessionLogDirectory,
   workflowDisplayTokensFromMessage,
+  createWorkflowAgentResourceLoader,
+  resolveChildAgentExtensionPaths,
 } from "../src/pi-agent.ts";
+
+void test("workflow_child_resource_loader_disables_ambient_extensions", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-loader-"));
+  const settingsManager = SettingsManager.create(project, getAgentDir());
+  const resourceLoader = createWorkflowAgentResourceLoader(project, getAgentDir(), settingsManager);
+
+  await resourceLoader.reload();
+
+  assert.equal(resourceLoader.getExtensions().extensions.length, 0);
+});
+
+void test("workflow_child_extension_paths_resolve_project_relative_entries", () => {
+  assert.deepEqual(resolveChildAgentExtensionPaths("/project", ["pi-subagents", "./extensions/todo.ts", "/abs/ext.ts"]), [
+    "pi-subagents",
+    path.join("/project", "extensions", "todo.ts"),
+    "/abs/ext.ts",
+  ]);
+});
 
 void test("workflow_agent_event_log_omits_streamed_message_updates", () => {
   assert.equal(

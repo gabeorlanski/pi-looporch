@@ -3,11 +3,11 @@ import { test } from "node:test";
 import { approvalLines } from "../src/display/approval.ts";
 import type { GeneratedWorkflowDraft } from "../src/request.ts";
 
-void test("workflow_approval_lines_render_plan_source_summary_and_feedback_hint", () => {
+void test("workflow_approval_lines_render_flowchart_and_feedback_hint", () => {
   const draft: GeneratedWorkflowDraft = {
     name: "smoke-created",
     source:
-      "export const metadata = { name: 'smoke-created', description: 'Return prompt', inputInstructions: 'Use the workflow function JSDoc and signature to resolve input.', phases: [{ title: 'Run' }] };\nphase('run');\nawait agent(args.prompt);",
+      "export const metadata = { name: 'smoke-created', description: 'Return prompt', inputInstructions: 'Use the workflow function JSDoc and signature to resolve input.', phases: [{ title: 'Run' }] };\nexport default async function workflow(args) {\nphase('run');\nawait agent(args.prompt, { label: 'echo' });\n}",
     metadata: {
       name: "smoke-created",
       description: "Return prompt",
@@ -19,15 +19,17 @@ void test("workflow_approval_lines_render_plan_source_summary_and_feedback_hint"
       steps: ["Read args.prompt", "Return the prompt"],
       willRun: ["Save .pi/workflows/smoke-created/workflow.js"],
     },
+    filePaths: ["workflow.js", "prompts/review.txt"],
   };
 
   const lines = approvalLines(draft);
 
   assert.ok(lines[0].includes("Review generated workflow: smoke-created"));
-  assert.ok(lines.some((line) => line.includes("Source: 3 lines") && line.includes("1 phases") && line.includes("1 agent calls")));
-  assert.ok(lines.some((line) => line.includes("Create a smoke test workflow.")));
-  assert.ok(lines.some((line) => line.includes("1. Read args.prompt")));
-  assert.ok(lines.some((line) => line.includes("Source Preview")));
+  assert.ok(lines.some((line) => line.includes("Source: 5 lines") && line.includes("1 phases") && line.includes("1 agent calls")));
+  assert.ok(lines.some((line) => line.includes("Flowchart")));
+  assert.ok(lines.some((line) => line.includes("phase: run")));
+  assert.ok(lines.some((line) => line.includes("agent: echo") && line.includes("think default")));
+  assert.ok(lines.some((line) => line.includes("prompts/review.txt")));
   assert.ok(lines.some((line) => line.includes("Tab give feedback")));
   assert.ok(lines.every((line) => line.length === lines[0].length));
 });
@@ -42,6 +44,7 @@ void test("workflow_approval_feedback_mode_shows_feedback_entry", () => {
       inputInstructions: "Use the workflow function JSDoc and signature to resolve input.",
       phases: [{ title: "Run" }],
     },
+    filePaths: ["workflow.js"],
     proposal: {
       summary: "Create a smoke test workflow.",
       steps: ["Read args.prompt"],
@@ -66,6 +69,7 @@ void test("workflow_approval_lines_wrap_long_content_inside_frame", () => {
       inputInstructions: "Use the workflow function JSDoc and signature to resolve input.",
       phases: [{ title: "Run" }],
     },
+    filePaths: ["workflow.js"],
     proposal: {
       summary:
         "Create a reusable staged workflow that turns repo2plan-style report directories into a Library Design Bench phase-2 step under a target phase_2 directory.",
@@ -79,6 +83,6 @@ void test("workflow_approval_lines_wrap_long_content_inside_frame", () => {
   assert.ok(lines.every((line) => line.length === lines[0].length));
   assert.ok(lines.some((line) => line.includes("Description: Convert repo2plan report directories into staged Library")));
   assert.ok(lines.some((line) => line.includes("phase-2 steps.")));
-  assert.ok(lines.some((line) => line.includes("Create a reusable staged workflow that turns repo2plan-style")));
-  assert.ok(lines.some((line) => line.includes("phase_2 directory.")));
+  assert.ok(lines.some((line) => line.includes("Flowchart")));
+  assert.ok(lines.some((line) => line.includes("save: .pi/workflows/reports2phase2/")));
 });

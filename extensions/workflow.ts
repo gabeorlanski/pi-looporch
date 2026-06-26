@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   AssistantMessageComponent,
+  getAgentDir,
   ToolExecutionComponent,
   UserMessageComponent,
   getMarkdownTheme,
@@ -13,6 +14,8 @@ import {
   Editor,
   Key,
   SettingsList,
+  isKeyRelease,
+  isKeyRepeat,
   matchesKey,
   truncateToWidth,
   visibleWidth,
@@ -43,7 +46,13 @@ import {
 import { createWorkflowTools } from "../src/tools.ts";
 import { writeWorkflowSessionSummary } from "../src/session-logs.ts";
 import { loadSessionMessages } from "../src/session-transcript.ts";
-import { readProjectWorkflowSettings, writeProjectWorkflowSettings, type WorkflowSettings } from "../src/workflow-settings.ts";
+import {
+  readWorkflowSettings,
+  writeGlobalWorkflowSettings,
+  writeProjectWorkflowSettings,
+  type WorkflowSettings,
+  type WorkflowSettingsPatch,
+} from "../src/workflow-settings.ts";
 
 const MESSAGE_TYPE = "pi-workflow-message";
 const RUNNING_WORKFLOW_WIDGET = "pi-workflow-running";
@@ -154,7 +163,7 @@ async function runExistingWorkflowCommand(
     }
     const input = validateWorkflowInput(parsedInput.input, workflowName, inputContract);
     const parentRunId = createWorkflowRunId(workflowName);
-    const workflowSettings = await readProjectWorkflowSettings(ctx.cwd);
+    const workflowSettings = await readWorkflowSettings(ctx.cwd, getAgentDir());
     const agent = createPiWorkflowAgent({ cwd: ctx.cwd });
     if (commandOptions.saveLog) {
       runLog = await createWorkflowRunLog({
@@ -231,7 +240,7 @@ function createWorkflowAbortControls(
       })()
     : () => undefined;
   const unsubscribeInput = ctx.ui.onTerminalInput((data) => {
-    if (!matchesKey(data, Key.escape) || shouldIgnoreEscape()) return undefined;
+    if (isRepeatedOrReleasedKey(data) || !matchesKey(data, Key.escape) || shouldIgnoreEscape()) return undefined;
     abortWorkflow();
     ctx.abort();
     ctx.ui.notify("Aborting workflow run", "warning");
@@ -327,13 +336,17 @@ function createWorkflowInspector(ctx: ExtensionCommandContext): WorkflowInspecto
   };
 
   const unsubscribe = ctx.ui.onTerminalInput((data) => {
-    if (matchesKey(data, Key.ctrl("\\")) || matchesKey(data, Key.f2) || matchesKey(data, Key.alt("o"))) {
+    if (isKeyRelease(data)) return open ? { consume: true } : undefined;
+    const repeatedKey = isKeyRepeat(data);
+    const inspectorToggleKey = matchesKey(data, Key.ctrl("\\")) || matchesKey(data, Key.f2) || matchesKey(data, Key.alt("o"));
+    if (!repeatedKey && inspectorToggleKey) {
       toggleInspector();
       return { consume: true };
     }
     if (!open) return undefined;
+    if (repeatedKey && inspectorToggleKey) return { consume: true };
     const count = snapshot?.agents.length ?? 0;
-    if (matchesKey(data, Key.escape) || data === "q") {
+    if (!repeatedKey && (matchesKey(data, Key.escape) || data === "q")) {
       closeInspector();
       return { consume: true };
     }
@@ -664,6 +677,12 @@ function tuiReviewWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft)
           },
           width,
           theme,
+          {
+            summary: draft.proposal.summary,
+            steps: draft.proposal.steps,
+            willRun: draft.proposal.willRun,
+            filePaths: draft.filePaths,
+          },
         );
       },
       handleInput(data: string): void {
@@ -709,7 +728,7 @@ function tuiReviewWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft)
         } else if (matchesKey(data, Key.left) || data === "h") {
           expandNode(expanded, nodes[selectedIndex], false);
           refresh();
-        } else if (matchesKey(data, Key.ctrl("o"))) {
+        } else if (!isRepeatedOrReleasedKey(data) && matchesKey(data, Key.ctrl("o"))) {
           toggleNode(expanded, nodes[selectedIndex]);
           refresh();
         }
@@ -719,6 +738,10 @@ function tuiReviewWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft)
       },
     };
   });
+}
+
+function isRepeatedOrReleasedKey(data: string): boolean {
+  return isKeyRepeat(data) || isKeyRelease(data);
 }
 
 function expandNode(expanded: Set<string>, node: ReviewNode | undefined, open: boolean): void {
@@ -807,33 +830,71 @@ async function workflowSettingsCommand(ctx: ExtensionCommandContext, args: strin
   const trimmed = args.trim();
   if (trimmed) {
     try {
-      const settings = parseWorkflowSettingsArgs(trimmed);
-      await writeProjectWorkflowSettings(ctx.cwd, settings);
-      ctx.ui.notify(`Workflow max parallel agents set to ${String(settings.maxParallelAgents)} in .pi/settings.json`, "info");
+      const { scope, settings } = parseWorkflowSettingsArgs(trimmed);
+      if (scope === "global") {
+        await writeGlobalWorkflowSettings(getAgentDir(), settings);
+      } else {
+        await writeProjectWorkflowSettings(ctx.cwd, settings);
+      }
+      ctx.ui.notify(workflowSettingsSavedMessage(scope, settings), "info");
     } catch (error) {
       ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
     }
     return;
   }
   if (ctx.mode !== "tui") {
-    const settings = await readProjectWorkflowSettings(ctx.cwd);
-    ctx.ui.notify(
-      `Workflow max parallel agents: ${String(settings.maxParallelAgents)}. Set with /workflow-settings maxParallelAgents=<n>.`,
-      "info",
-    );
+    const settings = await readWorkflowSettings(ctx.cwd, getAgentDir());
+    ctx.ui.notify(workflowSettingsSummary(settings), "info");
     return;
   }
   await tuiWorkflowSettings(ctx);
 }
 
-function parseWorkflowSettingsArgs(args: string): WorkflowSettings {
-  const match = /^(?:(?:maxParallelAgents|maxParallel)\s*=\s*)?(\d+)$/.exec(args);
-  if (!match) throw new Error("Usage: /workflow-settings [maxParallelAgents=<positive integer>]");
-  return { maxParallelAgents: Number(match[1]) };
+function parseWorkflowSettingsArgs(args: string): { scope: "global" | "project"; settings: WorkflowSettingsPatch } {
+  const { scope, body } = parseWorkflowSettingsScope(args);
+  const maxParallelMatch = /^(?:(?:maxParallelAgents|maxParallel)\s*=\s*)?(\d+)$/.exec(body);
+  if (maxParallelMatch) return { scope, settings: { maxParallelAgents: Number(maxParallelMatch[1]) } };
+  const extensionsMatch = /^(?:childAgentExtensions|childExtensions|extensions)\s*=\s*(.*)$/.exec(body);
+  if (extensionsMatch) return { scope, settings: { childAgentExtensions: parseExtensionList(extensionsMatch[1]) } };
+  throw new Error(
+    "Usage: /workflow-settings [--global] maxParallelAgents=<positive integer> | childAgentExtensions=<extension>[,<extension>...]",
+  );
+}
+
+function parseWorkflowSettingsScope(args: string): { scope: "global" | "project"; body: string } {
+  const trimmed = args.trim();
+  if (trimmed.startsWith("--global ")) return { scope: "global", body: trimmed.slice("--global ".length).trim() };
+  if (trimmed.startsWith("global ")) return { scope: "global", body: trimmed.slice("global ".length).trim() };
+  if (trimmed.startsWith("scope=global ")) return { scope: "global", body: trimmed.slice("scope=global ".length).trim() };
+  return { scope: "project", body: trimmed };
+}
+
+function parseExtensionList(value: string): string[] {
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  return trimmed.split(",").map((entry) => entry.trim());
+}
+
+function workflowSettingsSavedMessage(scope: "global" | "project", settings: WorkflowSettingsPatch): string {
+  const target = scope === "global" ? "global settings.json" : ".pi/settings.json";
+  if (settings.maxParallelAgents !== undefined) {
+    return `Workflow max parallel agents set to ${String(settings.maxParallelAgents)} in ${target}`;
+  }
+  return `Workflow child agent extensions set to ${formatExtensionList(settings.childAgentExtensions ?? [])} in ${target}`;
+}
+
+function workflowSettingsSummary(settings: WorkflowSettings): string {
+  return `Workflow max parallel agents: ${String(settings.maxParallelAgents)}. Child agent extensions: ${formatExtensionList(
+    settings.childAgentExtensions,
+  )}. Set with /workflow-settings maxParallelAgents=<n> or childAgentExtensions=<extension>[,<extension>...]. Use --global to write global settings.`;
+}
+
+function formatExtensionList(extensions: string[]): string {
+  return extensions.length ? extensions.join(", ") : "none";
 }
 
 async function tuiWorkflowSettings(ctx: ExtensionCommandContext): Promise<void> {
-  const settings = await readProjectWorkflowSettings(ctx.cwd);
+  const settings = await readWorkflowSettings(ctx.cwd, getAgentDir());
   await ctx.ui.custom<undefined>((tui, theme, _keybindings, done) => {
     const items: SettingItem[] = [
       {
@@ -849,6 +910,7 @@ async function tuiWorkflowSettings(ctx: ExtensionCommandContext): Promise<void> 
         return [
           truncateToWidth(theme.fg("accent", theme.bold("Workflow Settings")), width),
           truncateToWidth(theme.fg("muted", "Saved to .pi/settings.json. Extra parallel items queue until a slot opens."), width),
+          truncateToWidth(theme.fg("muted", `Child agent extensions: ${formatExtensionList(settings.childAgentExtensions)}`), width),
           "",
         ];
       },

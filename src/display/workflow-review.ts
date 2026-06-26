@@ -7,6 +7,7 @@ import {
   type OutlineStage,
   type WorkflowOutline,
 } from "../workflow-outline.ts";
+import { workflowFlowchartLines } from "./workflow-flowchart.ts";
 import type { ProgressTheme } from "./progress.ts";
 
 const MIN_WIDTH = 56;
@@ -48,6 +49,13 @@ export interface ReviewViewState {
   editing?: { kind: "node" | "general"; text: string };
   height: number;
   hint?: string;
+}
+
+export interface WorkflowReviewBrief {
+  summary: string;
+  steps: readonly string[];
+  willRun: readonly string[];
+  filePaths: readonly string[];
 }
 
 export function defaultExpanded(outline: WorkflowOutline): Set<string> {
@@ -145,18 +153,19 @@ export function renderWorkflowReview(
   state: ReviewViewState,
   width = 96,
   theme: ProgressTheme = plainTheme,
+  brief?: WorkflowReviewBrief,
 ): string[] {
   const safeWidth = Math.max(MIN_WIDTH, width);
   const nodes = flattenReviewNodes(outline, state.expanded);
   const selectedIndex = clamp(state.selectedIndex, 0, Math.max(0, nodes.length - 1));
-  const header = headerLines(outline, safeWidth, theme);
+  const header = headerLines(outline, safeWidth, theme, brief);
   const tail = tailLines(nodes, selectedIndex, state, safeWidth, theme);
   const viewport = Math.max(4, state.height - header.length - tail.length);
   const tree = treeRegion(nodes, selectedIndex, state, viewport, safeWidth, theme);
   return [...header, ...tree, ...tail];
 }
 
-function headerLines(outline: WorkflowOutline, width: number, theme: ProgressTheme): string[] {
+function headerLines(outline: WorkflowOutline, width: number, theme: ProgressTheme, brief: WorkflowReviewBrief | undefined): string[] {
   const counts = outlineCounts(outline);
   const name = outline.metadata.name || "workflow";
   const lines = [
@@ -168,8 +177,19 @@ function headerLines(outline: WorkflowOutline, width: number, theme: ProgressThe
     ),
   ];
   for (const warning of outline.warnings) lines.push(fit(`  ${theme.fg("warning", `⚠ ${warning}`)}`, width));
+  lines.push(...flowchartSection(outline, brief, width, theme));
   lines.push("");
   return lines;
+}
+
+function flowchartSection(outline: WorkflowOutline, brief: WorkflowReviewBrief | undefined, width: number, theme: ProgressTheme): string[] {
+  const lines = [fit(`  ${theme.fg("accent", theme.bold("flowchart"))}`, width)];
+  return [
+    ...lines,
+    ...workflowFlowchartLines(outline, { filePaths: brief?.filePaths, maxLines: 14 }).map((line) =>
+      fit(`  ${theme.fg("text", line)}`, width),
+    ),
+  ];
 }
 
 function tailLines(nodes: ReviewNode[], selectedIndex: number, state: ReviewViewState, width: number, theme: ProgressTheme): string[] {

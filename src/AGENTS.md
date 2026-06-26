@@ -29,6 +29,7 @@ npm run check
 - Put reusable generated-workflow child-agent prompt templates in workflow-local `prompts/*.txt` files, use `{{name}}` placeholders, and render them with `renderPrompt`; reserve inline prompts for tiny one-off glue.
 - Keep helpers purposeful; inline short functions that only obscure flow.
 - Preserve workflow sandbox constraints around ambient authority: workflows cannot import modules or use Node globals, `renderPrompt` must resolve only through the workflow's own `prompts/` directory, and `readText`/`readJson` may read absolute paths, project-cwd-relative paths, or `@workflow/...` paths.
+- Keep workflow child-agent SDK sessions isolated from ambient pi extensions by default; load only `workflow.childAgentExtensions` from merged global/project settings so parent-session extension tools/hooks cannot mutate global extension state.
 - Keep `agent(prompt, { cwd })` as a launch option for alternate child-agent working directories; resolve relative values from the workflow project cwd.
 - Encourage workflow authors to add `log(message)` for visible milestones and `trace(label, value?)` for structured handoff/debug data.
 - Treat structured JSON as a control surface: keep schemas bounded and compact, return manifest/status/IDs/paths, and put large reasoning/evidence/artifacts in files or JSONL.
@@ -49,7 +50,7 @@ npm run check
 - `pi-agent.ts`: `PiWorkflowAgentOptions`.
 - `authoring-guide.ts`: on-demand workflow design guidance returned by the `workflow_design_guidance` tool.
 - `workflow-outline.ts`: `WorkflowOutline`, `OutlineSection`, `OutlineStage`, `OutlinePrompt`; static AST parse of `workflow.js` into phases/stages/prompts plus `indexOutline*` helpers for review tooling.
-- `display/`: progress, approval, and boundary message rendering. `workflow-review.ts` (`flattenReviewNodes`/`renderWorkflowReview`/`buildChangeRequest`) is the testable model + renderer for the in-terminal TUI proposal review; `extensions/workflow.ts` wires its keys and comment editor. `agent-inspector.ts` renders the Ctrl+\ transcript-pane header; the transcript below it is loaded from the child agent session log and rendered with pi's native message components in `extensions/workflow.ts`.
+- `display/`: progress, approval, and boundary message rendering. `workflow-flowchart.ts` builds the proposal-review flowchart shared by TUI and text fallback; `workflow-review.ts` (`flattenReviewNodes`/`renderWorkflowReview`/`buildChangeRequest`) is the testable model + renderer for the in-terminal TUI proposal review; `extensions/workflow.ts` wires its keys and comment editor. `agent-inspector.ts` renders the Ctrl+\ transcript-pane header; the transcript below it is loaded from the child agent session log and rendered with pi's native message components in `extensions/workflow.ts`.
 - `prompts/`: raw prompt templates loaded by `prompt-templates.ts`.
 
 See `../agent_docs/INDEX.md` before changing patterns.

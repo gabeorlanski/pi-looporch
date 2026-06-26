@@ -264,6 +264,13 @@ void test("workflow_settings_command_writes_project_settings", async () => {
   assert.deepEqual(JSON.parse(await readFile(path.join(project, ".pi", "settings.json"), "utf8")), {
     workflow: { maxParallelAgents: 8 },
   });
+
+  await command.handler("childAgentExtensions=pi-subagents,./extensions/todo.ts", ctx);
+
+  assert.match(notifications.at(-1)?.message ?? "", /child agent extensions set/);
+  assert.deepEqual(JSON.parse(await readFile(path.join(project, ".pi", "settings.json"), "utf8")), {
+    workflow: { maxParallelAgents: 8, childAgentExtensions: ["pi-subagents", "./extensions/todo.ts"] },
+  });
 });
 
 void test("existing_workflow_freeform_input_is_steered_in_current_session", async () => {
@@ -527,6 +534,76 @@ export default async function workflow() {
   );
   const finalSnapshot = JSON.parse(await readFile(path.join(runDir, "final-snapshot.json"), "utf8")) as { logs: string[] };
   assert.deepEqual(finalSnapshot.logs, ["about to return"]);
+});
+
+void test("workflow_proposal_review_ignores_ctrl_o_repeat_and_release_events", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const registeredTools: ToolDefinition[] = [];
+  const pi = {
+    registerTool(tool: ToolDefinition): void {
+      registeredTools.push(tool);
+    },
+    registerCommand(name: string, command: RegisteredTestCommand): void {
+      void name;
+      void command;
+    },
+    on(event: string, handler: unknown): void {
+      void event;
+      void handler;
+    },
+    sendMessage(message: SentMessage): void {
+      void message;
+    },
+    sendUserMessage(message: unknown): void {
+      void message;
+    },
+  } as unknown as ExtensionAPI;
+  piWorkflow(pi);
+
+  const proposeWorkflow = registeredTools.find((tool) => tool.name === "propose_workflow");
+  assert.ok(proposeWorkflow);
+  const prompt = `start ${"x".repeat(120)}\nUNIQUE_FULL_PROMPT_LINE`;
+  const source = `export const metadata = { name: "review", description: "Review workflow", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
+/** Review the Ctrl+O behavior.
+ * Input: none.
+ * Phases: Run.
+ * Child agents: one prompt.
+ * File reads: none.
+ * Result: agent output.
+ */
+export default async function workflow() {
+  await agent(${JSON.stringify(prompt)});
+}`;
+  const ctx = {
+    cwd: project,
+    mode: "tui",
+    ui: {
+      custom<T>(
+        factory: (
+          tui: { requestRender(): void; terminal: { rows: number } },
+          theme: typeof plainTheme,
+          keybindings: unknown,
+          done: (value: T) => void,
+        ) => { handleInput(data: string): void; render(width: number): string[] },
+      ): Promise<T> {
+        return new Promise((resolve) => {
+          const tui = { requestRender: requestRenderNoop, terminal: { rows: 40 } };
+          const component = factory(tui, plainTheme, undefined, resolve);
+          component.handleInput("\x1b[B");
+          component.handleInput("\x1b[B");
+          assert.doesNotMatch(component.render(100).join("\n"), /UNIQUE_FULL_PROMPT_LINE/);
+          component.handleInput("\x0f");
+          assert.match(component.render(100).join("\n"), /UNIQUE_FULL_PROMPT_LINE/);
+          component.handleInput("\x1b[111;5:2u");
+          component.handleInput("\x1b[111;5:3u");
+          assert.match(component.render(100).join("\n"), /UNIQUE_FULL_PROMPT_LINE/);
+          component.handleInput("a");
+        });
+      },
+    },
+  };
+
+  await proposeWorkflow.execute("call-1", { name: "review", source, request: "review workflow" }, undefined, undefined, ctx as never);
 });
 
 void test("workflow_proposal_review_requests_changes_with_a_general_comment", async () => {

@@ -14,6 +14,7 @@ export interface GeneratedWorkflowDraft {
   source: string;
   metadata: WorkflowMetadata;
   proposal: WorkflowProposal;
+  filePaths: string[];
   sourceDirectory?: string;
 }
 

@@ -90,6 +90,8 @@ interface OutlineContext {
   workflowDir?: string;
   warnings: Set<string>;
   counter: { value: number };
+  functionBodies: Map<string, ts.Node>;
+  visitingFunctions: Set<string>;
 }
 
 type StageEmit = { kind: "phase"; title: string } | { kind: "stage"; stage: OutlineStage };
@@ -102,6 +104,8 @@ export function parseWorkflowOutline(source: string, options: ParseWorkflowOutli
     workflowDir: options.workflowDir,
     warnings: new Set<string>(),
     counter: { value: 0 },
+    functionBodies: namedFunctionBodies(sourceFile),
+    visitingFunctions: new Set<string>(),
   };
   const metadata = extractOutlineMetadata(sourceFile);
   const jsdoc = extractLeadingJsDoc(source);
@@ -136,10 +140,20 @@ function visitStages(root: ts.Node, ctx: OutlineContext, emit: (event: StageEmit
         emit({ kind: "stage", stage: buildStage(node, name, ctx) });
         return;
       }
+      if (visitHelperStages(name, ctx, emit)) return;
     }
     ts.forEachChild(node, recurse);
   };
   recurse(root);
+}
+
+function visitHelperStages(name: string, ctx: OutlineContext, emit: (event: StageEmit) => void): boolean {
+  const body = ctx.functionBodies.get(name);
+  if (!body || ctx.visitingFunctions.has(name)) return false;
+  ctx.visitingFunctions.add(name);
+  visitStages(body, ctx, emit);
+  ctx.visitingFunctions.delete(name);
+  return true;
 }
 
 function buildStage(call: ts.CallExpression, kind: OutlineStageKind, ctx: OutlineContext): OutlineStage {
@@ -388,18 +402,23 @@ function resolveExpressionBody(expression: ts.Expression, sourceFile: ts.SourceF
 }
 
 function findNamedFunctionBody(sourceFile: ts.SourceFile, name: string): ts.Node | undefined {
+  return namedFunctionBodies(sourceFile).get(name);
+}
+
+function namedFunctionBodies(sourceFile: ts.SourceFile): Map<string, ts.Node> {
+  const bodies = new Map<string, ts.Node>();
   for (const statement of sourceFile.statements) {
-    if (ts.isFunctionDeclaration(statement) && statement.name?.text === name && statement.body) return statement.body;
+    if (ts.isFunctionDeclaration(statement) && statement.name?.text && statement.body) bodies.set(statement.name.text, statement.body);
     if (ts.isVariableStatement(statement)) {
       for (const declaration of statement.declarationList.declarations) {
-        if (ts.isIdentifier(declaration.name) && declaration.name.text === name && declaration.initializer) {
+        if (ts.isIdentifier(declaration.name) && declaration.initializer) {
           const body = functionBody(declaration.initializer);
-          if (body) return body;
+          if (body) bodies.set(declaration.name.text, body);
         }
       }
     }
   }
-  return undefined;
+  return bodies;
 }
 
 function extractOutlineMetadata(sourceFile: ts.SourceFile): {

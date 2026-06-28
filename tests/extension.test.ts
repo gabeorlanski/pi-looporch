@@ -36,6 +36,14 @@ function requestRenderNoop(): void {
   void plainTheme;
 }
 
+async function waitForCondition(condition: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.ok(condition(), "condition was not met before timeout");
+}
+
 void test("existing_workflow_command_runs_directly_with_progress_updates", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const workflowDir = path.join(project, ".pi", "workflows", "echo");
@@ -124,22 +132,92 @@ export default async function workflow() {
   await command.handler('echo message=hello count=10 debug=true files=src/index.ts,tests/index.test.ts note="hello world"', ctx);
 
   assert.equal(sentUserMessages.length, 0);
-  assert.ok(statusUpdates.includes("echo: RUNNING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort · Ctrl+\\ transcript"));
-  assert.deepEqual(statusUpdates.at(-1), undefined);
+  assert.ok(statusUpdates.includes("Waiting for 1 dynamic workflow to finish"));
   assert.equal(widgetInstallCount, 1);
-  assert.ok(widgetUpdates.filter((update) => update !== undefined).every((update) => update.length === 13));
-  assert.ok(
+  await waitForCondition(() =>
     widgetUpdates.some(
-      (update) =>
-        update?.[0].includes("workflow echo") &&
-        update.some((line) => line.includes('args {"message":"hello","count":10')) &&
-        update.some((line) => line.includes("RUNNING") && line.includes("P1/1 running")) &&
-        update.some((line) => line.includes("P1 running")) &&
-        update.some((line) => line.includes("NET 0/0 agents")),
+      (update) => update?.[0].includes("← for agents") && update.some((line) => line.includes("echo") && line.includes("agents done")),
     ),
   );
-  assert.equal(sentMessages.length, 1);
-  assert.match(sentMessages[0].content, /Workflow 'echo' complete\.\n\n\{[\s\S]*"note": "hello world"[\s\S]*\}\n\nWorkflow session logs: /);
+  assert.ok(widgetUpdates.some((update) => update?.length === 2));
+  await waitForCondition(() => sentMessages.length === 1 && statusUpdates.at(-1) === undefined);
+  assert.match(
+    sentMessages[0].content,
+    /Workflow 'echo' complete\.\n\n\{[\s\S]*"note": "hello world"[\s\S]*\}\n\nWorkflow result: .*final\.json\n\nWorkflow session logs: /,
+  );
+});
+
+void test("existing_workflow_command_does_not_report_success_notification_failure_as_workflow_failure", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const workflowDir = path.join(project, ".pi", "workflows", "complete");
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(
+    path.join(workflowDir, "workflow.js"),
+    `export const metadata = { name: "complete", description: "Complete workflow", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return { ok: true };
+}`,
+    "utf8",
+  );
+
+  const commands = new Map<string, RegisteredTestCommand>();
+  const notifications: { message: string; type?: "info" | "warning" | "error" }[] = [];
+  const pi = {
+    registerTool(tool: unknown): void {
+      void tool;
+    },
+    registerCommand(name: string, command: RegisteredTestCommand): void {
+      commands.set(name, command);
+    },
+    on(event: string, handler: unknown): void {
+      void event;
+      void handler;
+    },
+    sendMessage(): void {
+      throw new Error("send failed");
+    },
+    sendUserMessage(message: unknown): void {
+      void message;
+    },
+  } as unknown as ExtensionAPI;
+  piWorkflow(pi);
+
+  const command = commands.get("workflow");
+  assert.ok(command);
+  const ctx = {
+    cwd: project,
+    mode: "tui",
+    hasUI: true,
+    signal: undefined,
+    abort(): void {
+      void project;
+    },
+    isIdle: () => true,
+    ui: {
+      notify(message: string, type?: "info" | "warning" | "error"): void {
+        notifications.push({ message, type });
+      },
+      setStatus(key: string, text: string | undefined): void {
+        void key;
+        void text;
+      },
+      setWidget(key: string, content: unknown): void {
+        void key;
+        void content;
+      },
+      onTerminalInput(): () => void {
+        return () => undefined;
+      },
+    },
+  } as unknown as ExtensionCommandContext;
+
+  await command.handler("complete", ctx);
+  await waitForCondition(() =>
+    notifications.some((notification) => notification.message.includes("completed, but completion handling failed")),
+  );
+
+  assert.ok(notifications.some((notification) => notification.message.includes("send failed") && notification.type === "error"));
+  assert.ok(notifications.every((notification) => !notification.message.includes("Workflow 'complete' failed")));
 });
 
 void test("string_result_from_workflow_function_is_injected_as_parent_agent_handoff", async () => {
@@ -208,6 +286,7 @@ export default async function workflow() {
   } as unknown as ExtensionCommandContext;
 
   await command.handler("handoff", ctx);
+  await waitForCondition(() => sentMessages.length === 2);
 
   assert.equal(sentMessages.length, 2);
   assert.equal(sentMessages[0]?.message.display, true);
@@ -514,6 +593,7 @@ export default async function workflow() {
   } as unknown as ExtensionCommandContext;
 
   await command.handler('echo --save-log message=hello note="hello world"', ctx);
+  await waitForCondition(() => sentMessages.length === 1);
 
   assert.equal(sentMessages.length, 1);
   assert.match(sentMessages[0].content, /Saved workflow log: \.pi\/workflow-runs\//);

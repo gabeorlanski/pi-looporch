@@ -1,5 +1,6 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime.ts";
+import { workflowPhaseViews } from "./workflow-phases.ts";
 
 const DEFAULT_WIDTH = 96;
 const MIN_WIDTH = 64;
@@ -238,17 +239,10 @@ function netStats(snapshot: WorkflowSnapshot): NetStats {
 }
 
 function phaseSections(snapshot: WorkflowSnapshot): PhaseSection[] {
-  const explicitSections = snapshot.phases.map((title, index) => phaseSection(snapshot, index + 1, title));
-  const startupAgents = snapshot.agents.filter((agent) => agent.phaseIndex === 0);
-  if (startupAgents.length === 0 && explicitSections.length > 0) return explicitSections;
-  return [phaseSection(snapshot, 0, "startup"), ...explicitSections];
-}
-
-function phaseSection(snapshot: WorkflowSnapshot, index: number, title: string): PhaseSection {
-  const currentIndex = snapshot.phases.length;
-  const agents = snapshot.agents.filter((agent) => agent.phaseIndex === index);
-  const section = { index, title, isCurrent: index === currentIndex, agents, isExpanded: false };
-  return { ...section, isExpanded: phaseShouldExpand(section, snapshot) };
+  return workflowPhaseViews(snapshot).map((phase) => {
+    const section = { index: phase.index, title: phase.title, isCurrent: phase.isCurrent, agents: phase.agents, isExpanded: false };
+    return { ...section, isExpanded: phaseShouldExpand(section, snapshot) };
+  });
 }
 
 function phaseShouldExpand(section: PhaseSection, snapshot: WorkflowSnapshot): boolean {

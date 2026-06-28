@@ -1,14 +1,7 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import {
-  AssistantMessageComponent,
-  getAgentDir,
-  ToolExecutionComponent,
-  UserMessageComponent,
-  getMarkdownTheme,
-  getSettingsListTheme,
-} from "@earendil-works/pi-coding-agent";
+import { getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import {
   Container,
   Editor,
@@ -18,20 +11,20 @@ import {
   isKeyRepeat,
   matchesKey,
   truncateToWidth,
-  visibleWidth,
   type SettingItem,
-  type TUI,
 } from "@earendil-works/pi-tui";
 import { naturalLanguageRequestMessage, steerableInputResolutionMessage } from "../src/prompt-templates.ts";
 import { discoverWorkflows, workflowRootsForProject } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
 import { type GeneratedWorkflowDraft, type WorkflowReviewer, type WorkflowReviewDecision } from "../src/request.ts";
+import { startBackgroundWorkflowRun, type BackgroundWorkflowRunResult } from "../src/background-runs.ts";
 import { createWorkflowRunId, createWorkflowRunLog, type WorkflowRunLog } from "../src/run-logs.ts";
-import { normalizeWorkflowName, runWorkflowFromDirectory, type WorkflowSnapshot } from "../src/runtime.ts";
+import { normalizeWorkflowName, type WorkflowSnapshot } from "../src/runtime.ts";
 import { WorkflowInputError, extractWorkflowInputContract, parseWorkflowInput, validateWorkflowInput } from "../src/input.ts";
 import { completeMessage, failureMessage, workflowStringHandoffMessage } from "../src/display/messages.ts";
-import { initialProgressDisplay, progressDisplay, type ProgressDisplay, type ProgressTheme } from "../src/display/progress.ts";
-import { agentInspectorHeaderLines } from "../src/display/agent-inspector.ts";
+import { initialProgressDisplay, progressDisplay, type ProgressTheme } from "../src/display/progress.ts";
+import { createWorkflowInspector, type WorkflowInspector } from "../src/display/workflow-inspector-controller.ts";
+import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
 import { approvalLines } from "../src/display/approval.ts";
 import { parseWorkflowOutline } from "../src/workflow-outline.ts";
 import {
@@ -45,8 +38,6 @@ import {
 } from "../src/display/workflow-review.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import { workflowLogReviewMessage } from "../src/log-review.ts";
-import { writeWorkflowSessionSummary } from "../src/session-logs.ts";
-import { loadSessionMessages } from "../src/session-transcript.ts";
 import {
   readWorkflowSettings,
   writeGlobalWorkflowSettings,
@@ -56,9 +47,8 @@ import {
 } from "../src/workflow-settings.ts";
 
 const MESSAGE_TYPE = "pi-workflow-message";
-const RUNNING_WORKFLOW_WIDGET = "pi-workflow-running";
-const RUNNING_WORKFLOW_STATUS = "workflow";
 
+/** Registers pi-workflow commands, tools, and TUI hooks with a Pi extension host. */
 export default function piWorkflow(pi: ExtensionAPI) {
   const aliases = new Set<string>();
 
@@ -140,14 +130,28 @@ async function runExistingWorkflowCommand(
   }
   let runLog: WorkflowRunLog | undefined;
   let lastSnapshot: WorkflowSnapshot | undefined;
-  const inspector = createWorkflowInspector(ctx);
-  const abortControls = createWorkflowAbortControls(ctx, () => inspector.isOpen());
+  const inspectorRef: { current?: WorkflowInspector } = {};
+  const abortControls = createWorkflowAbortControls(ctx, () => inspectorRef.current?.isOpen() ?? false);
+  const inspector = createWorkflowInspector(ctx, {
+    stop: () => {
+      abortControls.abort();
+      ctx.abort();
+      ctx.ui.notify("Stopping workflow run", "warning");
+    },
+    pause: () => ctx.ui.notify("Workflow pause is cooperative and not available for active child agents yet.", "warning"),
+    save: () => ctx.ui.notify("Workflow outputs are saved automatically in the temp outputs directory.", "info"),
+  });
+  inspectorRef.current = inspector;
+  const activeWorkflow = beginDynamicWorkflow(ctx);
   try {
     const commandOptions = parseWorkflowCommandOptions(rawInput);
     const source = await readFile(workflow.entryFile, "utf8");
     const inputContract = extractWorkflowInputContract(source);
     const parsedInput = parseWorkflowInput(commandOptions.rawInput);
     if (parsedInput.action === "resolve") {
+      activeWorkflow.done();
+      inspector.dispose();
+      abortControls.dispose();
       ctx.ui.notify(`Workflow '${workflowName}' input resolution sent to current session`, "info");
       sendWhenReady(
         pi,
@@ -177,9 +181,10 @@ async function runExistingWorkflowCommand(
       });
       ctx.ui.notify(`Saving workflow log to ${relativeToProject(ctx.cwd, runLog.runDir)}`, "info");
     }
-    ctx.ui.notify(`Running workflow '${workflowName}'`, "info");
+    ctx.ui.notify(`Running workflow '${workflowName}' in the background`, "info");
     updateRunningWorkflowUi(ctx, (width, theme) => initialProgressDisplay(workflowName, width, theme, input), inspector);
-    const result = await runWorkflowFromDirectory({
+    const run = await startBackgroundWorkflowRun({
+      runId: parentRunId,
       cwd: ctx.cwd,
       workflowName,
       input,
@@ -195,39 +200,111 @@ async function runExistingWorkflowCommand(
         updateRunningWorkflowUi(ctx, (width, theme) => progressDisplay(snapshot, width, theme), inspector);
       },
     });
-    await runLog?.complete(result.result, result.snapshot);
-    const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
-    const sessionLogDir = await writeWorkflowSessionSummary({
-      cwd: ctx.cwd,
-      parentId: parentRunId,
-      snapshot: result.snapshot,
-      result: result.result,
-    });
-    const sessionLogMessage = workflowSessionLogMessage(sessionLogDir);
-    pi.sendMessage({
-      customType: MESSAGE_TYPE,
-      content: `${withWorkflowLogPath(completeMessage(result.workflowName, result.result), logPath)}\n\n${sessionLogMessage}`,
-      display: true,
-      details: { workflowName: result.workflowName, result: result.result, snapshot: result.snapshot, logPath, sessionLogDir },
-    });
-    if (typeof result.result === "string") sendWorkflowStringHandoff(pi, ctx, result.workflowName, result.result);
+    void settleBackgroundWorkflowRun(
+      pi,
+      ctx,
+      workflowName,
+      run.finished,
+      runLog,
+      () => lastSnapshot,
+      () => {
+        activeWorkflow.done();
+        inspector.dispose();
+        abortControls.dispose();
+        clearRunningWorkflowUi(ctx);
+      },
+    );
   } catch (error) {
+    activeWorkflow.done();
+    inspector.dispose();
+    abortControls.dispose();
     await runLog?.fail(error, lastSnapshot);
     const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
     const message = withWorkflowLogPath(error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error), logPath);
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
     pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName, logPath } });
-  } finally {
-    inspector.dispose();
-    abortControls.dispose();
-    clearRunningWorkflowUi(ctx);
   }
+}
+
+async function settleBackgroundWorkflowRun(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  workflowName: string,
+  finished: Promise<BackgroundWorkflowRunResult>,
+  runLog: WorkflowRunLog | undefined,
+  lastSnapshot: () => WorkflowSnapshot | undefined,
+  cleanup: () => void,
+): Promise<void> {
+  try {
+    const result = await finished;
+    try {
+      await completeBackgroundWorkflow(pi, ctx, result, runLog);
+    } catch (error) {
+      ctx.ui.notify(`Workflow '${result.workflowName}' completed, but completion handling failed: ${errorMessage(error)}`, "error");
+    }
+  } catch (error) {
+    await failBackgroundWorkflow(pi, ctx, workflowName, error, runLog, lastSnapshot());
+  } finally {
+    cleanup();
+  }
+}
+
+async function completeBackgroundWorkflow(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  result: BackgroundWorkflowRunResult,
+  runLog: WorkflowRunLog | undefined,
+): Promise<void> {
+  await runLog?.complete(result.result, result.snapshot);
+  const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
+  const sessionLogMessage = workflowSessionLogMessage(result.sessionLogDir);
+  const outputsMessage = workflowOutputsMessage(result);
+  pi.sendMessage({
+    customType: MESSAGE_TYPE,
+    content: `${withWorkflowLogPath(completeMessage(result.workflowName, result.result), logPath)}\n\n${outputsMessage}\n\n${sessionLogMessage}`,
+    display: true,
+    details: {
+      workflowName: result.workflowName,
+      result: result.result,
+      snapshot: result.snapshot,
+      logPath,
+      outputsDir: result.outputsDir,
+      resultPath: result.resultPath,
+      sessionLogDir: result.sessionLogDir,
+    },
+  });
+  if (typeof result.result === "string") sendWorkflowStringHandoff(pi, ctx, result.workflowName, result.result);
+}
+
+async function failBackgroundWorkflow(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  workflowName: string,
+  error: unknown,
+  runLog: WorkflowRunLog | undefined,
+  lastSnapshot: WorkflowSnapshot | undefined,
+): Promise<void> {
+  await runLog?.fail(error, lastSnapshot);
+  const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
+  const message = withWorkflowLogPath(error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error), logPath);
+  ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
+  pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName, logPath } });
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function workflowOutputsMessage(result: BackgroundWorkflowRunResult): string {
+  if (result.resultPath) return `Workflow result: ${result.resultPath}`;
+  if (result.outputsDir) return `Workflow outputs: ${result.outputsDir}`;
+  return "Workflow outputs: not saved";
 }
 
 function createWorkflowAbortControls(
   ctx: ExtensionCommandContext,
   shouldIgnoreEscape: () => boolean = () => false,
-): { signal: AbortSignal; dispose: () => void } {
+): { signal: AbortSignal; abort: () => void; dispose: () => void } {
   const controller = new AbortController();
   const abortWorkflow = () => {
     if (controller.signal.aborted) return;
@@ -248,289 +325,12 @@ function createWorkflowAbortControls(
   });
   return {
     signal: controller.signal,
+    abort: abortWorkflow,
     dispose() {
       unsubscribeInput();
       removeHostAbortListener();
     },
   };
-}
-
-interface WorkflowInspector {
-  update: (snapshot: WorkflowSnapshot) => void;
-  render: (tui: TUI, theme: ProgressTheme, width: number, progressLines: string[]) => string[];
-  isOpen: () => boolean;
-  dispose: () => void;
-}
-
-function createWorkflowInspector(ctx: ExtensionCommandContext): WorkflowInspector {
-  let snapshot: WorkflowSnapshot | undefined;
-  let open = false;
-  let selected = 0;
-  let scroll = 0;
-  let viewport = 0;
-  let maxScroll = 0;
-  let suppressAbortUntil = 0;
-  let requestRender: (() => void) | undefined;
-
-  const toggleInspector = (): void => {
-    if (!snapshot || snapshot.agents.length === 0) {
-      ctx.ui.notify("No workflow agent transcript is available yet.", "info");
-      return;
-    }
-    open = !open;
-    selected = Math.min(selected, snapshot.agents.length - 1);
-    if (open) scroll = 0;
-    requestRender?.();
-  };
-
-  const closeInspector = (): void => {
-    if (!open) return;
-    open = false;
-    suppressAbortUntil = Date.now() + 100;
-    requestRender?.();
-  };
-
-  const renderTranscriptPane = (tui: TUI, theme: ProgressTheme, width: number, height: number): string[] => {
-    if (!snapshot || snapshot.agents.length === 0)
-      return fillPane(agentInspectorHeaderLines(snapshot ?? emptySnapshot(), 0, width, theme), width, height);
-    selected = Math.min(selected, snapshot.agents.length - 1);
-    const header = agentInspectorHeaderLines(snapshot, selected, width, theme);
-    const agent = snapshot.agents[selected];
-    const messages = agent.sessionFile ? loadSessionMessages(agent.sessionFile) : [];
-    const body =
-      messages.length > 0 ? renderAgentTranscript(messages, tui, ctx.cwd, width) : [theme.fg("dim", "  (no activity captured yet)")];
-    viewport = Math.max(3, height - header.length - 1);
-    maxScroll = Math.max(0, body.length - viewport);
-    const offset = Math.min(scroll, maxScroll);
-    const start = Math.max(0, body.length - viewport - offset);
-    const visible = body.slice(start, start + viewport);
-    const shownEnd = start + visible.length;
-    const footer = theme.fg(
-      "dim",
-      `  lines ${String(shownEnd)}/${String(body.length)}${maxScroll > 0 ? (offset > 0 ? " · ↑↓ scroll" : " · live (newest)") : ""} · Ctrl+\\ close`,
-    );
-    return fillPane([...header, ...visible, footer], width, height);
-  };
-
-  const renderSplit = (tui: TUI, theme: ProgressTheme, width: number, progressLines: string[]): string[] => {
-    requestRender = () => tui.requestRender();
-    if (!open) return progressLines;
-    const height = transcriptPaneHeight(tui.terminal.rows);
-    if (width < 120) {
-      const progressHeight = Math.max(6, Math.floor(height / 2));
-      return [
-        ...fitProgressPane(progressLines, width, progressHeight, theme),
-        theme.fg("borderMuted", truncateToWidth("─".repeat(width), width)),
-        ...renderTranscriptPane(tui, theme, width, height - progressHeight),
-      ];
-    }
-    const gutter = theme.fg("borderMuted", " │ ");
-    const leftWidth = Math.max(50, Math.floor((width - visibleWidth(gutter)) / 2));
-    const rightWidth = Math.max(48, width - leftWidth - visibleWidth(gutter));
-    const left = fitProgressPane(progressLines, leftWidth, height, theme);
-    const right = renderTranscriptPane(tui, theme, rightWidth, height);
-    return Array.from(
-      { length: height },
-      (_unused, index) => padToWidth(left[index] ?? "", leftWidth) + gutter + fitLine(right[index] ?? "", rightWidth),
-    );
-  };
-
-  const unsubscribe = ctx.ui.onTerminalInput((data) => {
-    if (isKeyRelease(data)) return open ? { consume: true } : undefined;
-    const repeatedKey = isKeyRepeat(data);
-    const inspectorToggleKey = matchesKey(data, Key.ctrl("\\")) || matchesKey(data, Key.f2) || matchesKey(data, Key.alt("o"));
-    if (!repeatedKey && inspectorToggleKey) {
-      toggleInspector();
-      return { consume: true };
-    }
-    if (!open) return undefined;
-    if (repeatedKey && inspectorToggleKey) return { consume: true };
-    const count = snapshot?.agents.length ?? 0;
-    if (!repeatedKey && (matchesKey(data, Key.escape) || data === "q")) {
-      closeInspector();
-      return { consume: true };
-    }
-    if (count === 0) return { consume: true };
-    if (matchesKey(data, Key.right) || matchesKey(data, Key.tab) || data === "l") {
-      selected = (selected + 1) % count;
-      scroll = 0;
-    } else if (matchesKey(data, Key.left) || data === "h") {
-      selected = (selected - 1 + count) % count;
-      scroll = 0;
-    } else if (matchesKey(data, Key.up) || data === "k") {
-      scroll = Math.min(maxScroll, scroll + 1);
-    } else if (matchesKey(data, Key.down) || data === "j") {
-      scroll = Math.max(0, scroll - 1);
-    } else if (matchesKey(data, Key.pageUp)) {
-      scroll = Math.min(maxScroll, scroll + viewport);
-    } else if (matchesKey(data, Key.pageDown)) {
-      scroll = Math.max(0, scroll - viewport);
-    } else {
-      return undefined;
-    }
-    requestRender?.();
-    return { consume: true };
-  });
-
-  return {
-    update(next) {
-      snapshot = next;
-      if (open) requestRender?.();
-    },
-    render: renderSplit,
-    isOpen: () => open || Date.now() < suppressAbortUntil,
-    dispose() {
-      unsubscribe();
-    },
-  };
-}
-
-function renderAgentTranscript(messages: unknown[], tui: TUI, cwd: string, width: number): string[] {
-  const markdownTheme = getMarkdownTheme();
-  const items: { render: (width: number) => string[] }[] = [];
-  const pendingTools = new Map<string, ToolExecutionComponent>();
-  for (const message of messages) {
-    if (!isRecord(message)) continue;
-    if (message.role === "user") {
-      const text = userMessageText(message.content);
-      if (text) items.push(new UserMessageComponent(text, markdownTheme));
-    } else if (message.role === "assistant") {
-      items.push(
-        new AssistantMessageComponent(
-          message as unknown as ConstructorParameters<typeof AssistantMessageComponent>[0],
-          false,
-          markdownTheme,
-          "thinking",
-        ),
-      );
-      for (const block of asArray(message.content)) {
-        if (isRecord(block) && block.type === "toolCall" && typeof block.name === "string" && typeof block.id === "string") {
-          const tool = new ToolExecutionComponent(block.name, block.id, block.arguments, { showImages: false }, undefined, tui, cwd);
-          tool.setExpanded(false);
-          pendingTools.set(block.id, tool);
-          items.push(tool);
-        }
-      }
-    } else if (message.role === "toolResult") {
-      const tool = typeof message.toolCallId === "string" ? pendingTools.get(message.toolCallId) : undefined;
-      if (tool) tool.updateResult({ content: resultContent(message.content), isError: message.isError === true, details: message.details });
-    }
-  }
-  return items.flatMap((item) => item.render(width));
-}
-
-function transcriptPaneHeight(termRows: number): number {
-  const safeRows = termRows > 0 ? termRows : 32;
-  return Math.max(10, Math.min(34, Math.floor(safeRows * 0.62)));
-}
-
-function runningWorkflowPaneHeight(termRows: number): number {
-  const safeRows = termRows > 0 ? termRows : 32;
-  return Math.max(10, Math.min(22, Math.floor(safeRows * 0.42)));
-}
-
-function fitProgressPane(lines: string[], width: number, height: number, theme: ProgressTheme): string[] {
-  if (lines.length <= height) return fillPane(lines, width, height);
-  const hidden = lines.length - height + 1;
-  const footer = theme.fg("dim", fitLine(`  … ${String(hidden)} workflow lines hidden while transcript pane is open`, width));
-  return fillPane([...lines.slice(0, height - 1), footer], width, height);
-}
-
-function fillPane(lines: string[], width: number, height: number): string[] {
-  const fitted = lines.slice(0, height).map((line) => fitLine(line, width));
-  while (fitted.length < height) fitted.push("");
-  return fitted;
-}
-
-function fitLine(line: string, width: number): string {
-  if (!line.includes("\u001B")) return line.length <= width ? line : `${line.slice(0, Math.max(0, width - 3))}...`;
-  return truncateToWidth(line, width, "...");
-}
-
-function padToWidth(line: string, width: number): string {
-  const fitted = fitLine(line, width);
-  return fitted + " ".repeat(Math.max(0, width - visibleWidth(fitted)));
-}
-
-function userMessageText(content: unknown): string {
-  if (typeof content === "string") return content.trim();
-  return asArray(content)
-    .filter((block): block is { text: string } => isRecord(block) && block.type === "text" && typeof block.text === "string")
-    .map((block) => block.text)
-    .join("\n")
-    .trim();
-}
-
-function resultContent(content: unknown): { type: string; text?: string; data?: string; mimeType?: string }[] {
-  return asArray(content).filter(isRecord) as { type: string; text?: string; data?: string; mimeType?: string }[];
-}
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function emptySnapshot(): WorkflowSnapshot {
-  return { workflowName: "", description: "", plannedPhases: [], phases: [], logs: [], traces: [], agents: [], fanOuts: [], messages: [] };
-}
-
-interface RunningWorkflowUiState {
-  displayForWidth: (width: number, theme?: ProgressTheme) => ProgressDisplay;
-  inspector: WorkflowInspector;
-  requestRender?: () => void;
-  statusLine?: string;
-}
-
-const runningWorkflowUiStates = new WeakMap<ExtensionCommandContext, RunningWorkflowUiState>();
-
-function updateRunningWorkflowUi(
-  ctx: ExtensionCommandContext,
-  displayForWidth: (width: number, theme?: ProgressTheme) => ProgressDisplay,
-  inspector: WorkflowInspector,
-): void {
-  const existing = runningWorkflowUiStates.get(ctx);
-  if (existing) {
-    existing.displayForWidth = displayForWidth;
-    existing.inspector = inspector;
-    updateRunningWorkflowStatus(ctx, existing);
-    existing.requestRender?.();
-    return;
-  }
-
-  const state: RunningWorkflowUiState = { displayForWidth, inspector };
-  runningWorkflowUiStates.set(ctx, state);
-  updateRunningWorkflowStatus(ctx, state);
-  ctx.ui.setWidget(
-    RUNNING_WORKFLOW_WIDGET,
-    (tui, theme) => {
-      state.requestRender = () => tui.requestRender();
-      return {
-        render: (width: number) => {
-          const display = state.displayForWidth(width, theme);
-          const progressLines = fitProgressPane(display.widgetLines, width, runningWorkflowPaneHeight(tui.terminal.rows), theme);
-          return state.inspector.render(tui, theme, width, progressLines);
-        },
-        invalidate: () => updateRunningWorkflowStatus(ctx, state),
-      };
-    },
-    { placement: "aboveEditor" },
-  );
-}
-
-function updateRunningWorkflowStatus(ctx: ExtensionCommandContext, state: RunningWorkflowUiState): void {
-  const statusLine = state.displayForWidth(96).statusLine;
-  if (statusLine === state.statusLine) return;
-  state.statusLine = statusLine;
-  ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, statusLine);
-}
-
-function clearRunningWorkflowUi(ctx: ExtensionCommandContext): void {
-  runningWorkflowUiStates.delete(ctx);
-  ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, undefined);
-  ctx.ui.setWidget(RUNNING_WORKFLOW_WIDGET, undefined);
 }
 
 function parseWorkflowCommandOptions(rawInput: string): { rawInput: string; saveLog: boolean } {

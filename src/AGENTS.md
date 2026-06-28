@@ -5,6 +5,7 @@
 ```bash
 npm run lint
 npm run format:check
+npm run docs:check
 npm run typecheck
 npm test
 npm run check
@@ -18,6 +19,8 @@ npm run check
 
 - Accept normalized inputs; do parsing/coercion in `extensions/` or tool boundaries.
 - Keep runtime logic strict and explicit; throw `Error` with actionable messages.
+- Add concise JSDoc contracts to exported declarations in public API modules covered by `npm run docs:check`.
+- Keep workflow primitive implementations under `runtime/primitives/`; add globals through the shared `WorkflowPrimitive` protocol in `runtime/context.ts` and `runtime/globals.ts` instead of growing `runtime.ts`.
 - Inject `WorkflowAgent` and reviewers; never hardcode pi/model providers.
 - Put TUI and visible text rendering in `display/`, one display concern per file.
 - Put raw prompt text in `prompts/*.txt`; keep interpolation code outside `prompts/`.
@@ -40,7 +43,8 @@ npm run check
 ## Key types
 
 - `runtime-types.ts`: `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, `WorkflowRunResult`.
-- `runtime.ts`: workflow execution wiring and public runtime re-exports.
+- `runtime.ts`: compatibility barrel for public runtime exports.
+- `runtime/`: runtime internals. `run.ts` owns workflow execution wiring, `context.ts` defines the shared primitive protocol, `globals.ts` binds primitives, and `primitives/` owns agent/phase/log/trace/files/parallel/pipeline/coerce/mapreduce/verifier behavior.
 - `workflow-paths.ts`: workflow name/path/cwd resolution.
 - `workflow-sandbox.ts`: sandbox module transform and import/require bans.
 - `workflow-metadata.ts`: static `export const metadata = { ... }` parsing.

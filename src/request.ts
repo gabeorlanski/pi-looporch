@@ -3,12 +3,14 @@ import path from "node:path";
 import { extractWorkflowInputContract } from "./input.ts";
 import { parseWorkflowSourceMetadata, type WorkflowMetadata } from "./runtime.ts";
 
+/** Human-review summary describing what a generated workflow will save and run. */
 export interface WorkflowProposal {
   summary: string;
   steps: string[];
   willRun: string[];
 }
 
+/** Complete generated workflow draft plus source files awaiting reviewer approval. */
 export interface GeneratedWorkflowDraft {
   name: string;
   source: string;
@@ -18,16 +20,20 @@ export interface GeneratedWorkflowDraft {
   sourceDirectory?: string;
 }
 
+/** Payload passed to a reviewer before a generated workflow can be saved. */
 export interface WorkflowReviewRequest {
   cwd: string;
   draft: GeneratedWorkflowDraft;
   request: string;
 }
 
+/** Reviewer decision to approve a draft, optionally with updated source, or reject it with a reason. */
 export type WorkflowReviewDecision = { action: "approve"; source?: string } | { action: "reject"; reason?: string };
 
+/** Injected review function that gates generated workflow saves. */
 export type WorkflowReviewer = (request: WorkflowReviewRequest) => Promise<WorkflowReviewDecision> | WorkflowReviewDecision;
 
+/** Inputs for review-gated generated workflow saving. */
 export interface ReviewAndSaveWorkflowDraftOptions {
   cwd: string;
   request: string;
@@ -35,6 +41,7 @@ export interface ReviewAndSaveWorkflowDraftOptions {
   reviewer?: WorkflowReviewer;
 }
 
+/** Reviews, validates, and atomically saves an approved generated workflow draft under .pi/workflows. */
 export async function reviewAndSaveWorkflowDraft(options: ReviewAndSaveWorkflowDraftOptions): Promise<GeneratedWorkflowDraft> {
   if (!options.reviewer) throw new Error("Generated workflows require review before they are saved or run");
   const decision = await options.reviewer({ cwd: options.cwd, draft: options.draft, request: options.request });
@@ -47,6 +54,7 @@ export async function reviewAndSaveWorkflowDraft(options: ReviewAndSaveWorkflowD
   return approvedDraft;
 }
 
+/** Ensures generated workflow source has default-function JSDoc covering the required runbook topics. */
 export function validateGeneratedWorkflowDocstring(source: string): void {
   const contract = extractWorkflowInputContract(source);
   if (!contract.jsdoc) throw new Error("Generated workflow function must start with a JSDoc docstring before it can be saved");

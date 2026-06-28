@@ -15,10 +15,11 @@ npm run lint          # strict ESLint, zero warnings
 npm run lint:fix      # auto-fix lint violations
 npm run format        # Prettier write
 npm run format:check  # Prettier check
+npm run docs:check    # exported API docstrings and docs-sync contracts
 npm run typecheck     # TypeScript without emit
 npm test              # deterministic node:test suite
 npm run loadcheck     # verify pi can load the extension
-npm run precommit     # run lint-staged pre-commit actions
+npm run precommit     # run lint-staged plus staged documentation pre-commit actions
 npm run pack:dry      # inspect published package contents
 ```
 
@@ -28,7 +29,7 @@ npm run pack:dry      # inspect published package contents
 
 ## Documentation standard
 
-Keep these in sync with every behavior or convention change:
+Keep these in sync with every behavior or convention change. Pre-commit enforces staged documentation updates for behavior-surface changes and JSDoc on exported public API declarations:
 
 - `README.md`: user-facing install, usage, and examples.
 - `docs/`: design specs and durable product/architecture decisions.
@@ -100,7 +101,8 @@ The workflow agent sees only what the workflow prompt gives it. Phases are progr
 TypeScript interfaces/types are the source of truth:
 
 - `src/runtime-types.ts`: `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, `WorkflowRunResult`.
-- `src/runtime.ts`: workflow execution wiring and public runtime re-exports.
+- `src/runtime.ts`: compatibility barrel for public runtime exports.
+- `src/runtime/run.ts`: workflow execution wiring.
 - `src/workflow-paths.ts`: workflow name/path/cwd resolution.
 - `src/workflow-sandbox.ts`: sandbox module transform and import/require bans.
 - `src/workflow-metadata.ts`: static `export const metadata = { ... }` parsing.

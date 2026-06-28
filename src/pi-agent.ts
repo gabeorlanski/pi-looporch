@@ -260,8 +260,15 @@ function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress)
       if (!isEventObject(event)) return;
       if (event.type === "message_start") reportStatus("thinking");
       if (event.type === "tool_execution_start" || event.type === "tool_execution_update" || event.type === "tool_execution_end") {
-        if (event.type === "tool_execution_start") toolCallCount++;
-        reportStatus("active");
+        if (event.type === "tool_execution_start") {
+          toolCallCount++;
+          reportProgress({
+            recentToolCall: toolCallSnapshot(event),
+            ...progressSnapshot("active", inputTokenCount, outputTokenCount, toolCallCount, stepCount),
+          });
+        } else {
+          reportStatus("active");
+        }
       }
       if (event.type === "message_end") {
         const usage = workflowTokenUsageFromMessage(event.message);
@@ -279,6 +286,17 @@ function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress)
 
 function isEventObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && typeof (value as { type?: unknown }).type === "string";
+}
+
+function toolCallSnapshot(event: Record<string, unknown>): { tool: string; args: string } {
+  const tool = typeof event.toolName === "string" ? event.toolName : "tool";
+  return { tool, args: compactToolArgs(event.args) };
+}
+
+function compactToolArgs(args: unknown): string {
+  if (args === undefined) return "";
+  if (typeof args === "string") return args;
+  return JSON.stringify(args);
 }
 
 export function workflowDisplayTokensFromMessage(value: unknown): number {

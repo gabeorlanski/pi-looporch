@@ -4,6 +4,8 @@ import path from "node:path";
 import { Type } from "typebox";
 import { defineTool, getAgentDir, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { startBackgroundWorkflowRun, type BackgroundWorkflowRunResult } from "./background-runs.ts";
+import { workflowFinalOutputPath } from "./workflow-outputs.ts";
 import { workflowRootsForProject } from "./discovery.ts";
 import {
   normalizeWorkflowName,
@@ -14,14 +16,14 @@ import {
   type WorkflowSnapshot,
 } from "./runtime.ts";
 import { progressDisplay } from "./display/progress.ts";
-import { workflowResultPreview, workflowStringHandoffMessage } from "./display/messages.ts";
+import { workflowResultPreview } from "./display/messages.ts";
 import { reviewAndSaveWorkflowDraft, type WorkflowProposal, type WorkflowReviewer } from "./request.ts";
 import { createWorkflowRunId } from "./run-logs.ts";
 import { workflowDesignGuidance } from "./authoring-guide.ts";
 import { extractWorkflowInputContract, validateWorkflowInput } from "./input.ts";
-import { writeWorkflowSessionSummary } from "./session-logs.ts";
 import { DEFAULT_MAX_PARALLEL_AGENTS, readWorkflowSettings } from "./workflow-settings.ts";
 
+/** Dependencies used to construct workflow tools for either an extension session or tests. */
 export interface WorkflowToolsOptions {
   cwd?: string;
   agent?: WorkflowAgent;
@@ -30,6 +32,7 @@ export interface WorkflowToolsOptions {
   reviewerForContext?: (ctx: ExtensionContext) => WorkflowReviewer;
 }
 
+/** Builds the public tool surface for running, debugging, authoring guidance, and proposing workflows. */
 export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefinition[] {
   return [
     createRunWorkflowTool(options),
@@ -42,8 +45,11 @@ export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefiniti
 interface RunWorkflowToolDetails {
   workflowName: string;
   status: "running" | "complete";
-  snapshot: WorkflowSnapshot;
+  snapshot?: WorkflowSnapshot;
   result?: unknown;
+  runId?: string;
+  outputsDir?: string;
+  resultPath?: string;
   sessionLogDir?: string;
 }
 
@@ -69,7 +75,8 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
       const input = validateWorkflowInput(params.input ?? {}, workflowName, extractWorkflowInputContract(source));
       const parentRunId = createWorkflowRunId(workflowName);
       const workflowSettings = await readWorkflowSettings(cwd, getAgentDir());
-      const result = await runWorkflowFromDirectory({
+      const run = await startBackgroundWorkflowRun({
+        runId: parentRunId,
         cwd,
         workflowName,
         input,
@@ -81,42 +88,54 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
         onSnapshot: (snapshot) => {
           onUpdate?.({
             content: [{ type: "text", text: progressDisplay(snapshot).text }],
-            details: { workflowName, status: "running", snapshot },
+            details: {
+              workflowName,
+              status: "running",
+              snapshot,
+              runId: parentRunId,
+              outputsDir: run.outputsDir,
+              resultPath: workflowFinalOutputPath(run.outputsDir),
+            },
           });
         },
       });
-      const sessionLogDir = await writeWorkflowSessionSummary({
-        cwd,
-        parentId: parentRunId,
-        snapshot: result.snapshot,
-        result: result.result,
-      });
-      const contentText =
-        typeof result.result === "string"
-          ? `${workflowStringHandoffMessage(result.workflowName, result.result)}\n\nWorkflow session logs: ${sessionLogDir}`
-          : `Workflow ${result.workflowName} complete.\n\n${workflowResultPreview(result.result)}\n\nWorkflow session logs: ${sessionLogDir}`;
+      void run.finished
+        .then((result) => notifyBackgroundToolCompletion(ctx, result))
+        .catch((error: unknown) =>
+          ctx.ui.notify(`Workflow ${workflowName} failed: ${error instanceof Error ? error.message : String(error)}`, "error"),
+        );
       return {
         content: [
           {
             type: "text",
-            text: contentText,
+            text: `Workflow ${workflowName} started in the background.\n\nWorkflow outputs: ${run.outputsDir}\nWorkflow result: ${workflowFinalOutputPath(run.outputsDir)}`,
           },
         ],
         details: {
-          workflowName: result.workflowName,
-          status: "complete",
-          snapshot: result.snapshot,
-          result: result.result,
-          ...(typeof result.result === "string" ? { handoff: result.result } : {}),
-          sessionLogDir,
+          workflowName,
+          status: "running",
+          runId: parentRunId,
+          outputsDir: run.outputsDir,
+          resultPath: workflowFinalOutputPath(run.outputsDir),
+          snapshot: run.snapshot(),
         },
       };
     },
     renderResult(result, _options, theme) {
       const details = result.details as RunWorkflowToolDetails;
-      return new Text(progressDisplay(details.snapshot, 96, theme).text, 0, 0);
+      const snapshot = details.snapshot ?? emptySnapshot(details.workflowName);
+      return new Text(progressDisplay(snapshot, 96, theme).text, 0, 0);
     },
   });
+}
+
+function notifyBackgroundToolCompletion(ctx: ExtensionContext, result: BackgroundWorkflowRunResult): void {
+  const resultLocation = result.resultPath ?? result.outputsDir ?? result.sessionLogDir;
+  ctx.ui.notify(`Workflow ${result.workflowName} complete. Result: ${resultLocation}`, "info");
+}
+
+function emptySnapshot(workflowName: string): WorkflowSnapshot {
+  return { workflowName, description: "", plannedPhases: [], phases: [], logs: [], traces: [], agents: [], fanOuts: [], messages: [] };
 }
 
 function createDebugWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -82,6 +82,61 @@ export default async function workflow() {
     "fanout_progress",
     "run_completed",
   ]);
+});
+void test("workflow_writes_agent_and_final_outputs_to_output_directory", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  const outputsDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-outputs-"));
+  await writeWorkflow(
+    project,
+    "outputs",
+    `export const metadata = { name: "outputs", description: "Write outputs", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  const child = await agent("return data", { label: "digest:01_retail_signal_audit" });
+  return { child, ok: true };
+}`,
+  );
+  const agent: WorkflowAgent = (_prompt, _options, reportProgress) => {
+    reportProgress({ recentToolCall: { tool: "Read", args: "problem.py" }, toolCallCount: 1 });
+    return Promise.resolve({ slug: "01_retail_signal_audit", score: 4 });
+  };
+
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "outputs",
+    input: {},
+    agent,
+    outputsDir,
+  });
+
+  assert.equal(result.outputsDir, outputsDir);
+  assert.equal(result.resultPath, path.join(outputsDir, "outputs", "final.json"));
+  assert.equal(result.snapshot.agents[0]?.outputPath, path.join(outputsDir, "outputs", "agent-001-digest-01_retail_signal_audit.json"));
+  assert.equal(result.snapshot.agents[0]?.promptPreview, "return data");
+  assert.equal(result.snapshot.agents[0]?.promptLineCount, 1);
+  assert.equal(result.snapshot.agents[0]?.outputPreview, JSON.stringify({ slug: "01_retail_signal_audit", score: 4 }, null, 2));
+  assert.deepEqual(result.snapshot.agents[0]?.recentToolCalls, [{ tool: "Read", args: "problem.py" }]);
+  assert.deepEqual(JSON.parse(await readFile(result.snapshot.agents[0]?.outputPath ?? "", "utf8")), {
+    slug: "01_retail_signal_audit",
+    score: 4,
+  });
+  assert.deepEqual(JSON.parse(await readFile(result.resultPath ?? "", "utf8")), {
+    child: { slug: "01_retail_signal_audit", score: 4 },
+    ok: true,
+  });
+  assert.deepEqual(JSON.parse(await readFile(path.join(outputsDir, "manifest.json"), "utf8")), {
+    workflowName: "outputs",
+    status: "done",
+    resultPath: path.join(outputsDir, "outputs", "final.json"),
+    outputs: [
+      {
+        agentId: 1,
+        label: "digest:01_retail_signal_audit",
+        phaseIndex: 0,
+        path: path.join(outputsDir, "outputs", "agent-001-digest-01_retail_signal_audit.json"),
+      },
+    ],
+  });
 });
 
 void test("workflow_queues_parallel_items_over_the_max_parallel_cap", async () => {

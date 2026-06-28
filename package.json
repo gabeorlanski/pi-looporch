@@ -30,8 +30,10 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
     "loadcheck": "pi --no-extensions -e ./extensions/workflow.ts --list-models __pi_workflow_load_check__",
-    "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run loadcheck",
-    "precommit": "lint-staged",
+    "docs:check": "tsx scripts/check-doc-contracts.ts",
+    "docs:check:staged": "tsx scripts/check-doc-contracts.ts --staged",
+    "check": "npm run lint && npm run format:check && npm run docs:check && npm run typecheck && npm test && npm run loadcheck",
+    "precommit": "lint-staged && npm run docs:check:staged",
     "prepare": "husky",
     "dev": "pi -e ./extensions/workflow.ts",
     "pack:dry": "npm pack --dry-run"

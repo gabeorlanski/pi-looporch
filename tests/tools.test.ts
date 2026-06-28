@@ -17,6 +17,14 @@ const generatedWorkflowDocstring = `/**
  */
 `;
 
+async function waitForCondition(condition: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.ok(condition(), "condition was not met before timeout");
+}
+
 void test("pi_workflow_agent_tools_combines_coding_and_workflow_tools_when_requested", () => {
   const tools = createPiWorkflowAgentTools(process.cwd());
 
@@ -173,6 +181,7 @@ export default async function workflow() {
   assert.ok(tool);
 
   const updates: string[] = [];
+  const notifications: string[] = [];
   const result = await tool.execute(
     "call-1",
     { name: "echo", input: { message: "hello" } },
@@ -181,19 +190,23 @@ export default async function workflow() {
       const content = partial.content[0];
       if (content.type === "text") updates.push(content.text);
     },
-    {} as never,
+    { ui: { notify: (message: string) => notifications.push(message) } } as never,
   );
 
-  const details = result.details as { workflowName: string; result: unknown; status: string };
+  const details = result.details as { workflowName: string; status: string; outputsDir: string; resultPath: string };
   assert.equal(details.workflowName, "echo");
-  assert.equal(details.status, "complete");
-  assert.deepEqual(details.result, { input: { message: "hello" }, agent: "helper:say hi" });
-  assert.ok(
-    updates.some((update) => update.includes("workflow echo") && update.includes("#1 helper") && update.includes("NET 0/1 agents")),
-  );
+  assert.equal(details.status, "running");
+  assert.match(details.outputsDir, /pi-workflow-.*echo/);
+  assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /Workflow echo started in the background/);
+  await waitForCondition(() => updates.some((update) => update.includes("workflow echo") && update.includes("#1 helper")));
+  await waitForCondition(() => notifications.some((message) => message.includes("Workflow echo complete")));
+  assert.deepEqual(JSON.parse(await readFile(path.join(details.outputsDir, "outputs", "final.json"), "utf8")), {
+    input: { message: "hello" },
+    agent: "helper:say hi",
+  });
 });
 
-void test("run_workflow_tool_returns_string_workflow_result_as_parent_handoff", async () => {
+void test("run_workflow_tool_starts_string_workflow_result_in_background", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const workflowDir = path.join(project, ".pi", "workflows", "handoff");
   await mkdir(workflowDir, { recursive: true });
@@ -210,11 +223,15 @@ export default async function workflow() {
   );
   assert.ok(tool);
 
-  const result = await tool.execute("call-1", { name: "handoff", input: {} }, undefined, undefined, {} as never);
+  const notifications: string[] = [];
+  const result = await tool.execute("call-1", { name: "handoff", input: {} }, undefined, undefined, {
+    ui: { notify: (message: string) => notifications.push(message) },
+  } as never);
 
   const text = result.content[0]?.type === "text" ? result.content[0].text : "";
-  assert.match(text, /Workflow 'handoff' returned this handoff from workflow\(\):\n\nSynthesize the saved artifacts for the user\./);
-  assert.equal((result.details as { handoff?: string }).handoff, "Synthesize the saved artifacts for the user.");
+  assert.match(text, /Workflow handoff started in the background/);
+  assert.equal((result.details as { status?: string }).status, "running");
+  await waitForCondition(() => notifications.some((message) => message.includes("Workflow handoff complete")));
 });
 
 void test("propose_workflow_tool_saves_only_after_review", async () => {

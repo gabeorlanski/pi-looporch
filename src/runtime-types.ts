@@ -1,10 +1,13 @@
+/** Child-agent reasoning effort labels accepted by workflow APIs and forwarded to Pi model sessions. */
 export type ReasoningLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
+/** Static phase metadata declared by workflow authors for previews and run planning. */
 export interface WorkflowPhaseMetadata {
   title: string;
   detail?: string;
 }
 
+/** Static workflow metadata exported from workflow.js and validated before execution. */
 export interface WorkflowMetadata {
   name: string;
   description: string;
@@ -12,6 +15,7 @@ export interface WorkflowMetadata {
   phases: WorkflowPhaseMetadata[];
 }
 
+/** Options passed from workflow source to a launched child agent. */
 export interface WorkflowAgentOptions {
   label?: string;
   reasoning?: ReasoningLevel;
@@ -25,6 +29,7 @@ export interface WorkflowAgentOptions {
   tools?: boolean;
 }
 
+/** Persistent session-log identity attached to each child-agent SDK session. */
 export interface WorkflowAgentSessionLog {
   parentId: string;
   agentId: number;
@@ -36,6 +41,13 @@ export interface WorkflowAgentSessionLog {
   fanOutId?: number;
 }
 
+/** Compact recent tool-call summary stored in live workflow snapshots. */
+export interface WorkflowToolCallSnapshot {
+  tool: string;
+  args: string;
+}
+
+/** Incremental child-agent progress reported by the Pi adapter to the workflow runtime. */
 export interface WorkflowAgentProgress {
   statusMessage?: string;
   tokenCount?: number;
@@ -44,17 +56,20 @@ export interface WorkflowAgentProgress {
   toolCallCount?: number;
   stepCount?: number;
   model?: string;
+  recentToolCall?: WorkflowToolCallSnapshot;
   sessionDir?: string;
   sessionFile?: string;
   eventsFile?: string;
 }
 
+/** Injected child-agent function used by the runtime; implementations must report progress and honor abort options. */
 export type WorkflowAgent = (
   prompt: string,
   options: WorkflowAgentOptions,
   reportProgress: (progress: WorkflowAgentProgress) => void,
 ) => Promise<unknown>;
 
+/** Live and final state for one child-agent launch inside a workflow run. */
 export interface WorkflowAgentSnapshot {
   id: number;
   label: string;
@@ -72,6 +87,11 @@ export interface WorkflowAgentSnapshot {
   toolCallCount: number;
   stepCount: number;
   fanOutId?: number;
+  outputPath?: string;
+  outputPreview?: string;
+  promptPreview?: string;
+  promptLineCount?: number;
+  recentToolCalls?: WorkflowToolCallSnapshot[];
   sessionDir?: string;
   sessionFile?: string;
   eventsFile?: string;
@@ -79,6 +99,7 @@ export interface WorkflowAgentSnapshot {
   error?: string;
 }
 
+/** Aggregate progress for a workflow fan-out launched through the parallel primitive. */
 export interface WorkflowFanOutSnapshot {
   id: number;
   label: string;
@@ -88,6 +109,7 @@ export interface WorkflowFanOutSnapshot {
   error: number;
 }
 
+/** Structured debug value recorded by workflow source with trace(...). */
 export interface WorkflowTraceSnapshot {
   label: string;
   phaseIndex: number;
@@ -95,6 +117,7 @@ export interface WorkflowTraceSnapshot {
   value?: unknown;
 }
 
+/** Chronological workflow runtime message used for logs, summaries, and review. */
 export interface WorkflowRunMessageSnapshot {
   phaseIndex: number;
   phase?: string;
@@ -104,6 +127,7 @@ export interface WorkflowRunMessageSnapshot {
   message: string;
 }
 
+/** Serializable state snapshot emitted during and after workflow execution. */
 export interface WorkflowSnapshot {
   workflowName: string;
   description: string;
@@ -118,6 +142,7 @@ export interface WorkflowSnapshot {
   result?: unknown;
 }
 
+/** Structured event stream emitted by workflow execution for logs and external progress consumers. */
 export type WorkflowEvent =
   | { type: "run_started"; workflowName: string; description: string; plannedPhases: WorkflowPhaseMetadata[] }
   | { type: "phase"; title: string; index: number }
@@ -143,6 +168,7 @@ export type WorkflowEvent =
   | { type: "run_completed"; result: unknown }
   | { type: "run_failed"; error: string };
 
+/** Fully normalized inputs and injected dependencies required to execute a saved workflow. */
 export interface RunWorkflowOptions {
   cwd: string;
   workflowName: string;
@@ -150,16 +176,20 @@ export interface RunWorkflowOptions {
   agent: WorkflowAgent;
   workflowRoots?: string[];
   agentLogParentId?: string;
+  outputsDir?: string;
   maxParallelAgents: number;
   signal?: AbortSignal;
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
   onEvent?: (event: WorkflowEvent) => void;
 }
 
+/** Final workflow execution result returned after successful completion. */
 export interface WorkflowRunResult {
   workflowName: string;
   workflowDir: string;
   metadata: WorkflowMetadata;
   result: unknown;
   snapshot: WorkflowSnapshot;
+  outputsDir?: string;
+  resultPath?: string;
 }

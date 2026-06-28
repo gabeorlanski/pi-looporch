@@ -9,6 +9,7 @@ npm run lint
 npm run lint:fix
 npm run format
 npm run format:check
+npm run docs:check
 npm run typecheck
 npm test
 npm run loadcheck
@@ -29,9 +30,18 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 ## Coding Guidelines
 
+### Topic Guides
+
+- [TUI style](tui-style.md): terminal rendering, width, color, interaction, progress, logging, and tests.
+- [Pi agent harness](pi-agent-harness.md): upstream Pi SDK/extension integration, child-agent isolation, sessions, logs, trust, and workflow harness conventions.
+- [TypeScript and JavaScript style](typescript-javascript-style.md): strict TypeScript, Node/ESM modules, boundaries, errors, async, tests, linting, and formatting.
+- [Documentation style](documentation-style.md): README/docs/agent_docs/AGENTS structure, prose style, examples, synchronization, and API comments.
+
 ### Code Organization
 
 - Put pi command, TUI, and extension registration wiring in `extensions/`; put workflow orchestration logic in `src/`.
+- Keep `src/runtime.ts` as a compatibility barrel only; put runtime implementation under `src/runtime/`, including workflow execution in `src/runtime/run.ts`.
+- Keep workflow runtime primitives in `src/runtime/primitives/` and register their globals through the shared `WorkflowPrimitive` protocol instead of adding ad hoc branches to `src/runtime.ts`.
 - Put TUI and visible text rendering under `src/display/`, with one display concern per file.
 - Keep raw agent prompt text in `src/prompts/*.txt`; keep typed interpolation and domain shaping outside the prompt directory.
 - Keep rendered authoring guidance outside raw prompt files; raw prompts should receive generated guides through placeholders.
@@ -86,19 +96,20 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 - Use deterministic fake agents only; never call real models or live pi sessions from tests.
 - Add or update tests for behavior changes, bug fixes, and user pushback that changes expected behavior.
-- Keep Husky/lint-staged pre-commit actions aligned with `lint`, `format`, and TypeScript expectations.
+- Keep Husky/lint-staged pre-commit actions aligned with `lint`, `format`, docs contracts, and TypeScript expectations.
 - Prefer focused behavior tests over broad snapshots.
 
 ### Documentation
 
-- Update user-facing docs when commands, tools, workflow primitives, review behavior, sandbox rules, or storage layout change.
+- Update user-facing docs when commands, tools, workflow primitives, review behavior, sandbox rules, or storage layout change; staged behavior-surface changes must include a staged README/docs/agent_docs/AGENTS update.
+- Keep exported public API declarations covered by concise JSDoc contracts; `npm run docs:check` enforces the current public API module scope.
 - Keep `agent_docs/INDEX.md` as topic-grouped coding guidance, not a chronological work log.
 - Mirror durable guidance changes into relevant `AGENTS.md` files.
 
 ## Key data shapes
 
 - Runtime types: `src/runtime-types.ts` defines `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, and `WorkflowRunResult`.
-- Runtime execution: `src/runtime.ts` wires workflow execution and re-exports public runtime APIs; `src/workflow-paths.ts`, `src/workflow-sandbox.ts`, and `src/workflow-metadata.ts` own path resolution, sandbox transforms, and static metadata parsing.
+- Runtime execution: `src/runtime.ts` re-exports public runtime APIs; `src/runtime/run.ts` wires workflow execution; `src/workflow-paths.ts`, `src/workflow-sandbox.ts`, and `src/workflow-metadata.ts` own path resolution, sandbox transforms, and static metadata parsing.
 - Workflow review: `src/request.ts` defines `GeneratedWorkflowDraft`, `WorkflowReviewer`, and review-gated draft saving.
 - Discovery: `src/discovery.ts` defines `WorkflowReference` and workflow root handling.
 - Settings: `src/workflow-settings.ts` defines workflow global/project settings parsing and persistence.
@@ -111,7 +122,8 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 ## Repository map
 
 - `extensions/workflow.ts`: pi extension entry, commands, aliases, TUI workflow approval.
-- `src/runtime.ts`: sandboxed workflow execution wiring and progress snapshots.
+- `src/runtime.ts`: public runtime barrel.
+- `src/runtime/run.ts`: sandboxed workflow execution wiring and progress snapshots.
 - `src/runtime-types.ts`: runtime public type contracts.
 - `src/workflow-paths.ts`: workflow path/name/cwd helpers.
 - `src/workflow-sandbox.ts`: source transform and import/require restrictions.

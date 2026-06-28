@@ -1,5 +1,6 @@
 import * as ts from "typescript";
 
+/** User-facing input validation failure for direct workflow command/tool execution. */
 export class WorkflowInputError extends Error {
   constructor(message: string) {
     super(message);
@@ -7,6 +8,7 @@ export class WorkflowInputError extends Error {
   }
 }
 
+/** Extracted workflow input contract from the default workflow function signature and JSDoc. */
 export interface WorkflowInputContract {
   jsdoc?: string;
   signature?: string;
@@ -14,6 +16,7 @@ export interface WorkflowInputContract {
   optionalFields: string[];
 }
 
+/** Parses direct workflow command input as JSON/key-value data or returns freeform text for agent resolution. */
 export function parseWorkflowInput(text: string): { action: "use"; input: unknown } | { action: "resolve"; rawInput: string } {
   const trimmed = text.trim();
   if (!trimmed) return { action: "use", input: {} };
@@ -133,6 +136,7 @@ function coerceInputValue(value: string): unknown {
   return value;
 }
 
+/** Reads workflow.js source and extracts required/optional input fields for validation and steering prompts. */
 export function extractWorkflowInputContract(source: string): WorkflowInputContract {
   const sourceFile = ts.createSourceFile("workflow.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const workflow = findDefaultWorkflow(sourceFile);
@@ -150,6 +154,7 @@ export function extractWorkflowInputContract(source: string): WorkflowInputContr
   };
 }
 
+/** Validates normalized direct input against a workflow contract and throws an actionable WorkflowInputError on missing fields. */
 export function validateWorkflowInput(input: unknown, workflowName: string, contract: WorkflowInputContract): unknown {
   if (contract.requiredFields.length === 0) return input;
   if (typeof input !== "object" || input === null || Array.isArray(input)) {

@@ -6,10 +6,7 @@ If required input for an existing workflow is missing or ambiguous, ask the user
 
 If a new reusable workflow is clearly needed, you may call workflow_design_guidance({ topic: "overview" }) and request narrower guidance topics as needed.
 
-Workflow primitives:
-{{workflowPrimitiveSummary}}
-
-Draft a project-local workflow directory and propose it with propose_workflow using draftDir. Use debug_workflow only for small deterministic checks with fake agentResponses.
+Draft a project-local workflow directory and propose it with propose_workflow using draftDir.
 
 Available workflows: {{availableWorkflowNames}}
 

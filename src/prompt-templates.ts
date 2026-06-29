@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
-import { workflowPrimitiveSummaryList } from "./authoring-guide.ts";
 import type { WorkflowInputContract } from "./input.ts";
-import type { WorkflowAgentOptions, WorkflowMetadata } from "./runtime.ts";
+import type { WorkflowAgentOptions, WorkflowMetadata } from "./runtime-types.ts";
 
 const sessionRequestTemplate = readFileSync(new URL("./prompts/session-request.txt", import.meta.url), "utf8").trim();
 const agentTaskTemplate = readFileSync(new URL("./prompts/agent-task.txt", import.meta.url), "utf8").trim();
@@ -42,7 +41,6 @@ export function naturalLanguageRequestMessage(request: string, availableWorkflow
   return renderPromptTemplate(sessionRequestTemplate, {
     availableWorkflowNames: availableWorkflowNames.length ? availableWorkflowNames.join(", ") : "none",
     request,
-    workflowPrimitiveSummary: workflowPrimitiveSummaryList(),
   });
 }
 

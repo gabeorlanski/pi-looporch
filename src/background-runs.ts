@@ -1,4 +1,5 @@
-import { runWorkflowFromDirectory, type RunWorkflowOptions, type WorkflowRunResult, type WorkflowSnapshot } from "./runtime.ts";
+import type { RunWorkflowOptions, WorkflowRunResult, WorkflowSnapshot } from "./runtime-types.ts";
+import { runWorkflowFromDirectory } from "./runtime/run.ts";
 import { writeWorkflowSessionSummary } from "./session-logs.ts";
 import { createWorkflowOutputsDir } from "./workflow-outputs.ts";
 
@@ -42,7 +43,7 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
         cwd: options.cwd,
         parentId: options.runId,
         snapshot: result.snapshot,
-        result: result.result,
+        resultPath: result.resultPath,
       }),
     }))
     .catch(async (error: unknown) => {

@@ -16,7 +16,7 @@ export function parseAndValidateJsonResponse(response: unknown, schema: unknown)
   return { ok: false, error: schemaValidationFailure(schema, parsed.value) };
 }
 
-export function parseJsonResponse(response: unknown): JsonResponseResult {
+function parseJsonResponse(response: unknown): JsonResponseResult {
   if (response !== null && typeof response === "object") return { ok: true, value: response };
   if (typeof response !== "string") return { ok: false, error: `response was ${typeof response}, not JSON text` };
   const trimmed = response.trim();

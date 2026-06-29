@@ -14,7 +14,7 @@ Use this guide when integrating with upstream Pi, authoring extensions, creating
 
 ## Harness Boundaries
 
-- Keep Pi SDK construction in adapter modules. Core workflow/runtime logic accepts injected agents, reviewers, settings, loaders, and sessions.
+- Keep Pi SDK construction in adapter modules. Core workflow/runtime logic accepts injected agents, settings, loaders, and sessions.
 - Treat `createAgentSession()` as an integration boundary. Pass explicit services when determinism or isolation matters.
 - Use `createAgentSessionRuntime()` only when the active session can be replaced. Re-subscribe and re-bind extensions after replacement.
 - Keep tool allowlists explicit: Pi distinguishes `tools`, `excludeTools`, `noTools`, and `customTools`.
@@ -28,8 +28,7 @@ Use this guide when integrating with upstream Pi, authoring extensions, creating
 - Use `renderCall` and `renderResult` when a tool needs custom compact display. Keep result payloads and details separate from the visible component.
 - In extension handlers, branch on `ctx.mode` and `ctx.hasUI`; custom TUI components are for TUI-capable contexts, not print/json assumptions.
 - Use `ctx.ui.custom`, `ctx.ui.setWidget`, `ctx.ui.setFooter`, `ctx.ui.setHeader`, and overlays as UI APIs, not ad hoc stdout writes.
-- For custom editors, extend `CustomEditor` and call `super.handleInput(data)` for keys the extension does not own.
-- Use `matchesKey(...)` and configured keybinding APIs instead of hardcoded escape-sequence checks.
+- Do not add custom workflow editors or keybindings unless the user explicitly asks for an interactive control surface.
 - Start long-lived resources from `session_start`, commands, tools, or explicit events; not from the extension factory.
 - Close long-lived resources from an idempotent `session_shutdown` handler.
 - Keep extension state session-aware. Prefer session entries, tool details, or explicit persisted data over module globals.
@@ -70,16 +69,15 @@ Use this guide when integrating with upstream Pi, authoring extensions, creating
 ## Workflow Harness Rules
 
 - `run_workflow` validates input at the tool boundary, reads merged settings, streams compact progress, starts a background run, and returns temp output/result paths.
-- Keep live workflow snapshots lightweight. Store previews and artifact paths there; write full child outputs and final results to the run outputs directory with an atomic `running`/`done`/`error` manifest.
-- `debug_workflow` should stay deterministic and fake-agent-only. It is for small sandbox checks, not live model validation.
-- `propose_workflow` should prefer complete draft directories over inline source and keep save approval review-gated.
-- String workflow results are parent-agent handoffs. Object results are machine-readable details.
+- Keep live workflow snapshots lightweight. Store counters and artifact paths there; write full child outputs and final results to the run outputs directory with an atomic `running`/`done`/`error` manifest.
+- `propose_workflow` requires complete draft directories and explicit chat approval before saving.
+- Workflow results, including strings, stay in output files and session logs.
 - Runtime `phase()` calls are progress markers, not shared memory.
 - Bounded parallelism must apply across direct concurrent `agent(...)` calls and fan-out helpers.
 
 ## Testing
 
-- Test harness code with deterministic fake agents and fake reviewers.
+- Test harness code with deterministic fake agents.
 - Do not call real providers, live Pi sessions, or actual user auth in tests.
 - Assert child resource loaders disable ambient extensions by default.
 - Assert tool allowlists, `noTools`, settings merge behavior, session-log sanitization, token usage parsing, abort behavior, and cleanup.

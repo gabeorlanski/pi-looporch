@@ -34,7 +34,7 @@ Use this guide for TypeScript, JavaScript, Node, and test changes. The default i
 
 - Parse, coerce, normalize, and validate at CLI, TUI, file IO, API, tool, config, and SDK boundaries.
 - Keep core runtime logic strict: no hidden string/path coercion, optional inputs, provider construction, or environment reads.
-- Inject external dependencies such as agents, reviewers, sessions, resource loaders, clocks, and filesystem roots.
+- Inject external dependencies such as agents, sessions, resource loaders, clocks, and filesystem roots.
 - Throw actionable errors at boundaries when user input or project config is invalid.
 
 ## Errors
@@ -56,7 +56,7 @@ Use this guide for TypeScript, JavaScript, Node, and test changes. The default i
 
 ## Tests
 
-- Use deterministic fakes for agents, reviewers, sessions, clocks, and external IO.
+- Use deterministic fakes for agents, sessions, clocks, and external IO.
 - Mock only slow, flaky, external, or process-bound dependencies. Do not mock core logic.
 - Prefer focused behavior tests over broad snapshots.
 - Test error messages when they are part of the contract.

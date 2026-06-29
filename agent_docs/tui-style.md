@@ -24,7 +24,7 @@ Use this guide when changing terminal UI, display renderers, progress views, ove
 - Use `visibleWidth`, `truncateToWidth`, `wrapTextWithAnsi`, or equivalent width-aware helpers. Never align, pad, slice, or truncate visible terminal text with raw `string.length`.
 - Reapply styles on every rendered line. Pi TUI resets SGR and OSC 8 state at line boundaries.
 - Implement `invalidate()` for components that cache render state, even when the current body is empty.
-- Components with embedded `Input` or `Editor` children must propagate `Focusable.focused`.
+- Components with embedded input children must propagate focus according to the Pi TUI contract.
 - Do not reuse overlay component instances after close. Recreate overlays for each show/back action.
 - Use overlay size, margin, anchor, and `visible` options instead of hand-positioning against assumed terminal sizes.
 
@@ -33,17 +33,16 @@ Use this guide when changing terminal UI, display renderers, progress views, ove
 - Support narrow/default/wide widths explicitly.
 - Do not assume Unicode width is one column. ANSI escapes, full-width characters, combining marks, OSC links, and image escapes break naive layout.
 - Disable color and animation in non-TTY, `NO_COLOR`, `NODE_DISABLE_COLORS`, `TERM=dumb`, and explicit plain-output modes.
-- Avoid F-key and Alt-only controls as primary affordances. Prefer `Esc`, `Ctrl+C`, `Ctrl+\`, arrows, PageUp/PageDown, and Tab.
-- Use Pi's `matchesKey(...)`, `Key` constants, and keybinding managers where available instead of manual escape-sequence comparisons.
-- Provide an explicit escape path for modal UI and long-running progress screens.
+- Avoid adding workflow keybindings unless the user explicitly asks for an interactive control surface.
+- Prefer passive status and persisted logs over modal UI.
 
 ## Progress And Logging
 
-- Default progress should be dense: one status line, phase sections, active children, compact counters, and stable abort/transcript hints.
+- Default progress should be dense: one status line, phase sections, active children, and compact counters.
 - Do not interleave parallel child-agent logs into the main progress pane. Show running state in the TUI and persist details in session logs.
 - Log terminal-debug details to files while the TUI owns stdout/stderr.
 - Prefer stable counters over animated noise: steps, tools, input tokens, output tokens, elapsed time, phase, and current agent label.
-- Keep result previews capped. Large content belongs in transcripts, JSONL, or artifact files.
+- Keep result content out of live and completion messages. Large content belongs in transcripts, JSONL, or artifact files.
 
 ## Testing Checklist
 
@@ -51,7 +50,7 @@ Use this guide when changing terminal UI, display renderers, progress views, ove
 - Assert `visibleWidth(line) <= width` for every rendered line.
 - Test no-color/plain output separately from themed output.
 - Test color is never the only state marker.
-- Test input and shortcut behavior through component handlers when the component owns interaction.
+- Test input behavior through component handlers only when the component owns interaction.
 - Snapshot only stable frames or pure renderer output.
 
 ## Anti-Patterns

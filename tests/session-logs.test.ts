@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { workflowAgentSessionLogParentDirectory, writeWorkflowSessionSummary } from "../src/session-logs.ts";
-import type { WorkflowSnapshot } from "../src/runtime.ts";
+import type { WorkflowSnapshot } from "../src/runtime-types.ts";
 
 void test("workflow_session_summary_saves_structured_run_metadata", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-session-summary-"));
@@ -14,8 +14,7 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
     description: "Review files",
     plannedPhases: [],
     phases: ["scan"],
-    logs: [],
-    traces: [{ label: "selected files", phaseIndex: 1, phase: "scan", value: { count: 1, files: ["src/runtime.ts"] } }],
+    traces: [{ label: "selected files", phaseIndex: 1, phase: "scan", value: { count: 1, files: ["src/runtime/run.ts"] } }],
     messages: [{ phaseIndex: 1, phase: "scan", agentId: 1, agentLabel: "worker", level: "debug", message: "worker: reading" }],
     agents: [
       {
@@ -28,7 +27,6 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
         model: "fake-model",
         reasoning: "low",
         endedAt: 10,
-        tokenCount: 12,
         inputTokenCount: 9,
         outputTokenCount: 3,
         toolCallCount: 2,
@@ -39,21 +37,23 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
       },
     ],
     fanOuts: [{ id: 1, label: "files", total: 1, running: 0, done: 1, error: 0 }],
+    status: "done",
   };
 
-  const runDir = await writeWorkflowSessionSummary({ cwd: project, parentId: "parent-1", snapshot, result: { ok: true }, sessionsRoot });
+  const resultPath = path.join(project, "outputs", "final.json");
+  const runDir = await writeWorkflowSessionSummary({ cwd: project, parentId: "parent-1", snapshot, resultPath, sessionsRoot });
   const summary = JSON.parse(await readFile(path.join(runDir, "workflow-summary.json"), "utf8")) as {
     phases: unknown;
     traces: unknown;
     messages: unknown;
     agents: unknown;
-    result: unknown;
+    resultPath: string;
   };
 
   assert.equal(runDir, workflowAgentSessionLogParentDirectory(project, "parent-1", sessionsRoot));
   assert.deepEqual(summary.phases, [{ index: 1, title: "scan" }]);
   assert.deepEqual(summary.traces, [
-    { label: "selected files", phaseIndex: 1, phase: "scan", value: { count: 1, files: ["src/runtime.ts"] } },
+    { label: "selected files", phaseIndex: 1, phase: "scan", value: { count: 1, files: ["src/runtime/run.ts"] } },
   ]);
   assert.deepEqual(summary.messages, [
     { phaseIndex: 1, phase: "scan", agentId: 1, agentLabel: "worker", level: "debug", message: "worker: reading" },
@@ -69,7 +69,6 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
       status: "done",
       startedAt: 0,
       endedAt: 10,
-      tokenCount: 12,
       inputTokenCount: 9,
       outputTokenCount: 3,
       toolCallCount: 2,
@@ -79,5 +78,5 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
       eventsFile: "/tmp/session-dir/events.jsonl",
     },
   ]);
-  assert.deepEqual(summary.result, { ok: true });
+  assert.equal(summary.resultPath, resultPath);
 });

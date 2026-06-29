@@ -3,7 +3,9 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { parseWorkflowSourceMetadata, runWorkflowFromDirectory, type WorkflowAgent } from "../src/runtime.ts";
+import type { WorkflowAgent } from "../src/runtime-types.ts";
+import { parseWorkflowSourceMetadata } from "../src/workflow-metadata.ts";
+import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
 
 async function writeWorkflow(project: string, name: string, source: string, files: Record<string, string> = {}): Promise<void> {
   const workflowDir = path.join(project, ".pi", "workflows", name);
@@ -22,26 +24,24 @@ void test("workflow_runs_with_core_primitives", async () => {
     project,
     "review",
     `export const metadata = { name: "review", description: "Review files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
+export default async function workflow({ files }) {
   phase("fanout");
-  const reviewed = await parallel(args.files, (file) => agent(readText("@workflow/prompt.txt") + file, { label: file }), { label: "file reviews" });
+  const reviewed = await parallel(files, (file) => agent(readText("@workflow/prompt.txt") + file, { label: file }), { label: "file reviews" });
   return pipeline(reviewed, [async (item) => ({ item, cwd })]);
 }`,
     { "prompt.txt": "review " },
   );
   const agent: WorkflowAgent = (prompt, options, reportProgress) => {
-    reportProgress({ tokenCount: 7, model: "fake-model" });
+    reportProgress({ inputTokenCount: 5, outputTokenCount: 2, model: "fake-model" });
     return Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
   };
 
-  const events: string[] = [];
   const result = await runWorkflowFromDirectory({
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "review",
     input: { files: ["a.ts", "b.ts"] },
     agent,
-    onEvent: (event) => events.push(event.type),
   });
 
   assert.deepEqual(result.result, [
@@ -52,12 +52,12 @@ export default async function workflow() {
   assert.deepEqual(result.snapshot.phases, ["fanout"]);
   assert.equal(result.snapshot.agents.length, 2);
   assert.deepEqual(
-    result.snapshot.agents.map((agentSnapshot) => agentSnapshot.tokenCount),
+    result.snapshot.agents.map((agentSnapshot) => agentSnapshot.inputTokenCount + agentSnapshot.outputTokenCount),
     [7, 7],
   );
   assert.deepEqual(
     result.snapshot.agents.map((agentSnapshot) => agentSnapshot.outputTokenCount),
-    [0, 0],
+    [2, 2],
   );
   assert.deepEqual(
     result.snapshot.agents.map((agentSnapshot) => agentSnapshot.fanOutId),
@@ -68,20 +68,7 @@ export default async function workflow() {
     ["fake-model", "fake-model"],
   );
   assert.deepEqual(result.snapshot.fanOuts, [{ id: 1, label: "file reviews", total: 2, running: 0, done: 2, error: 0 }]);
-  assert.deepEqual(events, [
-    "run_started",
-    "phase",
-    "fanout_started",
-    "agent_started",
-    "agent_progress",
-    "agent_started",
-    "agent_progress",
-    "agent_done",
-    "agent_done",
-    "fanout_progress",
-    "fanout_progress",
-    "run_completed",
-  ]);
+  assert.equal(result.snapshot.status, "done");
 });
 void test("workflow_writes_agent_and_final_outputs_to_output_directory", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
@@ -96,7 +83,7 @@ export default async function workflow() {
 }`,
   );
   const agent: WorkflowAgent = (_prompt, _options, reportProgress) => {
-    reportProgress({ recentToolCall: { tool: "Read", args: "problem.py" }, toolCallCount: 1 });
+    reportProgress({ toolCallCount: 1 });
     return Promise.resolve({ slug: "01_retail_signal_audit", score: 4 });
   };
 
@@ -112,10 +99,6 @@ export default async function workflow() {
   assert.equal(result.outputsDir, outputsDir);
   assert.equal(result.resultPath, path.join(outputsDir, "outputs", "final.json"));
   assert.equal(result.snapshot.agents[0]?.outputPath, path.join(outputsDir, "outputs", "agent-001-digest-01_retail_signal_audit.json"));
-  assert.equal(result.snapshot.agents[0]?.promptPreview, "return data");
-  assert.equal(result.snapshot.agents[0]?.promptLineCount, 1);
-  assert.equal(result.snapshot.agents[0]?.outputPreview, JSON.stringify({ slug: "01_retail_signal_audit", score: 4 }, null, 2));
-  assert.deepEqual(result.snapshot.agents[0]?.recentToolCalls, [{ tool: "Read", args: "problem.py" }]);
   assert.deepEqual(JSON.parse(await readFile(result.snapshot.agents[0]?.outputPath ?? "", "utf8")), {
     slug: "01_retail_signal_audit",
     score: 4,
@@ -139,52 +122,14 @@ export default async function workflow() {
   });
 });
 
-void test("workflow_writes_agent_and_final_outputs_to_output_directory", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
-  const outputsDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-outputs-"));
-  await writeWorkflow(
-    project,
-    "outputs",
-    `export const metadata = { name: "outputs", description: "Write outputs", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  const child = await agent("return data", { label: "digest:01_retail_signal_audit" });
-  return { child, ok: true };
-}`,
-  );
-  const agent: WorkflowAgent = () => Promise.resolve({ slug: "01_retail_signal_audit", score: 4 });
-
-  const result = await runWorkflowFromDirectory({
-    maxParallelAgents: 4,
-    cwd: project,
-    workflowName: "outputs",
-    input: {},
-    agent,
-    outputsDir,
-  });
-
-  assert.equal(result.outputsDir, outputsDir);
-  assert.equal(result.resultPath, path.join(outputsDir, "outputs", "final.json"));
-  assert.equal(result.snapshot.agents[0]?.outputPath, path.join(outputsDir, "outputs", "agent-001-digest-01_retail_signal_audit.json"));
-  assert.equal(result.snapshot.agents[0]?.promptPreview, "return data");
-  assert.equal(result.snapshot.agents[0]?.promptLineCount, 1);
-  assert.deepEqual(JSON.parse(await readFile(result.snapshot.agents[0]?.outputPath ?? "", "utf8")), {
-    slug: "01_retail_signal_audit",
-    score: 4,
-  });
-  assert.deepEqual(JSON.parse(await readFile(result.resultPath ?? "", "utf8")), {
-    child: { slug: "01_retail_signal_audit", score: 4 },
-    ok: true,
-  });
-});
-
 void test("workflow_queues_parallel_items_over_the_max_parallel_cap", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
     "queue",
     `export const metadata = { name: "queue", description: "Queue fanout", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return parallel(args.items, (item) => agent(item, { label: item }), { label: "queued work" });
+export default async function workflow({ items }) {
+  return parallel(items, (item) => agent(item, { label: item }), { label: "queued work" });
 }`,
   );
   let activeAgents = 0;
@@ -216,8 +161,8 @@ void test("workflow_caps_direct_concurrent_agent_calls", async () => {
     project,
     "direct-cap",
     `export const metadata = { name: "direct-cap", description: "Cap direct agent fanout", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return Promise.all(args.items.map((item) => agent(item, { label: item })));
+export default async function workflow({ items }) {
+  return Promise.all(items.map((item) => agent(item, { label: item })));
 }`,
   );
   let activeAgents = 0;
@@ -372,7 +317,6 @@ export default async function workflow() {
   );
   const prompts: string[] = [];
   const optionsSeen: unknown[] = [];
-  const events: string[] = [];
   const agent: WorkflowAgent = (prompt, options) => {
     prompts.push(prompt);
     optionsSeen.push(options);
@@ -385,7 +329,6 @@ export default async function workflow() {
     workflowName: "structured-agent",
     input: {},
     agent,
-    onEvent: (event) => events.push(event.type),
   });
 
   assert.deepEqual(result.result, { ok: true, summary: "done" });
@@ -404,8 +347,6 @@ export default async function workflow() {
       value: { attempt: 1, error: "/ must have required properties summary; /ok must be boolean" },
     },
   ]);
-  assert.ok(events.includes("agent_schema_validation_failed"));
-  assert.ok(events.includes("trace"));
 });
 
 void test("workflow_trace_records_structured_debug_values", async () => {
@@ -414,13 +355,12 @@ void test("workflow_trace_records_structured_debug_values", async () => {
     project,
     "traceable",
     `export const metadata = { name: "traceable", description: "Trace values", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Inspect" }] };
-export default async function workflow() {
+export default async function workflow({ items }) {
   phase("Inspect");
-  trace("selected inputs", { count: args.items.length, first: args.items[0] });
+  trace("selected inputs", { count: items.length, first: items[0] });
   return "ok";
 }`,
   );
-  const events: string[] = [];
   const agent: WorkflowAgent = () => Promise.resolve("unused");
 
   const result = await runWorkflowFromDirectory({
@@ -429,7 +369,6 @@ export default async function workflow() {
     workflowName: "traceable",
     input: { items: ["one", "two"] },
     agent,
-    onEvent: (event) => events.push(event.type),
   });
 
   assert.equal(result.result, "ok");
@@ -442,7 +381,6 @@ export default async function workflow() {
     { phaseIndex: 1, phase: "Inspect", level: "debug", message: 'trace selected inputs {"count":2,"first":"one"}' },
     { phaseIndex: 1, phase: "Inspect", level: "info", message: "workflow completed" },
   ]);
-  assert.deepEqual(events, ["run_started", "phase", "trace", "run_completed"]);
 });
 
 void test("workflow_renders_project_prompt_template", async () => {
@@ -451,8 +389,8 @@ void test("workflow_renders_project_prompt_template", async () => {
     project,
     "templated",
     `export const metadata = { name: "templated", description: "Templated prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return agent(renderPrompt("review.txt", { file: args.file, focus: args.focus }), { label: "review" });
+export default async function workflow({ file, focus }) {
+  return agent(renderPrompt("review.txt", { file, focus }), { label: "review" });
 }`,
     { "prompts/review.txt": "Review {{file}} for {{focus}}." },
   );
@@ -477,8 +415,8 @@ void test("workflow_renders_prompt_template_from_external_workflow_root", async 
   await writeFile(
     path.join(workflowDir, "workflow.js"),
     `export const metadata = { name: "external-prompt", description: "External prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return renderPrompt("review/base.txt", { topic: args.topic });
+export default async function workflow({ topic }) {
+  return renderPrompt("review/base.txt", { topic });
 }`,
     "utf8",
   );
@@ -505,8 +443,8 @@ void test("workflow_does_not_read_legacy_sibling_prompt_template", async () => {
     project,
     "legacy",
     `export const metadata = { name: "legacy", description: "Legacy prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return renderPrompt("review.txt", { topic: args.topic });
+export default async function workflow({ topic }) {
+  return renderPrompt("review.txt", { topic });
 }`,
   );
   const agent: WorkflowAgent = () => Promise.resolve("unused");
@@ -644,21 +582,18 @@ export default async function workflow() {
     return Promise.resolve("ok");
   };
 
-  const events: string[] = [];
   const result = await runWorkflowFromDirectory({
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "progress-log",
     input: {},
     agent,
-    onEvent: (event) => events.push(event.type),
   });
 
   assert.deepEqual(
-    result.snapshot.messages?.map((message) => message.message),
+    result.snapshot.messages.map((message) => message.message),
     ["workflow progress-log started", "worker started", "worker done", "workflow completed"],
   );
-  assert.equal(events.filter((event) => event === "agent_progress").length, 4);
   assert.equal(result.snapshot.agents[0]?.message, "done");
   assert.equal(result.snapshot.agents[0]?.toolCallCount, 2);
 });
@@ -742,10 +677,23 @@ export default async function workflow() {
 
   await writeWorkflow(
     project,
+    "no-args-global",
+    `export const metadata = { name: "no-args-global", description: "No args global", inputInstructions: "Use function parameters.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return args;
+}`,
+  );
+  await assert.rejects(
+    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "no-args-global", input: {}, agent }),
+    /args is not defined/,
+  );
+
+  await writeWorkflow(
+    project,
     "read-anywhere",
     `export const metadata = { name: "read-anywhere", description: "Read anywhere", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return [readText("fixtures/project.txt"), readText(args.absolutePath), readJson("@workflow/data.json")];
+export default async function workflow({ absolutePath }) {
+  return [readText("fixtures/project.txt"), readText(absolutePath), readJson("@workflow/data.json")];
 }`,
     { "data.json": '{"workflow":true}' },
   );

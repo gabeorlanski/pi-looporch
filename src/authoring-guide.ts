@@ -1,55 +1,9 @@
-interface WorkflowPrimitiveSummary {
-  name: string;
-  required: boolean;
-  signature: string;
-  description: string;
-}
-
 interface DesignTopic {
   name: string;
   summary: string;
   guidance: string[];
   examples?: string[];
 }
-
-const workflowPrimitiveSummaries: WorkflowPrimitiveSummary[] = [
-  {
-    name: "metadata",
-    required: true,
-    signature: "export const metadata = { name, description, inputInstructions, phases }",
-    description: "static discovery metadata and planned phase outline",
-  },
-  {
-    name: "workflow",
-    required: true,
-    signature: "export default async function workflow(input)",
-    description: "default async runbook entrypoint",
-  },
-  { name: "agent", required: false, signature: "agent(prompt, options?)", description: "launch a child coding agent" },
-  { name: "parallel", required: false, signature: "parallel(items, worker, options?)", description: "bounded independent fan-out" },
-  { name: "pipeline", required: false, signature: "pipeline(items, stages)", description: "ordered stages per item" },
-  { name: "coerce", required: false, signature: "coerce({ schema, prompt, ...options })", description: "no-tool structured extraction" },
-  {
-    name: "mapreduce",
-    required: false,
-    signature: "mapreduce({ inputPrompt, mapPrompt, reducePrompt, ...values })",
-    description: "split/map/reduce agent work",
-  },
-  {
-    name: "verifier",
-    required: false,
-    signature: "verifier({ criteria, criteriaPrompt, reducePrompt, ...values })",
-    description: "bounded adversarial review",
-  },
-  { name: "phase", required: false, signature: "phase(title)", description: "visible progress marker" },
-  { name: "log", required: false, signature: "log(message)", description: "visible milestone" },
-  { name: "trace", required: false, signature: "trace(label, value?)", description: "structured debug state" },
-  { name: "readText", required: false, signature: "readText(path)", description: "read project or workflow text files" },
-  { name: "readJson", required: false, signature: "readJson(path)", description: "read project or workflow JSON files" },
-  { name: "renderPrompt", required: false, signature: "renderPrompt(templatePath, values)", description: "render prompts/*.txt templates" },
-  { name: "cwd", required: false, signature: "cwd", description: "project working directory" },
-  { name: "budget", required: false, signature: "budget", description: "observed agent/token counters" },
-];
 
 const designTopics: DesignTopic[] = [
   {
@@ -59,7 +13,7 @@ const designTopics: DesignTopic[] = [
       "Use an existing workflow when one fits; author a new workflow only when the request is reusable or multi-step enough to deserve a runbook.",
       "Draft the workflow as a project-local directory such as .pi/workflow-drafts/<name>/, then propose it with draftDir pointing at that directory.",
       "Keep workflow.js as orchestration code. Put reusable child-agent prompt text in prompts/*.txt and render it with renderPrompt(...).",
-      "Ask this tool for narrower topics only when needed: workflow-api, draft-directory, prompt-files, child-agents, structured-outputs, fanout, verification, artifacts, debugging.",
+      "Ask this tool for narrower topics only when needed: workflow-api, draft-directory, prompt-files, child-agents, structured-outputs, fanout, verification, artifacts.",
     ],
   },
   {
@@ -69,7 +23,7 @@ const designTopics: DesignTopic[] = [
       "workflow.js exports static metadata and a default async workflow function; metadata must include name, description, inputInstructions, and phases.",
       "Document the default function with JSDoc covering purpose, input fields/defaults, phases, child agents, file reads, and result shape.",
       "Runtime globals are listed in the session prompt with short descriptions and signatures; call narrower guidance topics for examples only when needed.",
-      "Prefer workflow({ field, optional = default }) parameters over global args for new workflows.",
+      "Receive workflow input through workflow({ field, optional = default }) parameters.",
       "Workflows cannot import modules or use ambient Node globals. Use readText/readJson/renderPrompt for workflow-owned files.",
     ],
     examples: [
@@ -82,7 +36,6 @@ const designTopics: DesignTopic[] = [
     guidance: [
       "Create .pi/workflow-drafts/<name>/workflow.js plus workflow-owned prompts, schemas, fixtures, or examples before proposing.",
       "Call propose_workflow with draftDir set to the directory path, not the workflow.js file path.",
-      "Keep inline source for tiny compatibility cases only; if the workflow has prompts or resources, use a directory.",
       "Approved drafts copy to .pi/workflows/<name>/ so workflow.js and resources land together.",
     ],
     examples: [
@@ -99,7 +52,7 @@ const designTopics: DesignTopic[] = [
       "Prompt files may include shared context, but shape it as a compact contract with sections like Inputs, Purpose, Definitions, Rules, Task, and Output.",
       "Use renderPrompt placeholders such as {{file}}, {{focus}}, {{outputPath}}, and {{priorSummary}}; do not write JS template variables like ${input.file} inside prompt files.",
       "Avoid unstructured global preamble dumps and repeated irrelevant globals. Include only the shared context that child stage needs.",
-      "Keep tiny inline prompts only for glue such as one-line synthesis labels or debug-only checks.",
+      "Keep tiny inline prompts only for glue such as one-line synthesis labels.",
     ],
     examples: [
       `Inputs:\n- File: {{file}}\n- Focus: {{focus}}\n\nPurpose:\nReview the externally meaningful behavior for this stage.\n\nRules:\n- Cite evidence with file paths and lines.\n- Preserve observable behavior; do not restate every source detail.\n\nTask:\nRead the source file and write findings to {{outputPath}}.\n\nOutput:\nReturn compact JSON with status, summary, and artifactPaths.`,
@@ -113,7 +66,7 @@ const designTopics: DesignTopic[] = [
       "Give child agents source-of-truth paths and tell them to read files with tools; do not paste large project files into prompts.",
       "Use taskFile for the primary file, cwd for alternate/scratch directories, and tools: false for extraction or formatting tasks that do not need tools.",
       "Pass only compact prior results, artifact paths, counts, and evidence paths between stages.",
-      "Return a string from workflow() when the result should become a parent-agent handoff; return an object when it should remain machine-readable log/tool data.",
+      "Return compact status, summaries, and artifact paths; large results belong in files, not parent-session prompts.",
       "Use log(...) before slow launches and at handoffs; use trace(...) for structured debug state such as selected files, output paths, and compact summaries.",
     ],
   },
@@ -165,26 +118,7 @@ const designTopics: DesignTopic[] = [
       "Avoid bulk-reading project source just to paste it into a prompt; pass paths instead.",
     ],
   },
-  {
-    name: "debugging",
-    summary: "How to sanity-check a workflow before proposing it.",
-    guidance: [
-      "Use debug_workflow only for small snippets or deterministic checks with fake agentResponses.",
-      "Keep debug models/reasoning cheap or minimal; the goal is sandbox/syntax/dataflow validation, not real model quality.",
-      "Use trace(...) for selected inputs, artifact paths, and compact child-agent summaries so review/run logs are explainable.",
-      "After debugging, propose the draft directory with propose_workflow; do not save directly into .pi/workflows.",
-    ],
-  },
 ];
-
-export function workflowPrimitiveSummaryList(): string {
-  return workflowPrimitiveSummaries
-    .map((primitive) => {
-      const requirement = primitive.required ? "required" : "optional";
-      return `- \`${primitive.name}\` (${requirement}): \`${primitive.signature}\` — ${primitive.description}.`;
-    })
-    .join("\n");
-}
 
 export function workflowDesignGuidance(topic?: string): string {
   if (!topic) return workflowDesignTopicIndex();

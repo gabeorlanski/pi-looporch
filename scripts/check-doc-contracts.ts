@@ -20,7 +20,7 @@ const behaviorPathPatterns = [
   /^src\/runtime\//,
   /^src\/prompts\//,
 ];
-const excludedDocstringPathPatterns = [/^src\/runtime\.ts$/, /^src\/runtime\/primitives\//, /^src\/display\//, /^tests\//, /^scripts\//];
+const excludedDocstringPathPatterns = [/^src\/runtime\/primitives\//, /^src\/display\//, /^tests\//, /^scripts\//];
 
 export interface DocumentationIssue {
   filePath: string;

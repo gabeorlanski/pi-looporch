@@ -4,7 +4,7 @@ import { writeWorkflowAgentOutput } from "../../workflow-outputs.ts";
 import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
 import { jsonSchemaPrompt, normalizeAttemptCount, parseAndValidateJsonResponse } from "../schema.ts";
-import { cloneSerializable, previewJson, previewText } from "../serialization.ts";
+import { cloneSerializable } from "../serialization.ts";
 import { recordTrace } from "./trace.ts";
 
 export const agentPrimitive: WorkflowPrimitive<{
@@ -26,8 +26,6 @@ export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, a
     const validation = parseAndValidateJsonResponse(result, schema);
     if (validation.ok) return validation.value;
     validationFailure = validation.error;
-    const lastAgent = runtime.snapshot.agents.at(-1);
-    if (lastAgent) runtime.emitEvent({ type: "agent_schema_validation_failed", agentId: lastAgent.id, attempt, error: validationFailure });
     recordTrace(runtime, `${launchOptions.label ?? "agent"} schema validation failed`, { attempt, error: validationFailure });
   }
   throw new Error(`agent failed schema validation after ${String(attempts)} attempts: ${validationFailure ?? "unknown error"}`);
@@ -58,14 +56,10 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       reasoning: agentOptions.reasoning,
       status: "running",
       startedAt: Date.now(),
-      tokenCount: 0,
       inputTokenCount: 0,
       outputTokenCount: 0,
       toolCallCount: 0,
       stepCount: 0,
-      promptPreview: previewText(prompt),
-      promptLineCount: prompt.split("\n").length,
-      recentToolCalls: [],
       fanOutId: fanOutScope.getStore(),
     };
     runtime.snapshot.agents.push(agent);
@@ -77,7 +71,6 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       level: "info",
       message: `${agent.label} started`,
     });
-    runtime.emitEvent({ type: "agent_started", agent: { ...agent } });
     runtime.emit();
     try {
       const heartbeat = setInterval(runtime.emit, 1000);
@@ -85,17 +78,6 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       try {
         result = await runtime.options.agent(prompt, workflowAgentOptionsForLaunch(runtime, agent, agentOptions, agentCwd), (progress) => {
           if (!applyAgentProgress(agent, progress)) return;
-          runtime.emitEvent({
-            type: "agent_progress",
-            agentId: agent.id,
-            message: agent.message,
-            tokenCount: agent.tokenCount,
-            inputTokenCount: agent.inputTokenCount,
-            outputTokenCount: agent.outputTokenCount,
-            toolCallCount: agent.toolCallCount,
-            stepCount: agent.stepCount,
-            ...(agent.model !== undefined ? { model: agent.model } : {}),
-          });
           runtime.emit();
         });
       } finally {
@@ -105,7 +87,6 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       agent.status = "done";
       agent.endedAt = Date.now();
       const output = cloneSerializable(result);
-      agent.outputPreview = previewJson(output);
       agent.outputPath = runtime.options.outputsDir
         ? await writeWorkflowAgentOutput(runtime.options.outputsDir, agent.id, agent.label, output)
         : undefined;
@@ -117,7 +98,6 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
         level: "info",
         message: `${agent.label} done`,
       });
-      runtime.emitEvent({ type: "agent_done", agentId: agent.id });
       runtime.emit();
       return result;
     } catch (error) {
@@ -132,7 +112,6 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
         level: "error",
         message: `${agent.label} error: ${agent.error}`,
       });
-      runtime.emitEvent({ type: "agent_error", agentId: agent.id, error: agent.error });
       runtime.emit();
       throw error;
     }
@@ -167,12 +146,6 @@ function applyAgentProgress(agent: WorkflowAgentSnapshot, progress: WorkflowAgen
     agent.model = progress.model;
     changed = true;
   }
-  if (progress.recentToolCall !== undefined) {
-    const recentToolCalls = agent.recentToolCalls ?? (agent.recentToolCalls = []);
-    recentToolCalls.push(progress.recentToolCall);
-    if (recentToolCalls.length > 20) recentToolCalls.splice(0, recentToolCalls.length - 20);
-    changed = true;
-  }
   if (progress.sessionDir !== undefined && progress.sessionDir !== agent.sessionDir) {
     agent.sessionDir = progress.sessionDir;
     changed = true;
@@ -183,11 +156,6 @@ function applyAgentProgress(agent: WorkflowAgentSnapshot, progress: WorkflowAgen
   }
   if (progress.eventsFile !== undefined && progress.eventsFile !== agent.eventsFile) {
     agent.eventsFile = progress.eventsFile;
-    changed = true;
-  }
-  const tokenCount = progress.tokenCount ?? agent.inputTokenCount + agent.outputTokenCount;
-  if (tokenCount !== agent.tokenCount) {
-    agent.tokenCount = tokenCount;
     changed = true;
   }
   return changed;

@@ -1,64 +1,31 @@
-import { cp, mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import type { GeneratedWorkflowDraft, WorkflowProposal } from "./request.ts";
-import { parseWorkflowSourceMetadata } from "./runtime.ts";
+import type { GeneratedWorkflowDraft } from "./request.ts";
+import { parseWorkflowSourceMetadata } from "./workflow-metadata.ts";
 
 export interface WorkflowDraftReadOptions {
   cwd: string;
   name: string;
-  source?: string;
-  draftDir?: string;
-  proposal: WorkflowProposal;
+  draftDir: string;
   toolName: string;
 }
 
-/** Reads an inline or directory-backed generated workflow draft into the canonical review shape. */
+/** Reads a directory-backed generated workflow draft into the canonical approval shape. */
 export async function readWorkflowDraft(options: WorkflowDraftReadOptions): Promise<GeneratedWorkflowDraft> {
   const { source, sourceDirectory, filePaths } = await readWorkflowDraftSource(options);
   return {
     name: options.name,
     source,
     metadata: parseWorkflowSourceMetadata(source, options.name),
-    proposal: options.proposal,
     filePaths,
-    ...(sourceDirectory ? { sourceDirectory } : {}),
+    sourceDirectory,
   };
-}
-
-/** Builds the default human-facing proposal summary for a generated workflow draft. */
-export function workflowDraftProposal(
-  params: { request?: string; summary?: string; steps?: string[]; willRun?: string[] },
-  name: string,
-): WorkflowProposal {
-  return {
-    summary: params.summary ?? `Create workflow '${name}'${params.request ? ` for: ${params.request}` : ""}`,
-    steps: params.steps ?? ["Save the reviewed workflow directory under the project workflow root."],
-    willRun: params.willRun ?? [`Copy the approved draft directory to .pi/workflows/${name}/ after approval.`],
-  };
-}
-
-/** Copies an approved generated workflow draft into a temporary workflow root for one run. */
-export async function materializeWorkflowDraftForRun(draft: GeneratedWorkflowDraft): Promise<string> {
-  const workflowRoot = await mkdtemp(path.join(tmpdir(), "pi-workflow-draft-run-"));
-  const workflowDir = path.join(workflowRoot, draft.name);
-  if (draft.sourceDirectory) await cp(draft.sourceDirectory, workflowDir, { recursive: true });
-  else await mkdir(workflowDir, { recursive: true });
-  await writeFile(path.join(workflowDir, "workflow.js"), `${draft.source.trim()}\n`, "utf8");
-  return workflowRoot;
 }
 
 async function readWorkflowDraftSource(
   options: WorkflowDraftReadOptions,
-): Promise<{ source: string; filePaths: string[]; sourceDirectory?: string }> {
-  const hasSource = typeof options.source === "string";
-  const hasDraftDir = typeof options.draftDir === "string" && options.draftDir.trim().length > 0;
-  if (hasSource && hasDraftDir) throw new Error(`${options.toolName} requires exactly one of source or draftDir`);
-  if (!hasSource && !hasDraftDir) throw new Error(`${options.toolName} requires exactly one of source or draftDir`);
-  if (hasSource) return { source: options.source ?? "", filePaths: ["workflow.js"] };
-  if (typeof options.draftDir !== "string" || !options.draftDir.trim()) {
-    throw new Error(`${options.toolName} requires exactly one of source or draftDir`);
-  }
+): Promise<{ source: string; filePaths: string[]; sourceDirectory: string }> {
+  if (!options.draftDir.trim()) throw new Error(`${options.toolName} requires draftDir`);
   const sourceDirectory = resolveDraftWorkflowDirectory(options.cwd, options.draftDir, options.toolName);
   const stats = await stat(sourceDirectory);
   if (!stats.isDirectory()) throw new Error(`${options.toolName} draftDir must be a directory containing workflow.js`);

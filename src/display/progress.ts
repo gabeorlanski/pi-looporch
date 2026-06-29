@@ -1,10 +1,9 @@
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime.ts";
-import { workflowPhaseViews } from "./workflow-phases.ts";
+import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime-types.ts";
+import { fit, titleLine, trimFixed } from "./text.ts";
 
 const DEFAULT_WIDTH = 96;
 const MIN_WIDTH = 64;
-const MAX_EXPANDED_PHASE_AGENTS = 8;
+const MAX_VISIBLE_AGENTS = 6;
 
 type DisplayColor = "accent" | "borderMuted" | "dim" | "error" | "muted" | "success" | "text" | "warning";
 
@@ -29,14 +28,6 @@ interface NetStats {
   toolCallCount: number;
 }
 
-interface PhaseSection {
-  index: number;
-  title: string;
-  isCurrent: boolean;
-  agents: WorkflowAgentSnapshot[];
-  isExpanded: boolean;
-}
-
 const plainTheme: ProgressTheme = {
   fg: (_color, text) => text,
   bold: (text) => text,
@@ -49,31 +40,26 @@ export function initialProgressDisplay(
   input?: unknown,
 ): ProgressDisplay {
   const safeWidth = Math.max(MIN_WIDTH, width);
-  const statusLine = `${workflowName}: STARTING · 0/0 agents · in 0 · out 0 · tools 0 · Esc abort · Ctrl+\\ transcript`;
-  const inputLine = argsLine(input, safeWidth, theme);
   const widgetLines = [
     titleLine(`workflow ${workflowName}`, safeWidth, theme),
-    ...(inputLine ? [inputLine] : []),
-    theme.fg("warning", fit(`  STARTING · waiting for workflow runtime events · Esc abort · Ctrl+\\ transcript`, safeWidth)),
-    "",
-    theme.fg("muted", fit(`  NET 0/0 agents · in 0 · out 0 · total 0 · tools 0`, safeWidth)),
+    ...optionalInputLine(input, safeWidth, theme),
+    theme.fg("warning", fit("  STARTING · waiting for workflow runtime update", safeWidth)),
+    theme.fg("muted", fit("  NET 0/0 agents · in 0 · out 0 · total 0 · tools 0", safeWidth)),
   ];
-  return { statusLine, widgetLines, text: widgetLines.join("\n") };
+  return { statusLine: `${workflowName}: STARTING · 0/0 agents · in 0 · out 0 · tools 0`, widgetLines, text: widgetLines.join("\n") };
 }
 
 export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDTH, theme: ProgressTheme = plainTheme): ProgressDisplay {
   const safeWidth = Math.max(MIN_WIDTH, width);
   const stats = netStats(snapshot);
   const state = workflowState(snapshot, stats);
-  const statusLine = `${snapshot.workflowName}: ${state.label} · ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · in ${formatTokenCount(stats.inputTokenCount)} · out ${formatTokenCount(stats.outputTokenCount)} · tools ${String(stats.toolCallCount)}${state.kind === "running" ? " · Esc abort · Ctrl+\\ transcript" : ""}`;
-  const inputLine = argsLine(snapshot.input, safeWidth, theme);
+  const statusLine = `${snapshot.workflowName}: ${state.label} · ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · in ${formatTokenCount(stats.inputTokenCount)} · out ${formatTokenCount(stats.outputTokenCount)} · tools ${String(stats.toolCallCount)}`;
   const widgetLines = [
     titleLine(`workflow ${snapshot.workflowName}`, safeWidth, theme),
-    ...(inputLine ? [inputLine] : []),
+    ...optionalInputLine(snapshot.input, safeWidth, theme),
     summaryLine(snapshot, stats, state, safeWidth, theme),
-    "",
-    ...phaseSections(snapshot).flatMap((section) => renderPhaseSection(section, safeWidth, theme)),
-    "",
+    ...phaseLine(snapshot, safeWidth, theme),
+    ...agentLines(snapshot.agents, safeWidth, theme),
     netLine(snapshot, stats, safeWidth, theme),
   ];
   return { statusLine, widgetLines, text: widgetLines.join("\n") };
@@ -86,23 +72,9 @@ export function formatTokenCount(tokenCount: number): string {
   return `${trimFixed(tokenCount / 1_000_000)}M`;
 }
 
-function argsLine(input: unknown, width: number, theme: ProgressTheme): string | undefined {
-  const rendered = compactJson(input);
-  if (!rendered) return undefined;
-  return fit(`  ${theme.fg("muted", "args")} ${theme.fg("text", rendered)}`, width);
-}
-
-function compactJson(value: unknown): string | undefined {
-  return JSON.stringify(value);
-}
-
-function titleLine(title: string, width: number, theme: ProgressTheme): string {
-  const visibleTitle = ` ${title} `;
-  const fillLen = Math.max(0, width - visibleWidth(visibleTitle) - 4);
-  return fit(
-    theme.fg("borderMuted", "──") + theme.fg("accent", theme.bold(visibleTitle)) + theme.fg("borderMuted", "─".repeat(fillLen)),
-    width,
-  );
+function optionalInputLine(input: unknown, width: number, theme: ProgressTheme): string[] {
+  const rendered = JSON.stringify(input);
+  return rendered ? [fit(`  ${theme.fg("muted", "input")} ${theme.fg("text", rendered)}`, width)] : [];
 }
 
 function summaryLine(
@@ -112,115 +84,52 @@ function summaryLine(
   width: number,
   theme: ProgressTheme,
 ): string {
-  const phase = currentPhaseLabel(snapshot);
-  const errors = stats.erroredAgents > 0 ? theme.fg("error", ` · ${String(stats.erroredAgents)} errors`) : "";
-  const abortHint = state.kind === "running" ? theme.fg("warning", " · Esc abort") + theme.fg("muted", " · Ctrl+\\ transcript") : "";
+  const errors = stats.erroredAgents > 0 ? ` · ${String(stats.erroredAgents)} errors` : "";
   return fit(
-    `  ${theme.fg(state.color, theme.bold(state.label))}` +
-      ` ${theme.fg("muted", "·")} ${theme.fg("accent", phase)}` +
-      ` ${theme.fg("muted", "· agents")} ${theme.fg("success", `${String(stats.completedAgents)}/${String(stats.totalAgents)}`)}` +
-      ` ${theme.fg("muted", "· running")} ${theme.fg(stats.runningAgents > 0 ? "warning" : "dim", String(stats.runningAgents))}` +
-      errors +
-      abortHint,
+    `  ${theme.fg(state.color, theme.bold(state.label))} · ${theme.fg("accent", currentPhase(snapshot))}` +
+      ` · agents ${String(stats.completedAgents)}/${String(stats.totalAgents)} · running ${String(stats.runningAgents)}${errors}`,
     width,
   );
 }
 
-function renderPhaseSection(section: PhaseSection, width: number, theme: ProgressTheme): string[] {
-  const glyph = phaseGlyph(section);
-  const ident = section.index === 0 ? "setup" : `P${String(section.index)} ${section.title}`;
-  const count =
-    section.agents.length === 0
-      ? "no agents yet"
-      : `${String(section.agents.filter((agent) => agent.status !== "running").length)}/${String(section.agents.length)} agents`;
-  const stats = phaseSummaryText(section);
-  const runningElapsed = section.isExpanded ? "" : runningElapsedText(section.agents);
-  const phaseLine = fit(
-    `  ${theme.fg(glyph.color, glyph.glyph)} ${theme.fg(section.isCurrent ? "accent" : "text", theme.bold(ident))} ` +
-      theme.fg("dim", `· ${count}${stats}${runningElapsed}`),
-    width,
-  );
-  if (section.agents.length === 0 || !section.isExpanded) return [phaseLine];
-  const visibleAgents = visiblePhaseAgents(section.agents);
+function phaseLine(snapshot: WorkflowSnapshot, width: number, theme: ProgressTheme): string[] {
+  if (!snapshot.phases.length) return [];
   return [
-    phaseLine,
-    ...visibleAgents.agents.flatMap((agent) => renderAgentRow(agent, width, theme)),
-    ...(visibleAgents.hidden > 0 ? [hiddenAgentsLine(visibleAgents.hidden, width, theme)] : []),
+    fit(`  ${theme.fg("muted", "phases")} ${snapshot.phases.map((phase, index) => `P${String(index + 1)} ${phase}`).join(" · ")}`, width),
   ];
 }
 
-function visiblePhaseAgents(agents: WorkflowAgentSnapshot[]): { agents: WorkflowAgentSnapshot[]; hidden: number } {
-  if (agents.length <= MAX_EXPANDED_PHASE_AGENTS) return { agents, hidden: 0 };
-  const selected = new Set<number>();
-  for (const agent of agents) {
-    if (selected.size >= MAX_EXPANDED_PHASE_AGENTS) break;
-    if (agent.status !== "done") selected.add(agent.id);
-  }
-  for (const agent of [...agents].reverse()) {
-    if (selected.size >= MAX_EXPANDED_PHASE_AGENTS) break;
-    selected.add(agent.id);
-  }
-  return { agents: agents.filter((agent) => selected.has(agent.id)), hidden: agents.length - selected.size };
+function agentLines(agents: WorkflowAgentSnapshot[], width: number, theme: ProgressTheme): string[] {
+  const selected = agents.filter((agent) => agent.status !== "done").slice(0, MAX_VISIBLE_AGENTS);
+  const hidden = agents.length - selected.length;
+  return [
+    ...selected.map((agent) => agentLine(agent, width, theme)),
+    ...(hidden > 0 ? [fit(`  ${theme.fg("dim", `${String(hidden)} completed/hidden agents`)}`, width)] : []),
+  ];
 }
 
-function hiddenAgentsLine(hidden: number, width: number, theme: ProgressTheme): string {
-  return fit(
-    `     ${theme.fg("dim", `… ${String(hidden)} more ${hidden === 1 ? "agent" : "agents"} hidden · Ctrl+\\ transcript for all`)}`,
-    width,
-  );
-}
-
-function renderAgentRow(agent: WorkflowAgentSnapshot, width: number, theme: ProgressTheme): string[] {
-  const glyph = agentGlyph(agent);
-  const lines = [fit(`     ${theme.fg(glyph.color, glyph.glyph)} ${theme.fg("text", agentTitle(agent))}`, width)];
-  if (agent.status === "running") lines.push(agentStatusLine(agent, width, theme));
-  if (agent.error?.trim()) lines.push(fit(`        ${theme.fg("error", `↳ ${agent.error.trim()}`)}`, width));
-  return lines;
-}
-
-function agentTitle(agent: WorkflowAgentSnapshot): string {
-  return [`#${String(agent.id)} ${agent.label}`, agent.reasoning ?? "default", agent.model]
+function agentLine(agent: WorkflowAgentSnapshot, width: number, theme: ProgressTheme): string {
+  const color = agent.status === "error" ? "error" : agent.status === "done" ? "success" : "warning";
+  const meta = [
+    agent.reasoning ?? "default",
+    agent.model,
+    `${formatTokenCount(agent.inputTokenCount)} in`,
+    `${formatTokenCount(agent.outputTokenCount)} out`,
+    `${String(agent.toolCallCount)} tools`,
+    agent.status === "running" ? `${String(agent.stepCount)} steps` : undefined,
+  ]
     .filter((part): part is string => part !== undefined)
     .join(" · ");
-}
-
-function agentStatusLine(agent: WorkflowAgentSnapshot, width: number, theme: ProgressTheme): string {
-  const state = padVisible(agentActivityState(agent), 8);
-  const duration = agent.startedAt > 0 ? formatStatusDuration(Date.now() - agent.startedAt) : "00:00";
-  const steps = padStart(String(agent.stepCount), 3);
-  const input = padStart(formatTokenCount(agent.inputTokenCount), 5);
-  const output = padStart(formatTokenCount(agent.outputTokenCount), 5);
-  const tools = padStart(String(agent.toolCallCount), 3);
-  return fit(
-    `       ${theme.fg("borderMuted", "╰─")} ` +
-      `${theme.fg("warning", state)} ${theme.fg("muted", "·")} ` +
-      `${theme.fg("text", duration)} ${theme.fg("muted", "·")} ` +
-      `${theme.fg("text", steps)} ${theme.fg("muted", "steps ·")} ` +
-      `${theme.fg("accent", `↓ ${input}`)} ${theme.fg("warning", `↑ ${output}`)} ${theme.fg("muted", "·")} ` +
-      `${theme.fg("text", tools)} ${theme.fg("muted", agent.toolCallCount === 1 ? "tool" : "tools")}`,
-    width,
-  );
-}
-
-function agentActivityState(agent: WorkflowAgentSnapshot): "active" | "done" | "failed" | "thinking" | "waiting" {
-  if (agent.status === "done") return "done";
-  if (agent.status === "error") return "failed";
-  const message = agent.message?.trim().toLowerCase();
-  if (!message || message === "thinking") return "thinking";
-  if (message === "done") return "waiting";
-  return "active";
+  return fit(`  ${theme.fg(color, agent.status.toUpperCase())} #${String(agent.id)} ${agent.label} · ${meta}`, width);
 }
 
 function netLine(snapshot: WorkflowSnapshot, stats: NetStats, width: number, theme: ProgressTheme): string {
   const totalTokenCount = stats.inputTokenCount + stats.outputTokenCount;
   return fit(
-    `  ${theme.fg("muted", "NET")} ` +
-      `${theme.fg("success", `${String(stats.completedAgents)}/${String(stats.totalAgents)} agents`)} · ` +
-      `${theme.fg("accent", `${formatTokenCount(stats.inputTokenCount)} in`)} · ` +
-      `${theme.fg("warning", `${formatTokenCount(stats.outputTokenCount)} out`)} · ` +
-      `${theme.fg("muted", `${formatTokenCount(totalTokenCount)} total`)} · ` +
-      `${theme.fg("success", `${String(stats.toolCallCount)} tools`)} · ` +
-      theme.fg("muted", `${String(snapshot.fanOuts.length)} ${snapshot.fanOuts.length === 1 ? "fanout" : "fanouts"}`),
+    `  ${theme.fg("muted", "NET")} ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · ` +
+      `${formatTokenCount(stats.inputTokenCount)} in · ${formatTokenCount(stats.outputTokenCount)} out · ` +
+      `${formatTokenCount(totalTokenCount)} total · ${String(stats.toolCallCount)} tools · ` +
+      `${String(snapshot.fanOuts.length)} ${snapshot.fanOuts.length === 1 ? "fanout" : "fanouts"}`,
     width,
   );
 }
@@ -238,111 +147,18 @@ function netStats(snapshot: WorkflowSnapshot): NetStats {
   };
 }
 
-function phaseSections(snapshot: WorkflowSnapshot): PhaseSection[] {
-  return workflowPhaseViews(snapshot).map((phase) => {
-    const section = { index: phase.index, title: phase.title, isCurrent: phase.isCurrent, agents: phase.agents, isExpanded: false };
-    return { ...section, isExpanded: phaseShouldExpand(section, snapshot) };
-  });
-}
-
-function phaseShouldExpand(section: PhaseSection, snapshot: WorkflowSnapshot): boolean {
-  const phaseAgents = section.agents;
-  if (phaseAgents.some((agent) => agent.status === "running")) return true;
-  return section.isCurrent && snapshot.result === undefined;
-}
-
-function phaseSummaryText(section: PhaseSection): string {
-  if (section.agents.length === 0) return "";
-  const inputTokenCount = section.agents.reduce((total, agent) => total + agent.inputTokenCount, 0);
-  const outputTokenCount = section.agents.reduce((total, agent) => total + agent.outputTokenCount, 0);
-  const toolCallCount = section.agents.reduce((total, agent) => total + agent.toolCallCount, 0);
-  const elapsed = !section.isExpanded ? phaseElapsedMs(section.agents) : undefined;
-  const elapsedText = elapsed !== undefined ? ` · ${formatDuration(elapsed)}` : "";
-  return ` · ${formatTokenCount(inputTokenCount)}→${formatTokenCount(outputTokenCount)} · ${String(toolCallCount)} tools${elapsedText}`;
-}
-
-function phaseElapsedMs(agents: WorkflowAgentSnapshot[]): number | undefined {
-  if (!agents.length || agents.some((agent) => agent.endedAt === undefined)) return undefined;
-  const startedAt = Math.min(...agents.map((agent) => agent.startedAt));
-  const endedAt = Math.max(...agents.map((agent) => agent.endedAt ?? agent.startedAt));
-  return Math.max(0, endedAt - startedAt);
-}
-
-function runningElapsedText(agents: WorkflowAgentSnapshot[]): string {
-  const runningAgents = agents.filter((agent) => agent.status === "running" && agent.startedAt > 0);
-  if (!runningAgents.length) return "";
-  const startedAt = Math.min(...runningAgents.map((agent) => agent.startedAt));
-  return ` · running ${formatRunningDuration(Date.now() - startedAt)}`;
-}
-
-export function formatDuration(ms: number): string {
-  const safeMs = Math.max(0, ms);
-  if (safeMs < 1000) return `${String(safeMs)}ms`;
-  const seconds = safeMs / 1000;
-  if (seconds < 60) return `${trimFixed(seconds)}s`;
-  const wholeSeconds = Math.round(seconds);
-  const minutes = Math.floor(wholeSeconds / 60);
-  return `${String(minutes)}m ${String(wholeSeconds % 60).padStart(2, "0")}s`;
-}
-
-function formatRunningDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  if (totalSeconds < 60) return `${String(totalSeconds)}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  return `${String(minutes)}m ${String(totalSeconds % 60).padStart(2, "0")}s`;
-}
-
-function formatStatusDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  return `${String(minutes).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`;
-}
-
 interface WorkflowDisplayState {
-  kind: "running" | "complete" | "error";
   label: string;
   color: DisplayColor;
 }
 
 function workflowState(snapshot: WorkflowSnapshot, stats: NetStats): WorkflowDisplayState {
-  if (stats.erroredAgents > 0) return { kind: "error", label: "ERROR", color: "error" };
-  if (snapshot.result !== undefined) return { kind: "complete", label: "DONE", color: "success" };
-  return { kind: "running", label: "RUNNING", color: "warning" };
+  if (stats.erroredAgents > 0 || snapshot.status === "error") return { label: "ERROR", color: "error" };
+  if (snapshot.status === "done") return { label: "DONE", color: "success" };
+  return { label: "RUNNING", color: "warning" };
 }
 
-function phaseGlyph(section: PhaseSection): { glyph: string; color: DisplayColor } {
-  if (section.agents.some((agent) => agent.status === "error")) return { glyph: "✗", color: "error" };
-  if (section.agents.some((agent) => agent.status === "running")) return { glyph: "▸", color: "warning" };
-  if (section.agents.length > 0) return { glyph: "✓", color: "success" };
-  if (section.isCurrent) return { glyph: "…", color: "accent" };
-  return { glyph: "·", color: "dim" };
-}
-
-function currentPhaseLabel(snapshot: WorkflowSnapshot): string {
-  const index = snapshot.phases.length;
-  if (index === 0) return "setup";
-  return `P${String(index)}/${String(snapshot.phases.length)} ${snapshot.phases[index - 1]}`;
-}
-
-function agentGlyph(agent: WorkflowAgentSnapshot): { glyph: string; color: DisplayColor } {
-  if (agent.status === "done") return { glyph: "✓", color: "success" };
-  if (agent.status === "error") return { glyph: "✗", color: "error" };
-  return { glyph: "▸", color: "warning" };
-}
-
-function padVisible(text: string, width: number): string {
-  return text + " ".repeat(Math.max(0, width - visibleWidth(text)));
-}
-
-function padStart(text: string, width: number): string {
-  return " ".repeat(Math.max(0, width - visibleWidth(text))) + text;
-}
-
-function fit(text: string, width: number): string {
-  if (!text.includes("\u001B")) return text.length <= width ? text : `${text.slice(0, Math.max(0, width - 3))}...`;
-  return truncateToWidth(text, width, "...");
-}
-
-function trimFixed(value: number): string {
-  return value.toFixed(1).replace(/\.0$/, "");
+function currentPhase(snapshot: WorkflowSnapshot): string {
+  const title = snapshot.phases.at(-1);
+  return title ? `P${String(snapshot.phases.length)} ${title}` : "setup";
 }

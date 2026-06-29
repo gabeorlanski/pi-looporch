@@ -1,69 +1,58 @@
-import { cp, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { extractWorkflowInputContract } from "./input.ts";
-import { parseWorkflowSourceMetadata, type WorkflowMetadata } from "./runtime.ts";
+import type { WorkflowMetadata } from "./runtime-types.ts";
+import { parseWorkflowSourceMetadata } from "./workflow-metadata.ts";
 
-/** Human-review summary describing what a generated workflow will save and run. */
-export interface WorkflowProposal {
-  summary: string;
-  steps: string[];
-  willRun: string[];
-}
-
-/** Complete generated workflow draft plus source files awaiting reviewer approval. */
+/** Complete generated workflow draft plus source files awaiting user approval. */
 export interface GeneratedWorkflowDraft {
   name: string;
   source: string;
   metadata: WorkflowMetadata;
-  proposal: WorkflowProposal;
   filePaths: string[];
-  sourceDirectory?: string;
+  sourceDirectory: string;
 }
 
-/** Payload passed to a reviewer before a generated workflow can be saved. */
-export interface WorkflowReviewRequest {
+/** Inputs for saving a user-approved generated workflow draft. */
+export interface SaveApprovedWorkflowDraftOptions {
   cwd: string;
   draft: GeneratedWorkflowDraft;
-  request: string;
-  intent?: "run" | "save";
 }
 
-/** Reviewer decision to approve a draft, optionally with updated source, or reject it with a reason. */
-export type WorkflowReviewDecision = { action: "approve"; source?: string } | { action: "reject"; reason?: string };
-
-/** Injected review function that gates generated workflow saves. */
-export type WorkflowReviewer = (request: WorkflowReviewRequest) => Promise<WorkflowReviewDecision> | WorkflowReviewDecision;
-
-/** Inputs for review-gated generated workflow saving. */
-export interface ReviewAndSaveWorkflowDraftOptions {
-  cwd: string;
-  request: string;
-  draft: GeneratedWorkflowDraft;
-  reviewer?: WorkflowReviewer;
-}
-
-/** Reviews, validates, and atomically saves an approved generated workflow draft under .pi/workflows. */
-export async function reviewAndSaveWorkflowDraft(options: ReviewAndSaveWorkflowDraftOptions): Promise<GeneratedWorkflowDraft> {
-  const approvedDraft = await reviewWorkflowDraft({ ...options, intent: "save" });
+/** Validates and atomically saves a user-approved generated workflow draft under .pi/workflows. */
+export async function saveApprovedWorkflowDraft(options: SaveApprovedWorkflowDraftOptions): Promise<GeneratedWorkflowDraft> {
+  const approvedDraft = approvedWorkflowDraft(options.draft);
   await saveApprovedDraft(options.cwd, approvedDraft);
   return approvedDraft;
 }
 
-/** Reviews and validates a generated workflow draft without saving it; used for one-shot draft runs. */
-export async function reviewWorkflowDraft(
-  options: ReviewAndSaveWorkflowDraftOptions & { intent?: "run" | "save" },
-): Promise<GeneratedWorkflowDraft> {
-  if (!options.reviewer) throw new Error("Generated workflows require review before they are saved or run");
-  const decision = await options.reviewer({ cwd: options.cwd, draft: options.draft, request: options.request, intent: options.intent });
-  if (decision.action === "reject") throw new Error(decision.reason ?? "Generated workflow was rejected");
-  const approvedSource = decision.source ?? options.draft.source;
-  validateGeneratedWorkflowDocstring(approvedSource);
-  const approvedMetadata = parseWorkflowSourceMetadata(approvedSource, options.draft.name);
-  return { ...options.draft, source: approvedSource, metadata: approvedMetadata };
+/** Validates a generated workflow draft after the current-session agent has obtained explicit user approval. */
+function approvedWorkflowDraft(draft: GeneratedWorkflowDraft): GeneratedWorkflowDraft {
+  validateGeneratedWorkflowDocstring(draft.source);
+  const metadata = parseWorkflowSourceMetadata(draft.source, draft.name);
+  return { ...draft, metadata };
+}
+
+/** Compact approval text returned to the agent so it can ask the user in normal chat. */
+export function workflowApprovalPrompt(options: { draft: GeneratedWorkflowDraft; request: string }): string {
+  return [
+    "Ask the user for approval before you save this workflow.",
+    "",
+    `Workflow: ${options.draft.name}`,
+    `Request: ${options.request}`,
+    `Description: ${options.draft.metadata.description}`,
+    `Phases: ${options.draft.metadata.phases.map((phase) => phase.title).join(" -> ") || "none"}`,
+    `Files: ${formatFileList(options.draft.filePaths)}`,
+    "",
+    "Will do:",
+    `- Copy the approved draft directory to .pi/workflows/${options.draft.name}/.`,
+    "",
+    "If the user approves, call the same tool again with approved=true. If they do not approve, do not call it again.",
+  ].join("\n");
 }
 
 /** Ensures generated workflow source has default-function JSDoc covering the required runbook topics. */
-export function validateGeneratedWorkflowDocstring(source: string): void {
+function validateGeneratedWorkflowDocstring(source: string): void {
   const contract = extractWorkflowInputContract(source);
   if (!contract.jsdoc) throw new Error("Generated workflow function must start with a JSDoc docstring before it can be saved");
   const normalized = contract.jsdoc.toLowerCase();
@@ -85,12 +74,7 @@ async function saveApprovedDraft(cwd: string, draft: GeneratedWorkflowDraft): Pr
     rm(backupDir, { recursive: true, force: true }),
     mkdir(workflowRoot, { recursive: true }),
   ]);
-  if (draft.sourceDirectory) {
-    await cp(validateDraftSourceDirectory(projectRoot, draft.sourceDirectory, workflowRoot), stagingDir, { recursive: true });
-  } else {
-    await mkdir(stagingDir, { recursive: true });
-  }
-  await writeFile(path.join(stagingDir, "workflow.js"), `${draft.source.trim()}\n`, "utf8");
+  await cp(validateDraftSourceDirectory(projectRoot, draft.sourceDirectory, workflowRoot), stagingDir, { recursive: true });
   await replaceWorkflowDirectory(workflowDir, stagingDir, backupDir);
 }
 
@@ -131,4 +115,9 @@ function isInsideOrEqual(root: string, target: string): boolean {
 
 function isNotFoundError(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ENOENT";
+}
+
+function formatFileList(filePaths: string[]): string {
+  if (filePaths.length <= 12) return filePaths.join(", ");
+  return `${filePaths.slice(0, 12).join(", ")} and ${String(filePaths.length - 12)} more`;
 }

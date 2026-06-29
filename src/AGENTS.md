@@ -20,8 +20,8 @@ npm run check
 - Accept normalized inputs; do parsing/coercion in `extensions/` or tool boundaries.
 - Keep runtime logic strict and explicit; throw `Error` with actionable messages.
 - Add concise JSDoc contracts to exported declarations in public API modules covered by `npm run docs:check`.
-- Keep workflow primitive implementations under `runtime/primitives/`; add globals through the shared `WorkflowPrimitive` protocol in `runtime/context.ts` and `runtime/globals.ts` instead of growing `runtime.ts`.
-- Inject `WorkflowAgent` and reviewers; never hardcode pi/model providers.
+- Keep workflow primitive implementations under `runtime/primitives/`; add globals through the shared `WorkflowPrimitive` protocol in `runtime/context.ts` and `runtime/globals.ts` instead of ad hoc wiring.
+- Inject `WorkflowAgent`; never hardcode pi/model providers.
 - Put TUI and visible text rendering in `display/`, one display concern per file.
 - Put raw prompt text in `prompts/*.txt`; keep interpolation code outside `prompts/`.
 - Keep generated workflow authoring docs in `authoring-guide.ts`; render them into prompts through placeholders.
@@ -36,25 +36,23 @@ npm run check
 - Keep `agent(prompt, { cwd })` as a launch option for alternate child-agent working directories; resolve relative values from the workflow project cwd.
 - Encourage workflow authors to add `log(message)` for visible milestones and `trace(label, value?)` for structured handoff/debug data.
 - Treat structured JSON as a control surface: keep schemas bounded and compact, return manifest/status/IDs/paths, and put large reasoning/evidence/artifacts in files or JSONL.
-- Treat a string returned by the default `workflow()` function as the parent-agent handoff; object returns are machine-readable results for logs/details.
+- Keep workflow results, including strings, in output files and session logs; do not inject them into the parent session as hidden follow-up prompts.
 - Never estimate token counts; only report provider/session usage or zero/unknown when actual usage is unavailable.
 - Update tests and docs when exported behavior or workflow primitives change.
 
 ## Key types
 
 - `runtime-types.ts`: `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, `WorkflowRunResult`.
-- `runtime.ts`: compatibility barrel for public runtime exports.
 - `runtime/`: runtime internals. `run.ts` owns workflow execution wiring, `context.ts` defines the shared primitive protocol, `globals.ts` binds primitives, and `primitives/` owns agent/phase/log/trace/files/parallel/pipeline/coerce/mapreduce/verifier behavior.
 - `workflow-paths.ts`: workflow name/path/cwd resolution.
 - `workflow-sandbox.ts`: sandbox module transform and import/require bans.
 - `workflow-metadata.ts`: static `export const metadata = { ... }` parsing.
-- `request.ts`: `GeneratedWorkflowDraft`, `WorkflowReviewer`, review-gated draft saving.
+- `request.ts`: `GeneratedWorkflowDraft`, approval prompts, and approved draft saving.
 - `discovery.ts`: `WorkflowReference`.
 - `tools.ts`: `WorkflowToolsOptions`.
 - `pi-agent.ts`: `PiWorkflowAgentOptions`.
 - `authoring-guide.ts`: on-demand workflow design guidance returned by the `workflow_design_guidance` tool.
-- `workflow-outline.ts`: `WorkflowOutline`, `OutlineSection`, `OutlineStage`, `OutlinePrompt`; static AST parse of `workflow.js` into phases/stages/prompts plus `indexOutline*` helpers for review tooling.
-- `display/`: progress, approval, and boundary message rendering. `workflow-flowchart.ts` builds the proposal-review flowchart used by the simple approval UI. `approval.ts` renders the review frame and feedback mode. `agent-inspector.ts` renders the Ctrl+\ transcript-pane header; the transcript below it is loaded from the child agent session log and rendered with pi's native message components in `extensions/workflow.ts`.
+- `display/`: passive progress and boundary message rendering.
 - `prompts/`: raw prompt templates loaded by `prompt-templates.ts`.
 
 See `../agent_docs/INDEX.md` before changing patterns.

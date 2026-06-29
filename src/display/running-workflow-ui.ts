@@ -1,14 +1,12 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
-import type { WorkflowInspector } from "./workflow-inspector-controller.ts";
 import type { ProgressDisplay, ProgressTheme } from "./progress.ts";
+import { fit } from "./text.ts";
 
 const RUNNING_WORKFLOW_WIDGET = "pi-workflow-running";
 const RUNNING_WORKFLOW_STATUS = "workflow";
 
 interface RunningWorkflowUiState {
   displayForWidth: (width: number, theme?: ProgressTheme) => ProgressDisplay;
-  inspector: WorkflowInspector;
   requestRender?: () => void;
   statusLine?: string;
 }
@@ -33,18 +31,16 @@ export function beginDynamicWorkflow(ctx: ExtensionCommandContext): { done: () =
 export function updateRunningWorkflowUi(
   ctx: ExtensionCommandContext,
   displayForWidth: (width: number, theme?: ProgressTheme) => ProgressDisplay,
-  inspector: WorkflowInspector,
 ): void {
   const existing = runningWorkflowUiStates.get(ctx);
   if (existing) {
     existing.displayForWidth = displayForWidth;
-    existing.inspector = inspector;
     updateRunningWorkflowStatus(ctx, existing);
     existing.requestRender?.();
     return;
   }
 
-  const state: RunningWorkflowUiState = { displayForWidth, inspector };
+  const state: RunningWorkflowUiState = { displayForWidth };
   runningWorkflowUiStates.set(ctx, state);
   updateRunningWorkflowStatus(ctx, state);
   ctx.ui.setWidget(
@@ -54,8 +50,7 @@ export function updateRunningWorkflowUi(
       return {
         render: (width: number) => {
           const display = state.displayForWidth(width, theme);
-          const progressLines = fitProgressPane(display.widgetLines, width, runningWorkflowPaneHeight(tui.terminal.rows), theme);
-          return state.inspector.render(tui, theme, width, progressLines);
+          return fitProgressPane(display.widgetLines, width, runningWorkflowPaneHeight(tui.terminal.rows), theme);
         },
         invalidate: () => updateRunningWorkflowStatus(ctx, state),
       };
@@ -99,17 +94,12 @@ function runningWorkflowPaneHeight(termRows: number): number {
 function fitProgressPane(lines: string[], width: number, height: number, theme: ProgressTheme): string[] {
   if (lines.length <= height) return fillPane(lines, width, height);
   const hidden = lines.length - height + 1;
-  const footer = theme.fg("dim", fitLine(`  … ${String(hidden)} workflow lines hidden while transcript pane is open`, width));
+  const footer = theme.fg("dim", fit(`  … ${String(hidden)} workflow lines hidden`, width));
   return fillPane([...lines.slice(0, height - 1), footer], width, height);
 }
 
 function fillPane(lines: string[], width: number, height: number): string[] {
-  const fitted = lines.slice(0, height).map((line) => fitLine(line, width));
+  const fitted = lines.slice(0, height).map((line) => fit(line, width));
   while (fitted.length < height) fitted.push("");
   return fitted;
-}
-
-function fitLine(line: string, width: number): string {
-  if (!line.includes("\u001B")) return line.length <= width ? line : `${line.slice(0, Math.max(0, width - 3))}...`;
-  return truncateToWidth(line, width, "...");
 }

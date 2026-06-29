@@ -24,7 +24,6 @@ export function recordTrace(runtime: ActiveWorkflowRuntime, label: string, value
     level: "debug",
     message: `trace ${trace.label}${trace.value === undefined ? "" : ` ${traceValueText(trace.value)}`}`,
   });
-  runtime.emitEvent({ type: "trace", trace });
   runtime.emit();
 }
 

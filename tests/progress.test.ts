@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { formatTokenCount, initialProgressDisplay, progressDisplay } from "../src/display/progress.ts";
+import { WorkflowInspectorModel } from "../src/display/workflow-inspector-model.ts";
+import { WorkflowInspector } from "../src/display/workflow-inspector.ts";
+import { plainWorkflowTuiTheme } from "../src/display/workflow-tui-format.ts";
+import { WorkflowWidget } from "../src/display/workflow-widget.ts";
+import { clearRunningWorkflowUi, updateRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
 import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../src/runtime/types.ts";
+
+const plainTheme = {
+  fg: (_color: string, text: string) => text,
+  bold: (text: string) => text,
+};
 
 void test("workflow_progress_summarizes_status_input_tokens_and_active_agents", () => {
   const snapshot: WorkflowSnapshot = {
@@ -83,6 +95,130 @@ void test("format_token_count_uses_readable_suffixes", () => {
   assert.equal(formatTokenCount(1450), "1.4k");
   assert.equal(formatTokenCount(1_000_000), "1M");
 });
+
+interface TestWorkflowComponent {
+  render(width: number): string[];
+  handleInput?(data: string): void;
+}
+
+void test("workflow_widget_and_inspector_render_within_width", () => {
+  const model = new WorkflowInspectorModel({
+    workflowName: "review",
+    description: "Review auth-sensitive files",
+    plannedPhases: [{ title: "collect" }, { title: "fanout" }],
+    phases: ["collect", "fanout"],
+    traces: [],
+    agents: [
+      agent({ id: 1, phaseIndex: 1, phase: "collect", label: "inventory", status: "done", inputTokenCount: 1200 }),
+      agent({ id: 2, phaseIndex: 2, phase: "fanout", label: "review src/auth.ts", status: "running", outputTokenCount: 300 }),
+    ],
+    fanOuts: [],
+    messages: [{ phaseIndex: 2, phase: "fanout", agentId: 2, agentLabel: "review src/auth.ts", level: "info", message: "review started" }],
+    status: "running",
+  });
+
+  const widgetLines = new WorkflowWidget(
+    () => model,
+    plainWorkflowTuiTheme,
+    () => false,
+  ).render(80);
+  const inspectorLines = new WorkflowInspector(model, plainWorkflowTuiTheme, () => 18).render(100);
+
+  assert.ok(widgetLines.some((line) => line.includes("workflow review")));
+  assert.ok(inspectorLines.some((line) => line.includes("collect")));
+  assert.ok(widgetLines.every((line) => visibleWidth(line) <= 80));
+  assert.ok(inspectorLines.every((line) => visibleWidth(line) <= 100));
+});
+
+void test("running_workflow_ui_handles_widget_selection_inspector_and_abort", () => {
+  let editorText = "";
+  let terminalInputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+  let widget: TestWorkflowComponent | undefined;
+  let overlay: TestWorkflowComponent | undefined;
+  let aborted = false;
+  const ctx = {
+    mode: "tui",
+    hasUI: true,
+    cwd: process.cwd(),
+    ui: {
+      setStatus(): void {
+        return undefined;
+      },
+      onTerminalInput(handler: (data: string) => { consume?: boolean } | undefined): () => void {
+        terminalInputHandler = handler;
+        return () => {
+          terminalInputHandler = undefined;
+        };
+      },
+      getEditorText(): string {
+        return editorText;
+      },
+      custom<T>(
+        factory: (
+          tui: { requestRender(): void; terminal: { rows: number } },
+          theme: typeof plainTheme,
+          keybindings: unknown,
+          done: (result: T) => void,
+        ) => TestWorkflowComponent,
+      ): Promise<T> {
+        return new Promise<T>((resolve) => {
+          overlay = factory({ terminal: { rows: 24 }, requestRender: noop }, plainTheme, {}, resolve);
+        });
+      },
+      setWidget(key: string, content: unknown): void {
+        if (key !== "pi-workflow-running") return;
+        if (typeof content === "function") {
+          const factory = content as (
+            tui: { requestRender(): void; terminal: { rows: number } },
+            theme: typeof plainTheme,
+          ) => TestWorkflowComponent;
+          widget = factory({ terminal: { rows: 24 }, requestRender: noop }, plainTheme);
+        } else widget = undefined;
+      },
+    },
+  } as unknown as ExtensionCommandContext;
+
+  updateRunningWorkflowUi(ctx, { runId: "run-1", snapshot: workflowSnapshot(), abortWorkflow: () => (aborted = true) });
+  assert.ok(terminalInputHandler);
+  assert.ok(widget);
+  const handler = terminalInputHandler;
+  const widgetComponent = widget;
+
+  assert.deepEqual(handler("\u001B[B"), { consume: true });
+  assert.ok(widgetComponent.render(80).some((line) => line.includes("open inspector")));
+  assert.deepEqual(handler("\u001B[A"), { consume: true });
+  editorText = "not empty";
+  assert.equal(handler("\u001B[B"), undefined);
+  editorText = "";
+  assert.deepEqual(handler("\u001B[B"), { consume: true });
+  assert.deepEqual(handler("\r"), { consume: true });
+  assert.ok(overlay);
+  const overlayComponent = overlay;
+  assert.ok(overlayComponent.render(100).some((line) => line.includes("workflow review")));
+
+  overlayComponent.handleInput?.("x");
+
+  assert.equal(aborted, true);
+  clearRunningWorkflowUi(ctx, "run-1");
+});
+
+function noop(): void {
+  return undefined;
+}
+
+function workflowSnapshot(): WorkflowSnapshot {
+  return {
+    workflowName: "review",
+    description: "Review auth-sensitive files",
+    plannedPhases: [{ title: "collect" }],
+    phases: ["collect"],
+    traces: [],
+    agents: [agent({ id: 1, phaseIndex: 1, phase: "collect", label: "inventory", status: "running", startedAt: Date.now() })],
+    fanOuts: [],
+    messages: [],
+    status: "running",
+  };
+}
 
 function agent(overrides: Partial<WorkflowAgentSnapshot> & Pick<WorkflowAgentSnapshot, "id" | "label" | "status">): WorkflowAgentSnapshot {
   return {

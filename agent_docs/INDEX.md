@@ -87,9 +87,9 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Workflow completion messages should include output/session-log paths, not result content or hidden parent-agent handoffs. Let the user or a later explicit step decide what to read.
 - `/workflow-review` reviews actual workflow session logs for token-cost reduction; keep it focused on recorded token spend, repeated tool activity, common commands across agents, and actionable ways to reduce future workflow cost.
 - Workflow results, including strings, stay in output files and session logs. Do not inject them back into the parent session as hidden follow-up prompts.
-- Do not show the runtime log in default workflow TUI progress; show compact status, phase names, active/error child agents, provider input/output tokens, tool count, and step count. Keep detailed progress in counters and persisted logs.
+- Do not show the runtime log in the collapsed workflow TUI widget; show compact workflow status, agent counts, elapsed time, and token totals. Keep phase/agent detail in the explicit inspector and detailed transcripts in persisted logs.
 - Child-agent `events.jsonl` logs are runtime metadata, not transcripts: do not persist streamed message deltas or duplicate conversation payloads there; keep final messages and tool results in the canonical pi session JSONL.
-- Avoid workflow keybindings unless the user explicitly asks for an interactive control surface.
+- Avoid workflow keybindings unless the user explicitly asks for an interactive control surface; when enabled, keep them scoped to the workflow widget/inspector handoff.
 
 ### Testing
 

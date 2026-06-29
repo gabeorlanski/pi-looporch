@@ -8,12 +8,12 @@ import { createPiWorkflowAgent } from "../src/pi-agent.ts";
 import { startBackgroundWorkflowRun, type BackgroundWorkflowRunResult } from "../src/background-runs.ts";
 import { WorkflowInputError, extractWorkflowInputContract, parseWorkflowInput, validateWorkflowInput } from "../src/input.ts";
 import { completeMessage, failureMessage } from "../src/display/messages.ts";
-import { initialProgressDisplay, progressDisplay } from "../src/display/progress.ts";
 import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
 import { errorMessage } from "../src/errors.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import { workflowLogReviewMessage } from "../src/log-review.ts";
 import { createWorkflowRunId } from "../src/workflow/run-id.ts";
+import type { WorkflowSnapshot } from "../src/runtime/types.ts";
 import { normalizeWorkflowName } from "../src/workflow/paths.ts";
 import {
   readWorkflowSettings,
@@ -106,6 +106,7 @@ async function runExistingWorkflowCommand(
   }
   const abortControls = createWorkflowAbortControls(ctx);
   const activeWorkflow = beginDynamicWorkflow(ctx);
+  let parentRunId: string | undefined;
   try {
     const source = await readFile(workflow.entryFile, "utf8");
     const inputContract = extractWorkflowInputContract(source);
@@ -127,33 +128,39 @@ async function runExistingWorkflowCommand(
       return;
     }
     const input = validateWorkflowInput(parsedInput.input, workflowName, inputContract);
-    const parentRunId = createWorkflowRunId(workflowName);
+    parentRunId = createWorkflowRunId(workflowName);
+    const runId = parentRunId;
     const workflowSettings = await readWorkflowSettings(ctx.cwd, getAgentDir());
     const agent = createPiWorkflowAgent({ cwd: ctx.cwd });
     ctx.ui.notify(`Running workflow '${workflowName}' in the background`, "info");
-    updateRunningWorkflowUi(ctx, (width, theme) => initialProgressDisplay(workflowName, width, theme, input));
+    updateRunningWorkflowUi(ctx, {
+      runId,
+      snapshot: initialWorkflowSnapshot(workflowName, workflow.metadata.description, workflow.metadata.phases, input),
+      abortWorkflow: abortControls.abort,
+    });
     const run = await startBackgroundWorkflowRun({
-      runId: parentRunId,
+      runId,
       cwd: ctx.cwd,
       workflowName,
       input,
       agent,
       workflowRoots: await workflowRootsForProject(ctx.cwd),
-      agentLogParentId: parentRunId,
+      agentLogParentId: runId,
       maxParallelAgents: workflowSettings.maxParallelAgents,
       signal: abortControls.signal,
       onSnapshot: (snapshot) => {
-        updateRunningWorkflowUi(ctx, (width, theme) => progressDisplay(snapshot, width, theme));
+        updateRunningWorkflowUi(ctx, { runId, snapshot, abortWorkflow: abortControls.abort });
       },
     });
     void settleBackgroundWorkflowRun(pi, ctx, workflowName, run.finished, () => {
       activeWorkflow.done();
       abortControls.dispose();
-      clearRunningWorkflowUi(ctx);
+      clearRunningWorkflowUi(ctx, runId);
     });
   } catch (error) {
     activeWorkflow.done();
     abortControls.dispose();
+    clearRunningWorkflowUi(ctx, parentRunId);
     const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
     pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName } });
@@ -204,7 +211,27 @@ function failBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, 
   pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName } });
 }
 
-function createWorkflowAbortControls(ctx: ExtensionCommandContext): { signal: AbortSignal; dispose: () => void } {
+function initialWorkflowSnapshot(
+  workflowName: string,
+  description: string,
+  plannedPhases: WorkflowSnapshot["plannedPhases"],
+  input: unknown,
+): WorkflowSnapshot {
+  return {
+    workflowName,
+    description,
+    plannedPhases,
+    phases: [],
+    traces: [],
+    agents: [],
+    fanOuts: [],
+    messages: [],
+    status: "running",
+    input,
+  };
+}
+
+function createWorkflowAbortControls(ctx: ExtensionCommandContext): { signal: AbortSignal; abort: () => void; dispose: () => void } {
   const controller = new AbortController();
   const abortWorkflow = () => {
     if (controller.signal.aborted) return;
@@ -218,6 +245,7 @@ function createWorkflowAbortControls(ctx: ExtensionCommandContext): { signal: Ab
     : () => undefined;
   return {
     signal: controller.signal,
+    abort: abortWorkflow,
     dispose() {
       removeHostAbortListener();
     },

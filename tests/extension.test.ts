@@ -61,6 +61,9 @@ export default async function workflow(input) {
   const widgetUpdates: (string[] | undefined)[] = [];
   let activeWidget: TestWidgetComponent | undefined;
   let widgetInstallCount = 0;
+  let widgetPlacement: string | undefined;
+  let terminalInputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+  const editorText = "";
   const pi = {
     registerTool(tool: unknown): void {
       void tool;
@@ -100,8 +103,41 @@ export default async function workflow(input) {
       setStatus(key: string, text: string | undefined): void {
         if (key === "workflow") statusUpdates.push(text);
       },
-      setWidget(key: string, content: unknown): void {
+      onTerminalInput(handler: (data: string) => { consume?: boolean } | undefined): () => void {
+        terminalInputHandler = handler;
+        return () => {
+          terminalInputHandler = undefined;
+        };
+      },
+      getEditorText(): string {
+        return editorText;
+      },
+      async custom<T>(
+        factory: (
+          tui: { requestRender(): void; terminal: { rows: number } },
+          theme: typeof plainTheme,
+          keybindings: unknown,
+          done: (result: T) => void,
+        ) => TestWidgetComponent,
+      ): Promise<T> {
+        return await new Promise<T>((resolve) => {
+          const overlay = factory(
+            {
+              terminal: { rows: 32 },
+              requestRender(): void {
+                return undefined;
+              },
+            },
+            plainTheme,
+            {},
+            resolve,
+          );
+          activeWidget = overlay;
+        });
+      },
+      setWidget(key: string, content: unknown, options?: { placement?: string }): void {
         if (key !== "pi-workflow-running") return;
+        widgetPlacement = options?.placement;
         if (isTestWidgetFactory(content)) {
           widgetInstallCount++;
           activeWidget = content(
@@ -127,11 +163,14 @@ export default async function workflow(input) {
   assert.equal(sentUserMessages.length, 0);
   assert.ok(statusUpdates.includes("Waiting for 1 dynamic workflow to finish"));
   assert.equal(widgetInstallCount, 1);
+  assert.equal(widgetPlacement, "belowEditor");
   await waitForCondition(() =>
     widgetUpdates.some(
-      (update) => update?.some((line) => line.includes("workflow echo")) && update.some((line) => line.includes("NET 0/0 agents")),
+      (update) => update?.some((line) => line.includes("workflow echo")) && update.some((line) => line.includes("0/0 agents done")),
     ),
   );
+  void terminalInputHandler;
+  void editorText;
   await waitForCondition(() => sentMessages.length === 1 && statusUpdates.at(-1) === undefined);
   assert.match(sentMessages[0].content, /Workflow 'echo' complete\.\n\nWorkflow result: .*final\.json\n\nWorkflow session logs: /);
   assert.doesNotMatch(sentMessages[0].content, /hello world/);
@@ -190,6 +229,15 @@ export default async function workflow() {
       setStatus(key: string, text: string | undefined): void {
         void key;
         void text;
+      },
+      onTerminalInput(): () => void {
+        return () => undefined;
+      },
+      getEditorText(): string {
+        return "";
+      },
+      custom<T>(): Promise<T> {
+        return Promise.resolve(undefined as T);
       },
       setWidget(key: string, content: unknown): void {
         void key;

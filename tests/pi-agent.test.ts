@@ -8,7 +8,6 @@ import {
   workflowAgentLogEvent,
   parseSessionTokens,
   workflowAgentSessionLogDirectory,
-  workflowDisplayTokensFromMessage,
   createWorkflowAgentResourceLoader,
   resolveChildAgentExtensionPaths,
 } from "../src/pi-agent.ts";
@@ -110,16 +109,6 @@ void test("workflow_agent_event_log_keeps_turn_completion_without_transcript_cop
   );
 });
 
-void test("workflow_display_tokens_count_assistant_output_not_provider_total_input_or_cache", () => {
-  assert.equal(
-    workflowDisplayTokensFromMessage({
-      usage: { input: 100_000, output: 750, cacheRead: 90_000, cacheWrite: 10_000 },
-      content: [{ type: "text", text: "abcdefghijkl" }],
-    }),
-    750,
-  );
-});
-
 void test("workflow_session_tokens_parse_provider_usage_aliases_without_estimating_totals", async () => {
   const sessionDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-session-tokens-"));
   await writeFile(
@@ -133,34 +122,6 @@ void test("workflow_session_tokens_parse_provider_usage_aliases_without_estimati
   );
 
   assert.deepEqual(parseSessionTokens(sessionDir), { input: 8, output: 9, total: 17 });
-});
-
-void test("workflow_display_tokens_count_provider_output_aliases", () => {
-  assert.equal(workflowDisplayTokensFromMessage({ usage: { completion_tokens: 12, cache_read_input_tokens: 1000 } }), 12);
-  assert.equal(workflowDisplayTokensFromMessage({ usage: { outputTokenCount: 8, totalTokens: 999 } }), 8);
-  assert.equal(workflowDisplayTokensFromMessage({ usage: { totalTokens: 999, cacheRead: 1000 } }), 0);
-});
-
-void test("workflow_display_tokens_are_zero_without_provider_usage", () => {
-  assert.equal(
-    workflowDisplayTokensFromMessage({
-      content: [{ type: "text", text: "abcdefghijkl" }],
-    }),
-    0,
-  );
-});
-
-void test("workflow_display_tokens_count_provider_output_and_ignore_content", () => {
-  assert.equal(
-    workflowDisplayTokensFromMessage({
-      content: [
-        { type: "thinking", thinking: "abcdefghijkl" },
-        { type: "toolCall", name: "bash", arguments: { command: "true" } },
-      ],
-      usage: { input: 50_000, output: 1_500, cacheRead: 40_000, totalTokens: 91_500 },
-    }),
-    1_500,
-  );
 });
 
 void test("workflow_session_tokens_parse_actual_usage_from_session_file", async () => {

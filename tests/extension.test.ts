@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import type { ExtensionAPI, ExtensionCommandContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import piWorkflow from "../extensions/workflow.ts";
 
 interface RegisteredTestCommand {
@@ -32,10 +32,6 @@ function isTestWidgetFactory(content: unknown): content is TestWidgetFactory {
   return typeof content === "function";
 }
 
-function requestRenderNoop(): void {
-  void plainTheme;
-}
-
 async function waitForCondition(condition: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 50; attempt++) {
     if (condition()) return;
@@ -51,9 +47,9 @@ void test("existing_workflow_command_runs_directly_with_progress_updates", async
   await writeFile(
     path.join(workflowDir, "workflow.js"),
     `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
+export default async function workflow(input) {
   phase("running");
-  return args;
+  return input;
 }`,
     "utf8",
   );
@@ -123,9 +119,6 @@ export default async function workflow() {
         activeWidget = undefined;
         widgetUpdates.push(content as string[] | undefined);
       },
-      onTerminalInput(): () => void {
-        return () => undefined;
-      },
     },
   } as unknown as ExtensionCommandContext;
 
@@ -136,15 +129,12 @@ export default async function workflow() {
   assert.equal(widgetInstallCount, 1);
   await waitForCondition(() =>
     widgetUpdates.some(
-      (update) => update?.[0].includes("← for agents") && update.some((line) => line.includes("echo") && line.includes("agents done")),
+      (update) => update?.some((line) => line.includes("workflow echo")) && update.some((line) => line.includes("NET 0/0 agents")),
     ),
   );
-  assert.ok(widgetUpdates.some((update) => update?.length === 2));
   await waitForCondition(() => sentMessages.length === 1 && statusUpdates.at(-1) === undefined);
-  assert.match(
-    sentMessages[0].content,
-    /Workflow 'echo' complete\.\n\n\{[\s\S]*"note": "hello world"[\s\S]*\}\n\nWorkflow result: .*final\.json\n\nWorkflow session logs: /,
-  );
+  assert.match(sentMessages[0].content, /Workflow 'echo' complete\.\n\nWorkflow result: .*final\.json\n\nWorkflow session logs: /);
+  assert.doesNotMatch(sentMessages[0].content, /hello world/);
 });
 
 void test("existing_workflow_command_does_not_report_success_notification_failure_as_workflow_failure", async () => {
@@ -205,9 +195,6 @@ export default async function workflow() {
         void key;
         void content;
       },
-      onTerminalInput(): () => void {
-        return () => undefined;
-      },
     },
   } as unknown as ExtensionCommandContext;
 
@@ -218,86 +205,6 @@ export default async function workflow() {
 
   assert.ok(notifications.some((notification) => notification.message.includes("send failed") && notification.type === "error"));
   assert.ok(notifications.every((notification) => !notification.message.includes("Workflow 'complete' failed")));
-});
-
-void test("string_result_from_workflow_function_is_injected_as_parent_agent_handoff", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
-  const workflowDir = path.join(project, ".pi", "workflows", "handoff");
-  await mkdir(workflowDir, { recursive: true });
-  await writeFile(
-    path.join(workflowDir, "workflow.js"),
-    `export const metadata = { name: "handoff", description: "Return handoff", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return "Parent agent: summarize the workflow artifacts for the user.";
-}`,
-    "utf8",
-  );
-
-  const commands = new Map<string, RegisteredTestCommand>();
-  const sentMessages: { message: SentMessage; options?: { triggerTurn?: boolean; deliverAs?: string } }[] = [];
-  const pi = {
-    registerTool(tool: unknown): void {
-      void tool;
-    },
-    registerCommand(name: string, command: RegisteredTestCommand): void {
-      commands.set(name, command);
-    },
-    on(event: string, handler: unknown): void {
-      void event;
-      void handler;
-    },
-    sendMessage(message: SentMessage, options?: { triggerTurn?: boolean; deliverAs?: string }): void {
-      sentMessages.push({ message, options });
-    },
-    sendUserMessage(message: unknown): void {
-      void message;
-    },
-  } as unknown as ExtensionAPI;
-  piWorkflow(pi);
-
-  const command = commands.get("workflow");
-  assert.ok(command);
-  const ctx = {
-    cwd: project,
-    mode: "tui",
-    hasUI: true,
-    signal: undefined,
-    abort(): void {
-      void project;
-    },
-    isIdle: () => true,
-    ui: {
-      notify(message: string, type?: "info" | "warning" | "error"): void {
-        void message;
-        void type;
-      },
-      setStatus(key: string, text: string | undefined): void {
-        void key;
-        void text;
-      },
-      setWidget(key: string, content: unknown): void {
-        void key;
-        void content;
-      },
-      onTerminalInput(): () => void {
-        return () => undefined;
-      },
-    },
-  } as unknown as ExtensionCommandContext;
-
-  await command.handler("handoff", ctx);
-  await waitForCondition(() => sentMessages.length === 2);
-
-  assert.equal(sentMessages.length, 2);
-  assert.equal(sentMessages[0]?.message.display, true);
-  assert.match(sentMessages[0]?.message.content ?? "", /Workflow 'handoff' complete/);
-  assert.equal(sentMessages[1]?.message.display, false);
-  assert.equal(sentMessages[1]?.options?.triggerTurn, true);
-  assert.equal(
-    sentMessages[1]?.message.content,
-    "Workflow 'handoff' returned this handoff from workflow():\n\nParent agent: summarize the workflow artifacts for the user.",
-  );
-  assert.deepEqual(sentMessages[1]?.message.details, { kind: "workflow-string-handoff", workflowName: "handoff" });
 });
 
 void test("workflow_settings_command_writes_project_settings", async () => {
@@ -352,6 +259,54 @@ void test("workflow_settings_command_writes_project_settings", async () => {
   });
 });
 
+void test("workflow_settings_command_shows_readable_current_settings", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const commands = new Map<string, RegisteredTestCommand>();
+  const sentMessages: SentMessage[] = [];
+  const pi = {
+    registerTool(tool: unknown): void {
+      void tool;
+    },
+    registerCommand(name: string, command: RegisteredTestCommand): void {
+      commands.set(name, command);
+    },
+    on(event: string, handler: unknown): void {
+      void event;
+      void handler;
+    },
+    sendMessage(message: SentMessage): void {
+      sentMessages.push(message);
+    },
+    sendUserMessage(message: unknown): void {
+      void message;
+    },
+  } as unknown as ExtensionAPI;
+  piWorkflow(pi);
+
+  const command = commands.get("workflow-settings");
+  assert.ok(command);
+  const ctx = {
+    cwd: project,
+    mode: "tui",
+    hasUI: true,
+    ui: {
+      notify(message: string): void {
+        void message;
+      },
+    },
+  } as unknown as ExtensionCommandContext;
+
+  await command.handler("", ctx);
+
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].display, true);
+  assert.deepEqual((sentMessages[0].details as { kind?: string }).kind, "workflow-settings");
+  assert.match(sentMessages[0].content, /# Workflow Settings/);
+  assert.match(sentMessages[0].content, /Max parallel agents: 4/);
+  assert.match(sentMessages[0].content, /Project: \.pi\/settings\.json/);
+  assert.match(sentMessages[0].content, /\/workflow-settings maxParallelAgents=8/);
+});
+
 void test("existing_workflow_freeform_input_is_steered_in_current_session", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const workflowDir = path.join(project, ".pi", "workflows", "echo");
@@ -360,12 +315,12 @@ void test("existing_workflow_freeform_input_is_steered_in_current_session", asyn
     path.join(workflowDir, "workflow.js"),
     `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Treat bare text as the message field.", phases: [{ title: "Run" }] };
 /**
- * Input: args.message is the text to echo.
+ * Input: input.message is the text to echo.
  * Phase: returns immediately.
  * Agent: launches no child agents.
  * Result: returns the input.
- * @param {object} args
- * @param {string} args.message - Text to echo.
+ * @param {object} input
+ * @param {string} input.message - Text to echo.
  */
 export default async function workflow({ message }) {
   return { message };
@@ -420,9 +375,6 @@ export default async function workflow({ message }) {
         void key;
         void content;
       },
-      onTerminalInput(): () => void {
-        return () => undefined;
-      },
     },
   } as unknown as ExtensionCommandContext;
 
@@ -436,7 +388,7 @@ export default async function workflow({ message }) {
   assert.match(sentMessages[0].message.content, /Resolve input for workflow 'echo'/);
   assert.match(sentMessages[0].message.content, /call run_workflow/);
   assert.match(sentMessages[0].message.content, /Treat bare text as the message field/);
-  assert.match(sentMessages[0].message.content, /args\.message/);
+  assert.match(sentMessages[0].message.content, /input\.message/);
   assert.doesNotMatch(sentMessages[0].message.content, /workflow\.js, for secondary context only/);
   assert.doesNotMatch(sentMessages[0].message.content, /return \{ message \};/);
 });
@@ -453,10 +405,10 @@ void test("existing_workflow_command_reports_missing_required_input_without_runn
  * Phase: runs a planning phase.
  * Agent: launches one planning agent.
  * Result: returns the plan.
- * @param {object} args
- * @param {string} args.repo - Repository path.
- * @param {string} args.problem - Problem description.
- * @param {string} [args.mode=fast] - Planning depth.
+ * @param {object} input
+ * @param {string} input.repo - Repository path.
+ * @param {string} input.problem - Problem description.
+ * @param {string} [input.mode=fast] - Planning depth.
  */
 export default async function workflow({ repo, problem, mode = "fast" }) {
   phase("planning");
@@ -511,9 +463,6 @@ export default async function workflow({ repo, problem, mode = "fast" }) {
         void key;
         void content;
       },
-      onTerminalInput(): () => void {
-        return () => undefined;
-      },
     },
   } as unknown as ExtensionCommandContext;
 
@@ -523,153 +472,4 @@ export default async function workflow({ repo, problem, mode = "fast" }) {
   assert.match(sentMessages[0].content, /missing required input: problem/);
   assert.match(sentMessages[0].content, /problem=<value>/);
   assert.equal(notifications.at(-1)?.type, "warning");
-});
-
-void test("existing_workflow_command_saves_debug_log_when_flag_is_set", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
-  const workflowDir = path.join(project, ".pi", "workflows", "echo");
-  await mkdir(workflowDir, { recursive: true });
-  await writeFile(
-    path.join(workflowDir, "workflow.js"),
-    `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  phase("running");
-  log("about to return");
-  return args;
-}`,
-    "utf8",
-  );
-
-  const commands = new Map<string, RegisteredTestCommand>();
-  const sentMessages: SentMessage[] = [];
-  const pi = {
-    registerTool(tool: unknown): void {
-      void tool;
-    },
-    registerCommand(name: string, command: RegisteredTestCommand): void {
-      commands.set(name, command);
-    },
-    on(event: string, handler: unknown): void {
-      void event;
-      void handler;
-    },
-    sendMessage(message: SentMessage): void {
-      sentMessages.push(message);
-    },
-    sendUserMessage(message: unknown): void {
-      void message;
-    },
-  } as unknown as ExtensionAPI;
-  piWorkflow(pi);
-
-  const command = commands.get("workflow");
-  assert.ok(command);
-  const ctx = {
-    cwd: project,
-    mode: "tui",
-    hasUI: true,
-    signal: undefined,
-    abort(): void {
-      void project;
-    },
-    isIdle: () => true,
-    ui: {
-      notify(message: string, type?: "info" | "warning" | "error"): void {
-        void message;
-        void type;
-      },
-      setStatus(key: string, text: string | undefined): void {
-        void key;
-        void text;
-      },
-      setWidget(key: string, content: unknown): void {
-        void key;
-        void content;
-      },
-      onTerminalInput(): () => void {
-        return () => undefined;
-      },
-    },
-  } as unknown as ExtensionCommandContext;
-
-  await command.handler('echo --save-log message=hello note="hello world"', ctx);
-  await waitForCondition(() => sentMessages.length === 1);
-
-  assert.equal(sentMessages.length, 1);
-  assert.match(sentMessages[0].content, /Saved workflow log: \.pi\/workflow-runs\//);
-  assert.match(sentMessages[0].content, /"message": "hello"/);
-  assert.doesNotMatch(sentMessages[0].content, /save-log/);
-  const runIds = await readdir(path.join(project, ".pi", "workflow-runs"));
-  assert.equal(runIds.length, 1);
-  const runDir = path.join(project, ".pi", "workflow-runs", runIds[0]);
-  const input = JSON.parse(await readFile(path.join(runDir, "input.json"), "utf8")) as unknown;
-  assert.deepEqual(input, { message: "hello", note: "hello world" });
-  const events = (await readFile(path.join(runDir, "events.jsonl"), "utf8"))
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line) as { event: { type: string } });
-  assert.deepEqual(
-    events.map((event) => event.event.type),
-    ["run_started", "phase", "log", "run_completed"],
-  );
-  const finalSnapshot = JSON.parse(await readFile(path.join(runDir, "final-snapshot.json"), "utf8")) as { logs: string[] };
-  assert.deepEqual(finalSnapshot.logs, ["about to return"]);
-});
-
-void test("workflow_proposal_review_requests_changes_with_feedback", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
-  const registeredTools: ToolDefinition[] = [];
-  const pi = {
-    registerTool(tool: ToolDefinition): void {
-      registeredTools.push(tool);
-    },
-    registerCommand(name: string, command: RegisteredTestCommand): void {
-      void name;
-      void command;
-    },
-    on(event: string, handler: unknown): void {
-      void event;
-      void handler;
-    },
-    sendMessage(message: SentMessage): void {
-      void message;
-    },
-    sendUserMessage(message: unknown): void {
-      void message;
-    },
-  } as unknown as ExtensionAPI;
-  piWorkflow(pi);
-
-  const proposeWorkflow = registeredTools.find((tool) => tool.name === "propose_workflow");
-  assert.ok(proposeWorkflow);
-  const source = `export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return args;
-}`;
-  const ctx = {
-    cwd: project,
-    mode: "tui",
-    ui: {
-      custom<T>(
-        factory: (
-          tui: { requestRender(): void },
-          theme: typeof plainTheme,
-          keybindings: unknown,
-          done: (value: T) => void,
-        ) => { handleInput(data: string): void },
-      ): Promise<T> {
-        return new Promise((resolve) => {
-          const component = factory({ requestRender: requestRenderNoop }, plainTheme, undefined, resolve);
-          component.handleInput("\t");
-          for (const character of "Use gpt-5-mini for the cheap scan.") component.handleInput(character);
-          component.handleInput("\r");
-        });
-      },
-    },
-  };
-
-  await assert.rejects(
-    proposeWorkflow.execute("call-1", { name: "summarize", source, request: "summarize files" }, undefined, undefined, ctx as never),
-    /Reviewer feedback: Use gpt-5-mini for the cheap scan\./,
-  );
 });

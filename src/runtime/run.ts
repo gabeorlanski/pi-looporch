@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { RunWorkflowOptions, WorkflowEvent, WorkflowPhaseMetadata, WorkflowRunResult, WorkflowSnapshot } from "../runtime-types.ts";
-import { normalizeWorkflowName, resolveWorkflowDirectory } from "../workflow-paths.ts";
-import { compileWorkflow } from "../workflow-sandbox.ts";
-import { writeWorkflowFinalOutput, writeWorkflowOutputManifest } from "../workflow-outputs.ts";
+import type { RunWorkflowOptions, WorkflowPhaseMetadata, WorkflowRunResult, WorkflowSnapshot } from "./types.ts";
+import { normalizeWorkflowName, resolveWorkflowDirectory } from "../workflow/paths.ts";
+import { compileWorkflow } from "../workflow/sandbox.ts";
+import { writeWorkflowFinalOutput, writeWorkflowOutputManifest } from "../workflow/outputs.ts";
 import type { ActiveWorkflowRuntime } from "./context.ts";
 import { workflowGlobals } from "./globals.ts";
-import { parseWorkflowSourceMetadata } from "./metadata.ts";
+import { parseWorkflowSourceMetadata } from "../workflow/metadata.ts";
 import { appendRunMessage } from "./messages.ts";
 import { createAgentLaunchQueue, normalizeMaxParallelAgents } from "./queue.ts";
 import { cloneSerializable, cloneSnapshot } from "./serialization.ts";
@@ -26,11 +26,11 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     description: metadata.description,
     plannedPhases,
     phases: [],
-    logs: [],
     traces: [],
     agents: [],
     fanOuts: [],
     messages: [],
+    status: "running",
     input: cloneSerializable(options.input),
   };
   const runtime: ActiveWorkflowRuntime = {
@@ -38,22 +38,15 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     snapshot,
     agentLaunchQueue: createAgentLaunchQueue(maxParallelAgents),
     emit: () => options.onSnapshot?.(cloneSnapshot(snapshot)),
-    emitEvent: (event) => options.onEvent?.(cloneSerializable(event) as WorkflowEvent),
   };
   const compiled = compileWorkflow(source, entryFile, workflowGlobals(runtime, workflowDir));
   if (options.outputsDir) await writeWorkflowOutputManifest({ outputsDir: options.outputsDir, workflowName, status: "running", snapshot });
   appendRunMessage(runtime, { phaseIndex: 0, level: "info", message: `workflow ${workflowName} started` });
-  runtime.emitEvent({
-    type: "run_started",
-    workflowName,
-    description: metadata.description,
-    plannedPhases,
-  });
   runtime.emit();
   try {
     throwIfWorkflowAborted(options.signal);
     const result = cloneSerializable(await compiled.workflow(options.input));
-    snapshot.result = result;
+    snapshot.status = "done";
     const resultPath = options.outputsDir ? await writeWorkflowFinalOutput(options.outputsDir, result) : undefined;
     if (options.outputsDir)
       await writeWorkflowOutputManifest({ outputsDir: options.outputsDir, workflowName, status: "done", resultPath, snapshot });
@@ -63,13 +56,12 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
       level: "info",
       message: "workflow completed",
     });
-    runtime.emitEvent({ type: "run_completed", result });
     runtime.emit();
     return { workflowName, workflowDir, metadata, result, snapshot: cloneSnapshot(snapshot), outputsDir: options.outputsDir, resultPath };
   } catch (error) {
+    snapshot.status = "error";
     if (options.outputsDir)
       await writeWorkflowOutputManifest({ outputsDir: options.outputsDir, workflowName, status: "error", snapshot, error });
-    runtime.emitEvent({ type: "run_failed", error: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 }

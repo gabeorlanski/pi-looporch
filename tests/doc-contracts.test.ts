@@ -34,10 +34,11 @@ function privateHelper(): void {}
 void test("documentation_contracts_staged_mode_checks_only_staged_public_source", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-doc-contracts-"));
   await mkdir(path.join(project, "src"), { recursive: true });
+  await mkdir(path.join(project, "tests"), { recursive: true });
   await writeFile(path.join(project, "src", "tools.ts"), "export function missing(): void {}\n", "utf8");
-  await writeFile(path.join(project, "src", "runtime.ts"), "export { missing } from './tools.ts';\n", "utf8");
+  await writeFile(path.join(project, "tests", "tools.test.ts"), "export function helper(): void {}\n", "utf8");
 
-  const result = checkDocumentationContracts({ cwd: project, staged: true, stagedFiles: ["src/runtime.ts"] });
+  const result = checkDocumentationContracts({ cwd: project, staged: true, stagedFiles: ["tests/tools.test.ts"] });
 
   assert.deepEqual(result.issues, []);
 });
@@ -54,10 +55,9 @@ void test("documentation_contracts_require_docs_with_staged_behavior_surface_cha
   assert.deepEqual(docsSynchronizationIssues(["tests/tools.test.ts"]), []);
 });
 
-void test("documentation_contracts_scope_skips_barrels_tests_and_runtime_primitives", () => {
+void test("documentation_contracts_scope_skips_tests_and_runtime_primitives", () => {
   assert.equal(shouldCheckDocstrings("src/tools.ts"), true);
   assert.equal(shouldCheckDocstrings("extensions/workflow.ts"), true);
-  assert.equal(shouldCheckDocstrings("src/runtime.ts"), false);
   assert.equal(shouldCheckDocstrings("src/runtime/primitives/agent.ts"), false);
   assert.equal(shouldCheckDocstrings("tests/tools.test.ts"), false);
 });

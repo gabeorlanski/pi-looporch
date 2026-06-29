@@ -1,7 +1,7 @@
 /** Child-agent reasoning effort labels accepted by workflow APIs and forwarded to Pi model sessions. */
 export type ReasoningLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
-/** Static phase metadata declared by workflow authors for previews and run planning. */
+/** Static phase metadata declared by workflow authors for run planning. */
 export interface WorkflowPhaseMetadata {
   title: string;
   detail?: string;
@@ -41,22 +41,14 @@ export interface WorkflowAgentSessionLog {
   fanOutId?: number;
 }
 
-/** Compact recent tool-call summary stored in live workflow snapshots. */
-export interface WorkflowToolCallSnapshot {
-  tool: string;
-  args: string;
-}
-
 /** Incremental child-agent progress reported by the Pi adapter to the workflow runtime. */
 export interface WorkflowAgentProgress {
   statusMessage?: string;
-  tokenCount?: number;
   inputTokenCount?: number;
   outputTokenCount?: number;
   toolCallCount?: number;
   stepCount?: number;
   model?: string;
-  recentToolCall?: WorkflowToolCallSnapshot;
   sessionDir?: string;
   sessionFile?: string;
   eventsFile?: string;
@@ -81,17 +73,12 @@ export interface WorkflowAgentSnapshot {
   status: "running" | "done" | "error";
   startedAt: number;
   endedAt?: number;
-  tokenCount: number;
   inputTokenCount: number;
   outputTokenCount: number;
   toolCallCount: number;
   stepCount: number;
   fanOutId?: number;
   outputPath?: string;
-  outputPreview?: string;
-  promptPreview?: string;
-  promptLineCount?: number;
-  recentToolCalls?: WorkflowToolCallSnapshot[];
   sessionDir?: string;
   sessionFile?: string;
   eventsFile?: string;
@@ -133,40 +120,13 @@ export interface WorkflowSnapshot {
   description: string;
   plannedPhases: WorkflowPhaseMetadata[];
   phases: string[];
-  logs: string[];
   traces: WorkflowTraceSnapshot[];
   agents: WorkflowAgentSnapshot[];
   fanOuts: WorkflowFanOutSnapshot[];
-  messages?: WorkflowRunMessageSnapshot[];
+  messages: WorkflowRunMessageSnapshot[];
+  status: "running" | "done" | "error";
   input?: unknown;
-  result?: unknown;
 }
-
-/** Structured event stream emitted by workflow execution for logs and external progress consumers. */
-export type WorkflowEvent =
-  | { type: "run_started"; workflowName: string; description: string; plannedPhases: WorkflowPhaseMetadata[] }
-  | { type: "phase"; title: string; index: number }
-  | { type: "log"; message: string }
-  | { type: "trace"; trace: WorkflowTraceSnapshot }
-  | { type: "agent_schema_validation_failed"; agentId: number; attempt: number; error: string }
-  | { type: "fanout_started"; fanOut: WorkflowFanOutSnapshot }
-  | { type: "fanout_progress"; fanOut: WorkflowFanOutSnapshot }
-  | { type: "agent_started"; agent: WorkflowAgentSnapshot }
-  | {
-      type: "agent_progress";
-      agentId: number;
-      message?: string;
-      tokenCount: number;
-      inputTokenCount: number;
-      outputTokenCount: number;
-      toolCallCount: number;
-      stepCount: number;
-      model?: string;
-    }
-  | { type: "agent_done"; agentId: number }
-  | { type: "agent_error"; agentId: number; error: string }
-  | { type: "run_completed"; result: unknown }
-  | { type: "run_failed"; error: string };
 
 /** Fully normalized inputs and injected dependencies required to execute a saved workflow. */
 export interface RunWorkflowOptions {
@@ -180,7 +140,6 @@ export interface RunWorkflowOptions {
   maxParallelAgents: number;
   signal?: AbortSignal;
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
-  onEvent?: (event: WorkflowEvent) => void;
 }
 
 /** Final workflow execution result returned after successful completion. */

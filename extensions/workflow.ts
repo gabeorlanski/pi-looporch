@@ -1,40 +1,27 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import {
-  Container,
-  Editor,
-  Key,
-  SettingsList,
-  isKeyRelease,
-  isKeyRepeat,
-  matchesKey,
-  truncateToWidth,
-  type SettingItem,
-} from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { naturalLanguageRequestMessage, steerableInputResolutionMessage } from "../src/prompt-templates.ts";
 import { discoverWorkflows, workflowRootsForProject } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
-import { type GeneratedWorkflowDraft, type WorkflowReviewer, type WorkflowReviewDecision } from "../src/request.ts";
 import { startBackgroundWorkflowRun, type BackgroundWorkflowRunResult } from "../src/background-runs.ts";
-import { createWorkflowRunId, createWorkflowRunLog, type WorkflowRunLog } from "../src/run-logs.ts";
-import { normalizeWorkflowName, type WorkflowSnapshot } from "../src/runtime.ts";
 import { WorkflowInputError, extractWorkflowInputContract, parseWorkflowInput, validateWorkflowInput } from "../src/input.ts";
-import { completeMessage, failureMessage, workflowStringHandoffMessage } from "../src/display/messages.ts";
-import { initialProgressDisplay, progressDisplay, type ProgressTheme } from "../src/display/progress.ts";
-import { createWorkflowInspector, type WorkflowInspector } from "../src/display/workflow-inspector-controller.ts";
+import { completeMessage, failureMessage } from "../src/display/messages.ts";
+import { initialProgressDisplay, progressDisplay } from "../src/display/progress.ts";
 import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
-import { approvalLines } from "../src/display/approval.ts";
+import { errorMessage } from "../src/errors.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import { workflowLogReviewMessage } from "../src/log-review.ts";
+import { createWorkflowRunId } from "../src/workflow/run-id.ts";
+import { normalizeWorkflowName } from "../src/workflow/paths.ts";
 import {
   readWorkflowSettings,
   writeGlobalWorkflowSettings,
   writeProjectWorkflowSettings,
   type WorkflowSettings,
   type WorkflowSettingsPatch,
-} from "../src/workflow-settings.ts";
+} from "../src/workflow/settings.ts";
 
 const MESSAGE_TYPE = "pi-workflow-message";
 
@@ -44,7 +31,6 @@ export default function piWorkflow(pi: ExtensionAPI) {
 
   for (const tool of createWorkflowTools({
     agentForContext: (ctx) => createPiWorkflowAgent({ cwd: ctx.cwd }),
-    reviewerForContext: (ctx) => createReviewer(ctx),
   })) {
     pi.registerTool(tool);
   }
@@ -62,7 +48,7 @@ export default function piWorkflow(pi: ExtensionAPI) {
 
   pi.registerCommand("workflow-settings", {
     description: "Configure project workflow settings",
-    handler: async (args, ctx) => workflowSettingsCommand(ctx, args),
+    handler: async (args, ctx) => workflowSettingsCommand(pi, ctx, args),
   });
 
   pi.on("session_start", async (_event, ctx) => {
@@ -118,29 +104,14 @@ async function runExistingWorkflowCommand(
     ctx.ui.notify(`Workflow '${workflowName}' not found.`, "warning");
     return;
   }
-  let runLog: WorkflowRunLog | undefined;
-  let lastSnapshot: WorkflowSnapshot | undefined;
-  const inspectorRef: { current?: WorkflowInspector } = {};
-  const abortControls = createWorkflowAbortControls(ctx, () => inspectorRef.current?.isOpen() ?? false);
-  const inspector = createWorkflowInspector(ctx, {
-    stop: () => {
-      abortControls.abort();
-      ctx.abort();
-      ctx.ui.notify("Stopping workflow run", "warning");
-    },
-    pause: () => ctx.ui.notify("Workflow pause is cooperative and not available for active child agents yet.", "warning"),
-    save: () => ctx.ui.notify("Workflow outputs are saved automatically in the temp outputs directory.", "info"),
-  });
-  inspectorRef.current = inspector;
+  const abortControls = createWorkflowAbortControls(ctx);
   const activeWorkflow = beginDynamicWorkflow(ctx);
   try {
-    const commandOptions = parseWorkflowCommandOptions(rawInput);
     const source = await readFile(workflow.entryFile, "utf8");
     const inputContract = extractWorkflowInputContract(source);
-    const parsedInput = parseWorkflowInput(commandOptions.rawInput);
+    const parsedInput = parseWorkflowInput(rawInput);
     if (parsedInput.action === "resolve") {
       activeWorkflow.done();
-      inspector.dispose();
       abortControls.dispose();
       ctx.ui.notify(`Workflow '${workflowName}' input resolution sent to current session`, "info");
       sendWhenReady(
@@ -159,20 +130,8 @@ async function runExistingWorkflowCommand(
     const parentRunId = createWorkflowRunId(workflowName);
     const workflowSettings = await readWorkflowSettings(ctx.cwd, getAgentDir());
     const agent = createPiWorkflowAgent({ cwd: ctx.cwd });
-    if (commandOptions.saveLog) {
-      runLog = await createWorkflowRunLog({
-        cwd: ctx.cwd,
-        workflowName,
-        workflowDir: workflow.dir,
-        metadata: workflow.metadata,
-        source,
-        input,
-        runId: parentRunId,
-      });
-      ctx.ui.notify(`Saving workflow log to ${relativeToProject(ctx.cwd, runLog.runDir)}`, "info");
-    }
     ctx.ui.notify(`Running workflow '${workflowName}' in the background`, "info");
-    updateRunningWorkflowUi(ctx, (width, theme) => initialProgressDisplay(workflowName, width, theme, input), inspector);
+    updateRunningWorkflowUi(ctx, (width, theme) => initialProgressDisplay(workflowName, width, theme, input));
     const run = await startBackgroundWorkflowRun({
       runId: parentRunId,
       cwd: ctx.cwd,
@@ -183,36 +142,21 @@ async function runExistingWorkflowCommand(
       agentLogParentId: parentRunId,
       maxParallelAgents: workflowSettings.maxParallelAgents,
       signal: abortControls.signal,
-      onEvent: (event) => runLog?.recordEvent(event),
       onSnapshot: (snapshot) => {
-        lastSnapshot = snapshot;
-        inspector.update(snapshot);
-        updateRunningWorkflowUi(ctx, (width, theme) => progressDisplay(snapshot, width, theme), inspector);
+        updateRunningWorkflowUi(ctx, (width, theme) => progressDisplay(snapshot, width, theme));
       },
     });
-    void settleBackgroundWorkflowRun(
-      pi,
-      ctx,
-      workflowName,
-      run.finished,
-      runLog,
-      () => lastSnapshot,
-      () => {
-        activeWorkflow.done();
-        inspector.dispose();
-        abortControls.dispose();
-        clearRunningWorkflowUi(ctx);
-      },
-    );
+    void settleBackgroundWorkflowRun(pi, ctx, workflowName, run.finished, () => {
+      activeWorkflow.done();
+      abortControls.dispose();
+      clearRunningWorkflowUi(ctx);
+    });
   } catch (error) {
     activeWorkflow.done();
-    inspector.dispose();
     abortControls.dispose();
-    await runLog?.fail(error, lastSnapshot);
-    const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
-    const message = withWorkflowLogPath(error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error), logPath);
+    const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
-    pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName, logPath } });
+    pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName } });
   }
 }
 
@@ -221,80 +165,46 @@ async function settleBackgroundWorkflowRun(
   ctx: ExtensionCommandContext,
   workflowName: string,
   finished: Promise<BackgroundWorkflowRunResult>,
-  runLog: WorkflowRunLog | undefined,
-  lastSnapshot: () => WorkflowSnapshot | undefined,
   cleanup: () => void,
 ): Promise<void> {
   try {
     const result = await finished;
     try {
-      await completeBackgroundWorkflow(pi, ctx, result, runLog);
+      completeBackgroundWorkflow(pi, ctx, result);
     } catch (error) {
       ctx.ui.notify(`Workflow '${result.workflowName}' completed, but completion handling failed: ${errorMessage(error)}`, "error");
     }
   } catch (error) {
-    await failBackgroundWorkflow(pi, ctx, workflowName, error, runLog, lastSnapshot());
+    failBackgroundWorkflow(pi, ctx, workflowName, error);
   } finally {
     cleanup();
   }
 }
 
-async function completeBackgroundWorkflow(
-  pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
-  result: BackgroundWorkflowRunResult,
-  runLog: WorkflowRunLog | undefined,
-): Promise<void> {
-  await runLog?.complete(result.result, result.snapshot);
-  const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
-  const sessionLogMessage = workflowSessionLogMessage(result.sessionLogDir);
-  const outputsMessage = workflowOutputsMessage(result);
+function completeBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, result: BackgroundWorkflowRunResult): void {
+  const outputsMessage = result.resultPath
+    ? `Workflow result: ${result.resultPath}`
+    : `Workflow outputs: ${result.outputsDir ?? "not saved"}`;
   pi.sendMessage({
     customType: MESSAGE_TYPE,
-    content: `${withWorkflowLogPath(completeMessage(result.workflowName, result.result), logPath)}\n\n${outputsMessage}\n\n${sessionLogMessage}`,
+    content: `${completeMessage(result.workflowName)}\n\n${outputsMessage}\n\nWorkflow session logs: ${result.sessionLogDir}`,
     display: true,
     details: {
       workflowName: result.workflowName,
-      result: result.result,
-      snapshot: result.snapshot,
-      logPath,
       outputsDir: result.outputsDir,
       resultPath: result.resultPath,
       sessionLogDir: result.sessionLogDir,
     },
   });
-  if (typeof result.result === "string") sendWorkflowStringHandoff(pi, ctx, result.workflowName, result.result);
 }
 
-async function failBackgroundWorkflow(
-  pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
-  workflowName: string,
-  error: unknown,
-  runLog: WorkflowRunLog | undefined,
-  lastSnapshot: WorkflowSnapshot | undefined,
-): Promise<void> {
-  await runLog?.fail(error, lastSnapshot);
-  const logPath = runLog ? relativeToProject(ctx.cwd, runLog.runDir) : undefined;
-  const message = withWorkflowLogPath(error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error), logPath);
+function failBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, workflowName: string, error: unknown): void {
+  const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
   ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
-  pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName, logPath } });
+  pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName } });
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function workflowOutputsMessage(result: BackgroundWorkflowRunResult): string {
-  if (result.resultPath) return `Workflow result: ${result.resultPath}`;
-  if (result.outputsDir) return `Workflow outputs: ${result.outputsDir}`;
-  return "Workflow outputs: not saved";
-}
-
-function createWorkflowAbortControls(
-  ctx: ExtensionCommandContext,
-  shouldIgnoreEscape: () => boolean = () => false,
-): { signal: AbortSignal; abort: () => void; dispose: () => void } {
+function createWorkflowAbortControls(ctx: ExtensionCommandContext): { signal: AbortSignal; dispose: () => void } {
   const controller = new AbortController();
   const abortWorkflow = () => {
     if (controller.signal.aborted) return;
@@ -306,47 +216,12 @@ function createWorkflowAbortControls(
         return () => ctx.signal?.removeEventListener("abort", abortWorkflow);
       })()
     : () => undefined;
-  const unsubscribeInput = ctx.ui.onTerminalInput((data) => {
-    if (isKeyRepeat(data) || isKeyRelease(data) || !matchesKey(data, Key.escape) || shouldIgnoreEscape()) return undefined;
-    abortWorkflow();
-    ctx.abort();
-    ctx.ui.notify("Aborting workflow run", "warning");
-    return { consume: true };
-  });
   return {
     signal: controller.signal,
-    abort: abortWorkflow,
     dispose() {
-      unsubscribeInput();
       removeHostAbortListener();
     },
   };
-}
-
-function parseWorkflowCommandOptions(rawInput: string): { rawInput: string; saveLog: boolean } {
-  const tokens = rawInput.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
-  let saveLog = false;
-  const inputTokens: string[] = [];
-  for (const token of tokens) {
-    if (token === "--save-log") {
-      saveLog = true;
-      continue;
-    }
-    inputTokens.push(token);
-  }
-  return { rawInput: inputTokens.join(" "), saveLog };
-}
-
-function withWorkflowLogPath(message: string, logPath: string | undefined): string {
-  return logPath ? `${message}\n\nSaved workflow log: ${logPath}` : message;
-}
-
-function workflowSessionLogMessage(sessionLogDir: string): string {
-  return `Workflow session logs: ${sessionLogDir}`;
-}
-
-function relativeToProject(cwd: string, target: string): string {
-  return path.relative(cwd, target) || ".";
 }
 
 function sendWhenReady(pi: ExtensionAPI, ctx: ExtensionCommandContext, message: string): void {
@@ -361,100 +236,7 @@ function sendWhenReady(pi: ExtensionAPI, ctx: ExtensionCommandContext, message: 
   );
 }
 
-function sendWorkflowStringHandoff(pi: ExtensionAPI, ctx: ExtensionCommandContext, workflowName: string, handoff: string): void {
-  pi.sendMessage(
-    {
-      customType: MESSAGE_TYPE,
-      content: workflowStringHandoffMessage(workflowName, handoff),
-      display: false,
-      details: { kind: "workflow-string-handoff", workflowName },
-    },
-    ctx.isIdle() ? { triggerTurn: true } : { triggerTurn: true, deliverAs: "followUp" },
-  );
-}
-
-function createReviewer(ctx: ExtensionContext): WorkflowReviewer {
-  return async ({ draft }) => {
-    if (ctx.mode !== "tui") return { action: "reject", reason: "Generated workflows require TUI review before save or run" };
-    return reviewGeneratedWorkflow(ctx, draft);
-  };
-}
-
-async function reviewGeneratedWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft): Promise<WorkflowReviewDecision> {
-  return terminalReviewWorkflow(ctx, draft);
-}
-
-async function terminalReviewWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft): Promise<WorkflowReviewDecision> {
-  return ctx.ui.custom<WorkflowReviewDecision>((tui, theme, _keybindings, done) => {
-    let feedbackMode = false;
-    const editor = new Editor(
-      tui,
-      {
-        borderColor: (text) => theme.fg("borderMuted", text),
-        selectList: {
-          selectedPrefix: (text) => theme.fg("accent", text),
-          selectedText: (text) => theme.fg("accent", theme.bold(text)),
-          description: (text) => theme.fg("dim", text),
-          scrollInfo: (text) => theme.fg("dim", text),
-          noMatch: (text) => theme.fg("error", text),
-        },
-      },
-      { paddingX: 0 },
-    );
-    editor.onSubmit = (value) => {
-      const feedback = value.trim();
-      if (!feedback) {
-        feedbackMode = false;
-        tui.requestRender();
-        return;
-      }
-      done({ action: "reject", reason: `Reviewer feedback: ${feedback}` });
-    };
-    return {
-      render(width: number): string[] {
-        return approvalLines(draft, { feedbackMode, feedback: editor.getText() }).map((line) =>
-          truncateToWidth(styleApprovalLine(line, theme), width),
-        );
-      },
-      handleInput(data: string): void {
-        if (feedbackMode) {
-          if (matchesKey(data, Key.escape)) {
-            feedbackMode = false;
-            editor.setText("");
-            tui.requestRender();
-            return;
-          }
-          editor.handleInput(data);
-          tui.requestRender();
-          return;
-        }
-        if (matchesKey(data, Key.tab)) {
-          feedbackMode = true;
-          tui.requestRender();
-          return;
-        }
-        if (data === "y" || data === "Y") done({ action: "approve" });
-        if (data === "n" || data === "N" || matchesKey(data, Key.escape))
-          done({ action: "reject", reason: "Generated workflow was rejected" });
-      },
-      invalidate(): void {
-        tui.requestRender();
-      },
-    };
-  });
-}
-
-function styleApprovalLine(line: string, theme: ProgressTheme): string {
-  if (line.includes("Review generated workflow")) return theme.fg("accent", theme.bold(line));
-  if (line.includes("Decision") || line.includes("approve")) return theme.fg("success", line);
-  if (line.includes("Feedback") || line.includes("feedback")) return theme.fg("warning", line);
-  if (line.includes("Intent") || line.includes("Plan") || line.includes("Runtime Surface") || line.includes("Source Preview"))
-    return theme.bold(line);
-  if (line.includes("Source:")) return theme.fg("muted", line);
-  return line;
-}
-
-async function workflowSettingsCommand(ctx: ExtensionCommandContext, args: string): Promise<void> {
+async function workflowSettingsCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
   const trimmed = args.trim();
   if (trimmed) {
     try {
@@ -470,23 +252,22 @@ async function workflowSettingsCommand(ctx: ExtensionCommandContext, args: strin
     }
     return;
   }
-  if (ctx.mode !== "tui") {
-    const settings = await readWorkflowSettings(ctx.cwd, getAgentDir());
-    ctx.ui.notify(workflowSettingsSummary(settings), "info");
-    return;
-  }
-  await tuiWorkflowSettings(ctx);
+  const settings = await readWorkflowSettings(ctx.cwd, getAgentDir());
+  pi.sendMessage({
+    customType: MESSAGE_TYPE,
+    content: workflowSettingsMessage(getAgentDir(), settings),
+    display: true,
+    details: { kind: "workflow-settings", settings },
+  });
 }
 
 function parseWorkflowSettingsArgs(args: string): { scope: "global" | "project"; settings: WorkflowSettingsPatch } {
   const { scope, body } = parseWorkflowSettingsScope(args);
-  const maxParallelMatch = /^(?:(?:maxParallelAgents|maxParallel)\s*=\s*)?(\d+)$/.exec(body);
-  if (maxParallelMatch) return { scope, settings: { maxParallelAgents: Number(maxParallelMatch[1]) } };
-  const extensionsMatch = /^(?:childAgentExtensions|childExtensions|extensions)\s*=\s*(.*)$/.exec(body);
-  if (extensionsMatch) return { scope, settings: { childAgentExtensions: parseExtensionList(extensionsMatch[1]) } };
-  throw new Error(
-    "Usage: /workflow-settings [--global] maxParallelAgents=<positive integer> | childAgentExtensions=<extension>[,<extension>...]",
-  );
+  const assignment = /^([A-Za-z][A-Za-z0-9]*)\s*=\s*(.*)$/.exec(body);
+  const name = assignment ? assignment[1] : /^\d+$/.test(body) ? "maxParallelAgents" : "";
+  const setting = workflowSettingCommands.find((candidate) => candidate.names.includes(name));
+  if (!setting) throw new Error(workflowSettingsUsage());
+  return { scope, settings: setting.parse(assignment ? assignment[2] : body) };
 }
 
 function parseWorkflowSettingsScope(args: string): { scope: "global" | "project"; body: string } {
@@ -505,76 +286,66 @@ function parseExtensionList(value: string): string[] {
 
 function workflowSettingsSavedMessage(scope: "global" | "project", settings: WorkflowSettingsPatch): string {
   const target = scope === "global" ? "global settings.json" : ".pi/settings.json";
-  if (settings.maxParallelAgents !== undefined) {
-    return `Workflow max parallel agents set to ${String(settings.maxParallelAgents)} in ${target}`;
-  }
-  return `Workflow child agent extensions set to ${formatExtensionList(settings.childAgentExtensions ?? [])} in ${target}`;
+  const setting = workflowSettingCommands.find((candidate) => candidate.value(settings) !== undefined);
+  return setting ? setting.savedMessage(settings, target) : `Workflow settings saved in ${target}`;
 }
 
-function workflowSettingsSummary(settings: WorkflowSettings): string {
-  return `Workflow max parallel agents: ${String(settings.maxParallelAgents)}. Child agent extensions: ${formatExtensionList(
-    settings.childAgentExtensions,
-  )}. Set with /workflow-settings maxParallelAgents=<n> or childAgentExtensions=<extension>[,<extension>...]. Use --global to write global settings.`;
+function workflowSettingsMessage(agentDir: string, settings: WorkflowSettings): string {
+  const globalSettings = path.join(agentDir, "settings.json");
+  return [
+    "# Workflow Settings",
+    "",
+    `- Max parallel agents: ${String(settings.maxParallelAgents)}`,
+    `- Child agent extensions: ${formatExtensionList(settings.childAgentExtensions)}`,
+    "",
+    "Settings are merged from project settings over global settings.",
+    "",
+    "- Project: .pi/settings.json",
+    `- Global: ${globalSettings}`,
+    "",
+    "Commands:",
+    "",
+    "```text",
+    ...workflowSettingCommands.flatMap((setting) => setting.examples),
+    "```",
+  ].join("\n");
 }
 
 function formatExtensionList(extensions: string[]): string {
   return extensions.length ? extensions.join(", ") : "none";
 }
 
-async function tuiWorkflowSettings(ctx: ExtensionCommandContext): Promise<void> {
-  const settings = await readWorkflowSettings(ctx.cwd, getAgentDir());
-  await ctx.ui.custom<undefined>((tui, theme, _keybindings, done) => {
-    const items: SettingItem[] = [
-      {
-        id: "maxParallelAgents",
-        label: "Max parallel agents",
-        currentValue: String(settings.maxParallelAgents),
-        values: workflowMaxParallelChoices(settings.maxParallelAgents),
-      },
-    ];
-    const container = new Container();
-    container.addChild({
-      render(width: number): string[] {
-        return [
-          truncateToWidth(theme.fg("accent", theme.bold("Workflow Settings")), width),
-          truncateToWidth(theme.fg("muted", "Saved to .pi/settings.json. Extra parallel items queue until a slot opens."), width),
-          truncateToWidth(theme.fg("muted", `Child agent extensions: ${formatExtensionList(settings.childAgentExtensions)}`), width),
-          "",
-        ];
-      },
-      invalidate(): void {
-        return undefined;
-      },
-    });
-    const settingsList = new SettingsList(
-      items,
-      5,
-      getSettingsListTheme(),
-      (id, newValue) => {
-        if (id !== "maxParallelAgents") return;
-        const next = { maxParallelAgents: Number(newValue) };
-        void writeProjectWorkflowSettings(ctx.cwd, next)
-          .then(() => ctx.ui.notify(`Workflow max parallel agents set to ${String(next.maxParallelAgents)}`, "info"))
-          .catch((error: unknown) => ctx.ui.notify(error instanceof Error ? error.message : String(error), "error"));
-      },
-      () => done(undefined),
-      { enableSearch: false },
-    );
-    container.addChild(settingsList);
-    return {
-      render: (width: number): string[] => container.render(width),
-      invalidate: () => container.invalidate(),
-      handleInput(data: string): void {
-        settingsList.handleInput(data);
-        tui.requestRender();
-      },
-    };
-  });
+interface WorkflowSettingCommand {
+  names: string[];
+  examples: string[];
+  parse: (value: string) => WorkflowSettingsPatch;
+  value: (settings: WorkflowSettingsPatch) => unknown;
+  savedMessage: (settings: WorkflowSettingsPatch, target: string) => string;
 }
 
-function workflowMaxParallelChoices(currentValue: number): string[] {
-  const values = new Set([1, 2, 3, 4, 6, 8, 12, 16, 24, 32, currentValue]);
-  return [...values].sort((left, right) => left - right).map(String);
+const workflowSettingCommands: WorkflowSettingCommand[] = [
+  {
+    names: ["maxParallelAgents", "maxParallel"],
+    examples: ["/workflow-settings maxParallelAgents=8", "/workflow-settings --global maxParallelAgents=4"],
+    parse: (value) => ({ maxParallelAgents: Number(value) }),
+    value: (settings) => settings.maxParallelAgents,
+    savedMessage: (settings, target) => `Workflow max parallel agents set to ${String(settings.maxParallelAgents)} in ${target}`,
+  },
+  {
+    names: ["childAgentExtensions", "childExtensions", "extensions"],
+    examples: [
+      "/workflow-settings childAgentExtensions=pi-subagents,./extensions/todo.ts",
+      "/workflow-settings --global childAgentExtensions=",
+    ],
+    parse: (value) => ({ childAgentExtensions: parseExtensionList(value) }),
+    value: (settings) => settings.childAgentExtensions,
+    savedMessage: (settings, target) =>
+      `Workflow child agent extensions set to ${formatExtensionList(settings.childAgentExtensions ?? [])} in ${target}`,
+  },
+];
+
+function workflowSettingsUsage(): string {
+  return "Usage: /workflow-settings [--global] maxParallelAgents=<positive integer> | childAgentExtensions=<extension>[,<extension>...]";
 }
 
 async function reviewWorkflowCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {

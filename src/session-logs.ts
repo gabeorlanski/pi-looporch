@@ -1,13 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { WorkflowSnapshot } from "./runtime.ts";
+import type { WorkflowSnapshot } from "./runtime/types.ts";
+import { errorMessage } from "./errors.ts";
 
 export interface WorkflowSessionSummaryOptions {
   cwd: string;
   parentId: string;
   snapshot: WorkflowSnapshot;
-  result?: unknown;
+  resultPath?: string;
   error?: unknown;
   sessionsRoot?: string;
 }
@@ -43,24 +44,16 @@ function workflowSessionSummary(options: WorkflowSessionSummaryOptions): Record<
     plannedPhases: options.snapshot.plannedPhases,
     phases: options.snapshot.phases.map((title, index) => ({ index: index + 1, title })),
     traces: options.snapshot.traces,
-    messages: options.snapshot.messages ?? [],
+    messages: options.snapshot.messages,
     agents: options.snapshot.agents.map((agent) => {
       const summaryAgent = { ...agent };
       delete summaryAgent.message;
       return summaryAgent;
     }),
     fanOuts: options.snapshot.fanOuts,
-    ...(options.result !== undefined ? { result: options.result } : {}),
+    ...(options.resultPath !== undefined ? { resultPath: options.resultPath } : {}),
     ...(options.error !== undefined ? { error: errorMessage(options.error) } : {}),
   };
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  if (typeof error === "number" || typeof error === "boolean" || typeof error === "bigint") return String(error);
-  if (typeof error === "symbol") return error.description ?? "symbol";
-  return JSON.stringify(error);
 }
 
 function workflowProjectKey(cwd: string): string {

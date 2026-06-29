@@ -17,15 +17,11 @@ interface WorkflowLogAgentReview {
   id: number;
   label: string;
   phase?: string;
-  status?: string;
   model?: string;
   inputTokenCount: number;
   outputTokenCount: number;
   tokenCount: number;
   toolCallCount: number;
-  sessionDir?: string;
-  sessionFile?: string;
-  eventsFile?: string;
   toolCounts: Map<string, number>;
   bashCommands: string[];
 }
@@ -34,7 +30,6 @@ interface WorkflowLogReview {
   logDir: string;
   workflowName: string;
   description?: string;
-  phases: string[];
   agents: WorkflowLogAgentReview[];
 }
 
@@ -98,7 +93,6 @@ async function analyzeWorkflowLogDirectory(logDir: string, summary: Record<strin
     logDir,
     workflowName: stringValue(summary.workflowName) ?? "unknown",
     ...(stringValue(summary.description) ? { description: stringValue(summary.description) } : {}),
-    phases: arrayValue(summary.phases).map((phase) => stringValue(recordValue(phase).title) ?? "phase"),
     agents,
   };
 }
@@ -118,15 +112,11 @@ async function analyzeAgentLog(rawAgent: unknown): Promise<WorkflowLogAgentRevie
     id: numberValue(agent.id) ?? 0,
     label: stringValue(agent.label) ?? "agent",
     ...(stringValue(agent.phase) ? { phase: stringValue(agent.phase) } : {}),
-    ...(stringValue(agent.status) ? { status: stringValue(agent.status) } : {}),
     ...(stringValue(agent.model) ? { model: stringValue(agent.model) } : {}),
     inputTokenCount,
     outputTokenCount,
-    tokenCount: sessionUsage?.total ?? numberValue(agent.tokenCount) ?? inputTokenCount + outputTokenCount,
+    tokenCount: sessionUsage?.total ?? inputTokenCount + outputTokenCount,
     toolCallCount,
-    ...(sessionDir ? { sessionDir } : {}),
-    ...(sessionFile ? { sessionFile } : {}),
-    ...(eventsFile ? { eventsFile } : {}),
     toolCounts,
     bashCommands,
   };
@@ -134,24 +124,15 @@ async function analyzeAgentLog(rawAgent: unknown): Promise<WorkflowLogAgentRevie
 
 async function readToolCounts(eventsFile: string): Promise<Map<string, number>> {
   if (!existsSync(eventsFile)) return new Map();
-  const byCallId = new Map<string, string>();
-  const anonymousCounts = new Map<string, number>();
+  const counts = new Map<string, number>();
   for (const line of (await readFile(eventsFile, "utf8")).split("\n")) {
     if (!line.trim()) continue;
     const entry = readJsonLine(line);
     const event = recordValue(recordValue(entry).event ?? entry);
-    const type = stringValue(event.type);
-    if (!type?.startsWith("tool_execution_")) continue;
+    if (event.type !== "tool_execution_start") continue;
     const toolName = stringValue(event.toolName) ?? "tool";
-    const toolCallId = stringValue(event.toolCallId);
-    if (toolCallId) {
-      byCallId.set(toolCallId, toolName);
-    } else if (type === "tool_execution_start") {
-      anonymousCounts.set(toolName, (anonymousCounts.get(toolName) ?? 0) + 1);
-    }
+    counts.set(toolName, (counts.get(toolName) ?? 0) + 1);
   }
-  const counts = new Map(anonymousCounts);
-  for (const toolName of byCallId.values()) counts.set(toolName, (counts.get(toolName) ?? 0) + 1);
   return counts;
 }
 
@@ -244,14 +225,11 @@ function toolLines(agents: WorkflowLogAgentReview[]): string[] {
 
 function recommendationLines(agents: WorkflowLogAgentReview[], totalTokens: number): string[] {
   const lines: string[] = [];
-  const expensiveAgents = agents.filter((agent) => totalTokens > 0 && agent.tokenCount / totalTokens >= 0.25);
-  for (const agent of expensiveAgents) {
-    lines.push(
-      `- Focus first on '${agent.label}': it used ${String(Math.round((agent.tokenCount / totalTokens) * 100))}% of recorded tokens.`,
-    );
+  for (const agent of agents.filter((agent) => totalTokens > 0 && agent.tokenCount / totalTokens >= 0.25).slice(0, 3)) {
+    const percent = String(Math.round((agent.tokenCount / totalTokens) * 100));
+    lines.push(`- Focus first on '${agent.label}': it used ${percent}% of recorded tokens.`);
   }
-  const repeatedCommands = repeatedBashCommands(agents);
-  for (const [command, agentCount] of repeatedCommands.slice(0, 5)) {
+  for (const [command, agentCount] of repeatedBashCommands(agents).slice(0, 5)) {
     lines.push(
       `- Command repeated across ${String(agentCount)} agents: ${inlineCode(command)}. Run it once in setup and pass the artifact/path to later agents.`,
     );
@@ -261,14 +239,9 @@ function recommendationLines(agents: WorkflowLogAgentReview[], totalTokens: numb
     lines.push(
       "- Many read calls were repeated; add a cheap indexing/summarization phase and pass concise file lists instead of full content.",
     );
-  const highInputAgents = agents.filter((agent) => agent.inputTokenCount > agent.outputTokenCount * 4 && agent.inputTokenCount >= 10_000);
-  if (highInputAgents.length)
+  if (agents.some((agent) => agent.inputTokenCount > agent.outputTokenCount * 4 && agent.inputTokenCount >= 10_000)) {
     lines.push("- Input tokens dominate; move bulk context into files and prompts that reference paths, not pasted content.");
-  const fanOutLikeAgents = sameLabelPrefixCount(agents);
-  if (fanOutLikeAgents >= 3)
-    lines.push(
-      "- Fan-out appears token-heavy; add a pre-filter stage, cap voters/workers, or skip verifier passes once budget.tokenCount is high.",
-    );
+  }
   if (!lines.length)
     lines.push(
       "- No single obvious token sink was recorded. Re-run with provider usage and child session logging enabled if this looks suspicious.",
@@ -289,15 +262,6 @@ function repeatedBashCommands(agents: WorkflowLogAgentReview[]): [string, number
     .filter(([, agentSet]) => agentSet.size > 1)
     .map(([command, agentSet]) => [command, agentSet.size] as [string, number])
     .sort((left, right) => right[1] - left[1]);
-}
-
-function sameLabelPrefixCount(agents: WorkflowLogAgentReview[]): number {
-  const counts = new Map<string, number>();
-  for (const agent of agents) {
-    const prefix = agent.label.replace(/\s+\d+$/, "").trim();
-    counts.set(prefix, (counts.get(prefix) ?? 0) + 1);
-  }
-  return Math.max(0, ...counts.values());
 }
 
 function relativeOrAbsolute(cwd: string, filePath: string): string {

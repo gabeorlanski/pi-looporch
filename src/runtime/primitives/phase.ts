@@ -8,7 +8,6 @@ export const phasePrimitive: WorkflowPrimitive<{ phase: (title: string) => void 
       runtime.snapshot.phases.push(title);
       const phaseIndex = runtime.snapshot.phases.length;
       appendRunMessage(runtime, { phaseIndex, phase: title, level: "info", message: `phase ${title}` });
-      runtime.emitEvent({ type: "phase", title, index: phaseIndex });
       runtime.emit();
     },
   }),

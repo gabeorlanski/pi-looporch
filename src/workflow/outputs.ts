@@ -1,11 +1,12 @@
 import { mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "./runtime-types.ts";
+import { errorMessage } from "../errors.ts";
+import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
 
-export type WorkflowOutputStatus = "done" | "error" | "running";
+type WorkflowOutputStatus = "done" | "error" | "running";
 
-export interface WorkflowOutputManifestEntry {
+interface WorkflowOutputManifestEntry {
   agentId: number;
   label: string;
   phaseIndex: number;
@@ -13,7 +14,7 @@ export interface WorkflowOutputManifestEntry {
   path: string;
 }
 
-export interface WorkflowOutputManifest {
+interface WorkflowOutputManifest {
   workflowName: string;
   status: WorkflowOutputStatus;
   resultPath?: string;
@@ -29,7 +30,7 @@ export function workflowFinalOutputPath(outputsDir: string): string {
   return path.join(outputsDir, "outputs", "final.json");
 }
 
-export function workflowAgentOutputPath(outputsDir: string, agentId: number, label: string): string {
+function workflowAgentOutputPath(outputsDir: string, agentId: number, label: string): string {
   return path.join(outputsDir, "outputs", `agent-${String(agentId).padStart(3, "0")}-${slugText(label, 72)}.json`);
 }
 
@@ -59,7 +60,7 @@ export async function writeWorkflowOutputManifest(options: {
   await writeJsonFileAtomic(path.join(options.outputsDir, "manifest.json"), workflowOutputManifest(options));
 }
 
-export function workflowOutputManifest(options: {
+function workflowOutputManifest(options: {
   workflowName: string;
   status: WorkflowOutputStatus;
   resultPath?: string;
@@ -91,14 +92,6 @@ async function writeJsonFileAtomic(filePath: string, value: unknown): Promise<vo
   const temporaryPath = `${filePath}.${String(process.pid)}.${String(Date.now())}.tmp`;
   await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   await rename(temporaryPath, filePath);
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  if (typeof error === "number" || typeof error === "boolean" || typeof error === "bigint") return String(error);
-  if (typeof error === "symbol") return error.description ?? "symbol";
-  return JSON.stringify(error);
 }
 
 function slugText(value: string, maxLength: number): string {

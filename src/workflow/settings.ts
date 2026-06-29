@@ -12,13 +12,13 @@ export interface WorkflowSettingsPatch {
 }
 
 export const DEFAULT_MAX_PARALLEL_AGENTS = 4;
-export const DEFAULT_CHILD_AGENT_EXTENSIONS: string[] = [];
+const DEFAULT_CHILD_AGENT_EXTENSIONS: string[] = [];
 
-export function globalSettingsPath(agentDir: string): string {
+function globalSettingsPath(agentDir: string): string {
   return path.join(agentDir, "settings.json");
 }
 
-export function projectSettingsPath(cwd: string): string {
+function projectSettingsPath(cwd: string): string {
   return path.join(cwd, ".pi", "settings.json");
 }
 
@@ -26,10 +26,6 @@ export async function readWorkflowSettings(cwd: string, agentDir: string): Promi
   const globalWorkflow = await readWorkflowSettingsObject(globalSettingsPath(agentDir));
   const projectWorkflow = await readWorkflowSettingsObject(projectSettingsPath(cwd));
   return normalizeWorkflowSettings({ ...globalWorkflow, ...projectWorkflow });
-}
-
-export async function readProjectWorkflowSettings(cwd: string): Promise<WorkflowSettings> {
-  return normalizeWorkflowSettings(await readWorkflowSettingsObject(projectSettingsPath(cwd)));
 }
 
 export async function writeGlobalWorkflowSettings(agentDir: string, settings: WorkflowSettingsPatch): Promise<void> {
@@ -40,13 +36,13 @@ export async function writeProjectWorkflowSettings(cwd: string, settings: Workfl
   await writeWorkflowSettingsFile(projectSettingsPath(cwd), settings);
 }
 
-export function normalizeMaxParallelAgents(value: unknown): number {
+function normalizeMaxParallelAgents(value: unknown): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1)
     throw new Error("workflow.maxParallelAgents must be a positive integer");
   return value;
 }
 
-export function normalizeChildAgentExtensions(value: unknown): string[] {
+function normalizeChildAgentExtensions(value: unknown): string[] {
   if (value === undefined) return [...DEFAULT_CHILD_AGENT_EXTENSIONS];
   if (!Array.isArray(value)) throw new Error("workflow.childAgentExtensions must be an array of non-empty strings");
   const extensions: string[] = [];

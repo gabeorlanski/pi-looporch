@@ -1,4 +1,4 @@
-import type { WorkflowFanOutSnapshot } from "../../runtime-types.ts";
+import type { WorkflowFanOutSnapshot } from ".././types.ts";
 import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
 
@@ -37,12 +37,10 @@ export async function runParallel<T, R>(
     level: "info",
     message: `fan-out ${fanOut.label} started with ${String(fanOut.total)} items`,
   });
-  runtime.emitEvent({ type: "fanout_started", fanOut: { ...fanOut } });
   runtime.emit();
   return runQueuedParallel(items, runtime.options.maxParallelAgents, async (item, index) => {
     if (index >= runtime.options.maxParallelAgents) {
       fanOut.running++;
-      runtime.emitEvent({ type: "fanout_progress", fanOut: { ...fanOut } });
       runtime.emit();
     }
     try {
@@ -54,7 +52,6 @@ export async function runParallel<T, R>(
       throw error;
     } finally {
       fanOut.running = Math.max(0, fanOut.running - 1);
-      runtime.emitEvent({ type: "fanout_progress", fanOut: { ...fanOut } });
       runtime.emit();
     }
   });

@@ -1,4 +1,4 @@
-import type { WorkflowTraceSnapshot } from "../../runtime-types.ts";
+import type { WorkflowTraceSnapshot } from ".././types.ts";
 import type { ActiveWorkflowRuntime, WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
 import { cloneSerializable } from "../serialization.ts";
@@ -24,7 +24,6 @@ export function recordTrace(runtime: ActiveWorkflowRuntime, label: string, value
     level: "debug",
     message: `trace ${trace.label}${trace.value === undefined ? "" : ` ${traceValueText(trace.value)}`}`,
   });
-  runtime.emitEvent({ type: "trace", trace });
   runtime.emit();
 }
 

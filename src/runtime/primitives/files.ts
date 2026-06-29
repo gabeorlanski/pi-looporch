@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { resolveWorkflowReadPath } from "../../workflow-paths.ts";
+import { resolveWorkflowReadPath } from "../../workflow/paths.ts";
 import type { WorkflowPrimitive } from "../context.ts";
 import { renderWorkflowPrompt } from "../prompts.ts";
 
@@ -19,20 +19,18 @@ export const filePrimitive: WorkflowPrimitive<{
 };
 
 export const environmentPrimitive: WorkflowPrimitive<{
-  args: unknown;
   cwd: string;
   budget: { readonly agentCount: number; readonly tokenCount: number };
 }> = {
   name: "environment",
   globals: ({ runtime }) => ({
-    args: runtime.options.input,
     cwd: path.resolve(runtime.options.cwd),
     budget: {
       get agentCount() {
         return runtime.snapshot.agents.length;
       },
       get tokenCount() {
-        return runtime.snapshot.agents.reduce((total, agent) => total + agent.tokenCount, 0);
+        return runtime.snapshot.agents.reduce((total, agent) => total + agent.inputTokenCount + agent.outputTokenCount, 0);
       },
     },
   }),

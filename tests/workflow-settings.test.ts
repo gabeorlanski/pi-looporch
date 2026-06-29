@@ -5,16 +5,16 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   DEFAULT_MAX_PARALLEL_AGENTS,
-  readProjectWorkflowSettings,
   readWorkflowSettings,
   writeGlobalWorkflowSettings,
   writeProjectWorkflowSettings,
-} from "../src/workflow-settings.ts";
+} from "../src/workflow/settings.ts";
 
 void test("workflow_settings_default_to_four_parallel_agents", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-"));
+  const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-agent-"));
 
-  assert.deepEqual(await readProjectWorkflowSettings(project), {
+  assert.deepEqual(await readWorkflowSettings(project, agentDir), {
     maxParallelAgents: DEFAULT_MAX_PARALLEL_AGENTS,
     childAgentExtensions: [],
   });
@@ -22,6 +22,7 @@ void test("workflow_settings_default_to_four_parallel_agents", async () => {
 
 void test("workflow_settings_read_and_write_project_settings_json", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-"));
+  const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-agent-"));
   await mkdir(path.join(project, ".pi"), { recursive: true });
   await writeFile(path.join(project, ".pi", "settings.json"), '{"theme":"dark","workflow":{"other":true}}\n', "utf8");
 
@@ -32,7 +33,7 @@ void test("workflow_settings_read_and_write_project_settings_json", async () => 
     theme: "dark",
     workflow: { other: true, maxParallelAgents: 8, childAgentExtensions: ["pi-subagents", "./extensions/todo.ts"] },
   });
-  assert.deepEqual(await readProjectWorkflowSettings(project), {
+  assert.deepEqual(await readWorkflowSettings(project, agentDir), {
     maxParallelAgents: 8,
     childAgentExtensions: ["pi-subagents", "./extensions/todo.ts"],
   });
@@ -53,16 +54,18 @@ void test("workflow_settings_merge_global_and_project_settings", async () => {
 
 void test("workflow_settings_reject_invalid_parallel_cap", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-"));
+  const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-agent-"));
   await mkdir(path.join(project, ".pi"), { recursive: true });
   await writeFile(path.join(project, ".pi", "settings.json"), '{"workflow":{"maxParallelAgents":0}}\n', "utf8");
 
-  await assert.rejects(readProjectWorkflowSettings(project), /workflow\.maxParallelAgents must be a positive integer/);
+  await assert.rejects(readWorkflowSettings(project, agentDir), /workflow\.maxParallelAgents must be a positive integer/);
 });
 
 void test("workflow_settings_reject_invalid_child_agent_extensions", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-"));
+  const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-agent-"));
   await mkdir(path.join(project, ".pi"), { recursive: true });
   await writeFile(path.join(project, ".pi", "settings.json"), '{"workflow":{"childAgentExtensions":[""]}}\n', "utf8");
 
-  await assert.rejects(readProjectWorkflowSettings(project), /workflow\.childAgentExtensions must be an array of non-empty strings/);
+  await assert.rejects(readWorkflowSettings(project, agentDir), /workflow\.childAgentExtensions must be an array of non-empty strings/);
 });

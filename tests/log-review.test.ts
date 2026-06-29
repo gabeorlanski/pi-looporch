@@ -25,7 +25,6 @@ void test("workflow_log_review_reports_tokens_tools_and_repeated_commands", asyn
             id: 1,
             label: "worker 1",
             phase: "scan",
-            tokenCount: 1,
             inputTokenCount: 1,
             outputTokenCount: 0,
             toolCallCount: 0,
@@ -37,7 +36,6 @@ void test("workflow_log_review_reports_tokens_tools_and_repeated_commands", asyn
             id: 2,
             label: "worker 2",
             phase: "scan",
-            tokenCount: 1,
             inputTokenCount: 1,
             outputTokenCount: 0,
             toolCallCount: 0,
@@ -68,7 +66,6 @@ void test("workflow_log_review_reports_tokens_tools_and_repeated_commands", asyn
       path.join(firstAgentDir, "events.jsonl"),
       [
         JSON.stringify({ event: { type: "tool_execution_start", toolCallId: "read-1", toolName: "read" } }),
-        JSON.stringify({ event: { type: "tool_execution_end", toolCallId: "read-1", toolName: "read" } }),
         JSON.stringify({ event: { type: "tool_execution_start", toolCallId: "bash-1", toolName: "bash" } }),
         "",
       ].join("\n"),

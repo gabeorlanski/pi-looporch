@@ -1,6 +1,6 @@
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime.ts";
 import { formatDuration, formatTokenCount, type ProgressTheme } from "./progress.ts";
+import { clamp, fit, titleLine } from "./text.ts";
 
 const MIN_WIDTH = 48;
 
@@ -68,19 +68,4 @@ function durationText(agent: WorkflowAgentSnapshot): string {
 function phaseLabel(agent: WorkflowAgentSnapshot): string {
   if (agent.phase) return agent.phase;
   return agent.phaseIndex === 0 ? "setup" : `P${String(agent.phaseIndex)}`;
-}
-
-function titleLine(title: string, width: number, theme: ProgressTheme): string {
-  const label = ` ${title} `;
-  const fillLen = Math.max(0, width - visibleWidth(label) - 4);
-  return fit(theme.fg("borderMuted", "──") + theme.fg("accent", theme.bold(label)) + theme.fg("borderMuted", "─".repeat(fillLen)), width);
-}
-
-function fit(text: string, width: number): string {
-  if (!text.includes("\u001B")) return text.length <= width ? text : `${text.slice(0, Math.max(0, width - 3))}...`;
-  return truncateToWidth(text, width, "...");
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
 }

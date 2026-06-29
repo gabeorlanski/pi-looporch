@@ -26,16 +26,6 @@ import { initialProgressDisplay, progressDisplay, type ProgressTheme } from "../
 import { createWorkflowInspector, type WorkflowInspector } from "../src/display/workflow-inspector-controller.ts";
 import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
 import { approvalLines } from "../src/display/approval.ts";
-import { parseWorkflowOutline } from "../src/workflow-outline.ts";
-import {
-  buildChangeRequest,
-  defaultExpanded,
-  flattenReviewNodes,
-  renderWorkflowReview,
-  reviewHasFeedback,
-  type ReviewComment,
-  type ReviewNode,
-} from "../src/display/workflow-review.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import { workflowLogReviewMessage } from "../src/log-review.ts";
 import {
@@ -317,7 +307,7 @@ function createWorkflowAbortControls(
       })()
     : () => undefined;
   const unsubscribeInput = ctx.ui.onTerminalInput((data) => {
-    if (isRepeatedOrReleasedKey(data) || !matchesKey(data, Key.escape) || shouldIgnoreEscape()) return undefined;
+    if (isKeyRepeat(data) || isKeyRelease(data) || !matchesKey(data, Key.escape) || shouldIgnoreEscape()) return undefined;
     abortWorkflow();
     ctx.abort();
     ctx.ui.notify("Aborting workflow run", "warning");
@@ -391,169 +381,7 @@ function createReviewer(ctx: ExtensionContext): WorkflowReviewer {
 }
 
 async function reviewGeneratedWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft): Promise<WorkflowReviewDecision> {
-  const outcome = await tuiReviewWorkflow(ctx, draft);
-  return outcome === "fallback" ? terminalReviewWorkflow(ctx, draft) : outcome;
-}
-
-function tuiReviewWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft): Promise<WorkflowReviewDecision | "fallback"> {
-  const workflowDir = draft.sourceDirectory ?? path.join(ctx.cwd, ".pi", "workflows", draft.name);
-  const outline = parseWorkflowOutline(draft.source, { workflowDir });
-  let height = 32;
-  return ctx.ui.custom<WorkflowReviewDecision | "fallback">((tui, theme, _keybindings, done) => {
-    const expanded = defaultExpanded(outline);
-    const comments = new Map<string, ReviewComment>();
-    let nodes = flattenReviewNodes(outline, expanded);
-    let selectedIndex = 0;
-    let generalComment = "";
-    let editing: { kind: "node" | "general"; commentKey?: string } | undefined;
-    let hint: string | undefined;
-
-    const editor = new Editor(
-      tui,
-      {
-        borderColor: (text) => theme.fg("borderMuted", text),
-        selectList: {
-          selectedPrefix: (text) => theme.fg("accent", text),
-          selectedText: (text) => theme.fg("accent", theme.bold(text)),
-          description: (text) => theme.fg("dim", text),
-          scrollInfo: (text) => theme.fg("dim", text),
-          noMatch: (text) => theme.fg("error", text),
-        },
-      },
-      { paddingX: 0 },
-    );
-    const refresh = (): void => {
-      nodes = flattenReviewNodes(outline, expanded);
-      selectedIndex = Math.max(0, Math.min(selectedIndex, nodes.length - 1));
-      tui.requestRender();
-    };
-    const stopEditing = (): void => {
-      editing = undefined;
-      editor.setText("");
-    };
-    editor.onSubmit = (value) => {
-      const text = value.trim();
-      if (!editing) return;
-      if (editing.kind === "general") {
-        generalComment = text;
-      } else if (editing.commentKey) {
-        const node = nodes.find((candidate) => candidate.commentKey === editing?.commentKey);
-        if (text && node?.stageId) {
-          comments.set(editing.commentKey, { stageId: node.stageId, ...(node.promptId ? { promptId: node.promptId } : {}), text });
-        } else {
-          comments.delete(editing.commentKey);
-        }
-      }
-      stopEditing();
-      tui.requestRender();
-    };
-
-    const startComment = (): void => {
-      const node = nodes.at(selectedIndex);
-      if (!node?.commentKey || !node.stageId) {
-        hint = "Select a stage or prompt to add a note.";
-        tui.requestRender();
-        return;
-      }
-      editing = { kind: "node", commentKey: node.commentKey };
-      editor.setText(comments.get(node.commentKey)?.text ?? "");
-      hint = undefined;
-      tui.requestRender();
-    };
-
-    return {
-      render(width: number): string[] {
-        height = tui.terminal.rows;
-        return renderWorkflowReview(
-          outline,
-          {
-            selectedIndex,
-            expanded,
-            comments,
-            generalComment,
-            ...(editing ? { editing: { kind: editing.kind, text: editor.getText() } } : {}),
-            height,
-            ...(hint ? { hint } : {}),
-          },
-          width,
-          theme,
-          {
-            summary: draft.proposal.summary,
-            steps: draft.proposal.steps,
-            willRun: draft.proposal.willRun,
-            filePaths: draft.filePaths,
-          },
-        );
-      },
-      handleInput(data: string): void {
-        if (editing) {
-          if (matchesKey(data, Key.escape)) {
-            stopEditing();
-            tui.requestRender();
-            return;
-          }
-          editor.handleInput(data);
-          tui.requestRender();
-          return;
-        }
-        hint = undefined;
-        if (matchesKey(data, Key.escape)) {
-          done({ action: "reject", reason: "Workflow review canceled" });
-        } else if (data === "a" || data === "A") {
-          done({ action: "approve" });
-        } else if (data === "r" || data === "R") {
-          if (reviewHasFeedback(comments, generalComment)) {
-            done({ action: "reject", reason: buildChangeRequest(outline, comments, generalComment) });
-          } else {
-            hint = "Add a note (c) or a general comment (g) before requesting changes.";
-            tui.requestRender();
-          }
-        } else if (data === "t" || data === "T") {
-          done("fallback");
-        } else if (data === "c" || data === "C") {
-          startComment();
-        } else if (data === "g" || data === "G") {
-          editing = { kind: "general" };
-          editor.setText(generalComment);
-          tui.requestRender();
-        } else if (matchesKey(data, Key.up) || data === "k") {
-          selectedIndex = Math.max(0, selectedIndex - 1);
-          tui.requestRender();
-        } else if (matchesKey(data, Key.down) || data === "j") {
-          selectedIndex = Math.min(nodes.length - 1, selectedIndex + 1);
-          tui.requestRender();
-        } else if (matchesKey(data, Key.right) || data === "l") {
-          expandNode(expanded, nodes[selectedIndex], true);
-          refresh();
-        } else if (matchesKey(data, Key.left) || data === "h") {
-          expandNode(expanded, nodes[selectedIndex], false);
-          refresh();
-        } else if (!isRepeatedOrReleasedKey(data) && matchesKey(data, Key.ctrl("o"))) {
-          toggleNode(expanded, nodes[selectedIndex]);
-          refresh();
-        }
-      },
-      invalidate(): void {
-        tui.requestRender();
-      },
-    };
-  });
-}
-
-function isRepeatedOrReleasedKey(data: string): boolean {
-  return isKeyRepeat(data) || isKeyRelease(data);
-}
-
-function expandNode(expanded: Set<string>, node: ReviewNode | undefined, open: boolean): void {
-  if (!node?.expandable) return;
-  if (open) expanded.add(node.id);
-  else expanded.delete(node.id);
-}
-
-function toggleNode(expanded: Set<string>, node: ReviewNode | undefined): void {
-  if (!node?.expandable) return;
-  if (expanded.has(node.id)) expanded.delete(node.id);
-  else expanded.add(node.id);
+  return terminalReviewWorkflow(ctx, draft);
 }
 
 async function terminalReviewWorkflow(ctx: ExtensionContext, draft: GeneratedWorkflowDraft): Promise<WorkflowReviewDecision> {

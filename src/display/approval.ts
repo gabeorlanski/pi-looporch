@@ -9,24 +9,12 @@ export interface ApprovalDisplayOptions {
   feedback?: string;
 }
 
-interface SourceSummary {
-  lineCount: number;
-  agentCallCount: number;
-  phaseCallCount: number;
-  readsWorkflowFiles: boolean;
-}
-
 export function approvalLines(draft: GeneratedWorkflowDraft, options: ApprovalDisplayOptions = {}): string[] {
-  const sourceSummary = summarizeWorkflowSource(draft.source);
   const parsedOutline = parseWorkflowOutline(draft.source, { ...(draft.sourceDirectory ? { workflowDir: draft.sourceDirectory } : {}) });
   const outline = { ...parsedOutline, metadata: draft.metadata };
   return [
     border("╭", `Review generated workflow: ${draft.name}`, "╮"),
     ...wrappedRows(`Description: ${draft.metadata.description}`),
-    row(
-      `Source: ${String(sourceSummary.lineCount)} lines · ${String(sourceSummary.phaseCallCount)} phases · ${String(sourceSummary.agentCallCount)} agent calls` +
-        (sourceSummary.readsWorkflowFiles ? " · reads workflow files" : ""),
-    ),
     border("├", "Flowchart", "┤"),
     ...workflowFlowchartLines(outline, { filePaths: draft.filePaths, maxLines: 24 }).map((line) => row(line, 2)),
     border("├", "After Approval", "┤"),
@@ -44,19 +32,6 @@ function decisionRows(): string[] {
 function feedbackRows(feedback: string): string[] {
   const content = feedback.trim() ? feedback : "Type feedback for the agent, then press Enter. Esc returns to review.";
   return [row("Feedback will be sent to the agent instead of saving this workflow."), ...wrappedRows(`> ${content}`, 2)];
-}
-
-function summarizeWorkflowSource(source: string): SourceSummary {
-  return {
-    lineCount: source.split(/\r?\n/).length,
-    agentCallCount: countPattern(source, /\bagent\s*\(/g),
-    phaseCallCount: countPattern(source, /\bphase\s*\(/g),
-    readsWorkflowFiles: /\bread(?:Text|Json)\s*\(/.test(source),
-  };
-}
-
-function countPattern(source: string, pattern: RegExp): number {
-  return [...source.matchAll(pattern)].length;
 }
 
 function wrappedListRows(prefix: string, content: string): string[] {

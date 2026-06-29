@@ -54,7 +54,7 @@ npm run check
 - `pi-agent.ts`: `PiWorkflowAgentOptions`.
 - `authoring-guide.ts`: on-demand workflow design guidance returned by the `workflow_design_guidance` tool.
 - `workflow-outline.ts`: `WorkflowOutline`, `OutlineSection`, `OutlineStage`, `OutlinePrompt`; static AST parse of `workflow.js` into phases/stages/prompts plus `indexOutline*` helpers for review tooling.
-- `display/`: progress, approval, and boundary message rendering. `workflow-flowchart.ts` builds the proposal-review flowchart shared by TUI and text fallback; `workflow-review.ts` (`flattenReviewNodes`/`renderWorkflowReview`/`buildChangeRequest`) is the testable model + renderer for the in-terminal TUI proposal review; `extensions/workflow.ts` wires its keys and comment editor. `agent-inspector.ts` renders the Ctrl+\ transcript-pane header; the transcript below it is loaded from the child agent session log and rendered with pi's native message components in `extensions/workflow.ts`.
+- `display/`: progress, approval, and boundary message rendering. `workflow-flowchart.ts` builds the proposal-review flowchart used by the simple approval UI. `approval.ts` renders the review frame and feedback mode. `agent-inspector.ts` renders the Ctrl+\ transcript-pane header; the transcript below it is loaded from the child agent session log and rendered with pi's native message components in `extensions/workflow.ts`.
 - `prompts/`: raw prompt templates loaded by `prompt-templates.ts`.
 
 See `../agent_docs/INDEX.md` before changing patterns.

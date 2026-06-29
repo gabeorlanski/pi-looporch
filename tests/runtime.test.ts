@@ -139,6 +139,44 @@ export default async function workflow() {
   });
 });
 
+void test("workflow_writes_agent_and_final_outputs_to_output_directory", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  const outputsDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-outputs-"));
+  await writeWorkflow(
+    project,
+    "outputs",
+    `export const metadata = { name: "outputs", description: "Write outputs", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  const child = await agent("return data", { label: "digest:01_retail_signal_audit" });
+  return { child, ok: true };
+}`,
+  );
+  const agent: WorkflowAgent = () => Promise.resolve({ slug: "01_retail_signal_audit", score: 4 });
+
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "outputs",
+    input: {},
+    agent,
+    outputsDir,
+  });
+
+  assert.equal(result.outputsDir, outputsDir);
+  assert.equal(result.resultPath, path.join(outputsDir, "outputs", "final.json"));
+  assert.equal(result.snapshot.agents[0]?.outputPath, path.join(outputsDir, "outputs", "agent-001-digest-01_retail_signal_audit.json"));
+  assert.equal(result.snapshot.agents[0]?.promptPreview, "return data");
+  assert.equal(result.snapshot.agents[0]?.promptLineCount, 1);
+  assert.deepEqual(JSON.parse(await readFile(result.snapshot.agents[0]?.outputPath ?? "", "utf8")), {
+    slug: "01_retail_signal_audit",
+    score: 4,
+  });
+  assert.deepEqual(JSON.parse(await readFile(result.resultPath ?? "", "utf8")), {
+    child: { slug: "01_retail_signal_audit", score: 4 },
+    ok: true,
+  });
+});
+
 void test("workflow_queues_parallel_items_over_the_max_parallel_cap", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(

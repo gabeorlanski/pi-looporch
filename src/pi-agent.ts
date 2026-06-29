@@ -319,10 +319,10 @@ export function parseSessionTokens(sessionDir: string): TokenUsage | null {
       if (!line.trim()) continue;
       try {
         const entry = JSON.parse(line) as { usage?: unknown; message?: { usage?: unknown } };
-        const usage = entry.usage ?? entry.message?.usage;
-        if (typeof usage === "object" && usage !== null) {
-          input += tokenProperty(usage, "input");
-          output += tokenProperty(usage, "output");
+        const usage = normalizeTokenUsage(entry.usage ?? entry.message?.usage);
+        if (usage) {
+          input += usage.input;
+          output += usage.output;
         }
       } catch {
         // Ignore malformed lines while scanning usage entries.
@@ -336,10 +336,8 @@ export function parseSessionTokens(sessionDir: string): TokenUsage | null {
 
 function workflowTokenUsageFromMessage(value: unknown): { inputTokenCount: number; outputTokenCount: number } {
   if (typeof value !== "object" || value === null) return { inputTokenCount: 0, outputTokenCount: 0 };
-  const usage = (value as { usage?: unknown }).usage;
-  return typeof usage === "object" && usage !== null
-    ? { inputTokenCount: tokenProperty(usage, "input"), outputTokenCount: tokenProperty(usage, "output") }
-    : { inputTokenCount: 0, outputTokenCount: 0 };
+  const usage = normalizeTokenUsage((value as { usage?: unknown }).usage);
+  return usage ? { inputTokenCount: usage.input, outputTokenCount: usage.output } : { inputTokenCount: 0, outputTokenCount: 0 };
 }
 
 function progressSnapshot(
@@ -370,10 +368,21 @@ function progressCounts(
   };
 }
 
-function tokenProperty(value: object, key: "input" | "output"): number {
+function normalizeTokenUsage(value: unknown): { input: number; output: number } | null {
+  if (typeof value !== "object" || value === null) return null;
+  return {
+    input: tokenProperty(value, ["input", "inputTokens", "input_tokens", "promptTokens", "prompt_tokens", "inputTokenCount"]),
+    output: tokenProperty(value, ["output", "outputTokens", "output_tokens", "completionTokens", "completion_tokens", "outputTokenCount"]),
+  };
+}
+
+function tokenProperty(value: object, keys: string[]): number {
   const properties = value as Record<string, unknown>;
-  const tokenValue = properties[`${key}Tokens`] ?? properties[key];
-  return typeof tokenValue === "number" && Number.isFinite(tokenValue) ? tokenValue : 0;
+  for (const key of keys) {
+    const tokenValue = properties[key];
+    if (typeof tokenValue === "number" && Number.isFinite(tokenValue)) return tokenValue;
+  }
+  return 0;
 }
 
 function findLatestSessionFile(sessionDir: string): string | undefined {

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Type } from "typebox";
@@ -9,7 +9,6 @@ import { workflowFinalOutputPath } from "./workflow-outputs.ts";
 import { workflowRootsForProject } from "./discovery.ts";
 import {
   normalizeWorkflowName,
-  parseWorkflowSourceMetadata,
   resolveWorkflowDirectory,
   runWorkflowFromDirectory,
   type WorkflowAgent,
@@ -17,11 +16,12 @@ import {
 } from "./runtime.ts";
 import { progressDisplay } from "./display/progress.ts";
 import { workflowResultPreview } from "./display/messages.ts";
-import { reviewAndSaveWorkflowDraft, type WorkflowProposal, type WorkflowReviewer } from "./request.ts";
+import { reviewAndSaveWorkflowDraft, reviewWorkflowDraft, type WorkflowReviewer } from "./request.ts";
 import { createWorkflowRunId } from "./run-logs.ts";
 import { workflowDesignGuidance } from "./authoring-guide.ts";
 import { extractWorkflowInputContract, validateWorkflowInput } from "./input.ts";
 import { DEFAULT_MAX_PARALLEL_AGENTS, readWorkflowSettings } from "./workflow-settings.ts";
+import { materializeWorkflowDraftForRun, readWorkflowDraft, workflowDraftProposal } from "./workflow-drafts.ts";
 
 /** Dependencies used to construct workflow tools for either an extension session or tests. */
 export interface WorkflowToolsOptions {
@@ -62,6 +62,9 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
     parameters: Type.Object({
       name: Type.String({ description: "Existing workflow name to run" }),
       input: Type.Optional(Type.Any({ description: "JSON-serializable workflow input" })),
+      draftDir: Type.Optional(
+        Type.String({ description: "Project-relative draft workflow directory to review and run once without saving" }),
+      ),
     }),
     renderShell: "self",
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
@@ -69,8 +72,15 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
       const agent = options.agent ?? options.agentForContext?.(ctx);
       if (!agent) throw new Error("run_workflow requires a workflow agent");
       const workflowName = normalizeWorkflowName(params.name);
-      const workflowRoots = await workflowRootsForProject(cwd);
-      const workflowDir = resolveWorkflowDirectory(cwd, workflowName, workflowRoots);
+      const sourceHandle = await workflowSourceForRun({
+        cwd,
+        workflowName,
+        draftDir: typeof params.draftDir === "string" ? params.draftDir : undefined,
+        request: `run workflow ${workflowName}`,
+        reviewer: options.reviewer ?? options.reviewerForContext?.(ctx),
+      });
+      const workflowRoots = sourceHandle.workflowRoots;
+      const workflowDir = sourceHandle.workflowDir;
       const source = await readFile(path.join(workflowDir, "workflow.js"), "utf8");
       const input = validateWorkflowInput(params.input ?? {}, workflowName, extractWorkflowInputContract(source));
       const parentRunId = createWorkflowRunId(workflowName);
@@ -118,6 +128,8 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
           outputsDir: run.outputsDir,
           resultPath: workflowFinalOutputPath(run.outputsDir),
           snapshot: run.snapshot(),
+          sourceKind: sourceHandle.sourceKind,
+          saved: sourceHandle.sourceKind === "saved",
         },
       };
     },
@@ -127,6 +139,62 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
       return new Text(progressDisplay(snapshot, 96, theme).text, 0, 0);
     },
   });
+}
+
+interface WorkflowSourceForRunOptions {
+  cwd: string;
+  workflowName: string;
+  draftDir?: string;
+  request: string;
+  reviewer?: WorkflowReviewer;
+}
+
+interface WorkflowSourceForRun {
+  workflowRoots: string[];
+  workflowDir: string;
+  sourceKind: "draftDir" | "saved";
+}
+
+async function workflowSourceForRun(options: WorkflowSourceForRunOptions): Promise<WorkflowSourceForRun> {
+  if (!options.draftDir) {
+    const workflowRoots = await workflowRootsForProject(options.cwd);
+    return {
+      workflowRoots,
+      workflowDir: resolveWorkflowDirectory(options.cwd, options.workflowName, workflowRoots),
+      sourceKind: "saved",
+    };
+  }
+  const workflowRoot = await prepareWorkflowDraftForRun({ ...options, draftDir: options.draftDir });
+  return {
+    workflowRoots: [workflowRoot],
+    workflowDir: path.join(workflowRoot, options.workflowName),
+    sourceKind: "draftDir",
+  };
+}
+
+async function prepareWorkflowDraftForRun(options: WorkflowSourceForRunOptions & { draftDir: string }): Promise<string> {
+  const draft = await readWorkflowDraft({
+    cwd: options.cwd,
+    name: options.workflowName,
+    draftDir: options.draftDir,
+    proposal: {
+      summary: `Review and run workflow draft '${options.workflowName}' once without saving it`,
+      steps: ["Review the draft workflow directory.", "Run the approved draft from a temporary workflow root."],
+      willRun: [
+        `Review and run ${options.draftDir}/workflow.js once from a temporary workflow root.`,
+        `Do not save files under .pi/workflows/${options.workflowName}/.`,
+      ],
+    },
+    toolName: "run_workflow",
+  });
+  const approved = await reviewWorkflowDraft({
+    cwd: options.cwd,
+    request: options.request,
+    draft,
+    reviewer: options.reviewer,
+    intent: "run",
+  });
+  return materializeWorkflowDraftForRun(approved);
 }
 
 function notifyBackgroundToolCompletion(ctx: ExtensionContext, result: BackgroundWorkflowRunResult): void {
@@ -271,16 +339,14 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
       const cwd = options.cwd ?? ctx.cwd;
       const reviewer = options.reviewer ?? options.reviewerForContext?.(ctx);
       const name = normalizeWorkflowName(params.name);
-      const { source, sourceDirectory, filePaths } = await readProposalSource(cwd, params.source, params.draftDir);
-      const metadata = parseWorkflowSourceMetadata(source, name);
-      const draft = {
+      const draft = await readWorkflowDraft({
+        cwd,
         name,
-        source,
-        metadata,
-        proposal: workflowProposalFromParams(params, name),
-        filePaths,
-        ...(sourceDirectory ? { sourceDirectory } : {}),
-      };
+        source: params.source,
+        draftDir: params.draftDir,
+        proposal: workflowDraftProposal(params, name),
+        toolName: "propose_workflow",
+      });
       await reviewAndSaveWorkflowDraft({ cwd, request: params.request ?? name, draft, reviewer });
       return {
         content: [{ type: "text", text: `Saved reviewed workflow '${name}' to .pi/workflows/${name}/.` }],
@@ -288,73 +354,4 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
       };
     },
   });
-}
-
-async function readProposalSource(
-  cwd: string,
-  source: string | undefined,
-  draftDir: string | undefined,
-): Promise<{ source: string; filePaths: string[]; sourceDirectory?: string }> {
-  const hasSource = typeof source === "string";
-  const hasDraftDir = typeof draftDir === "string" && draftDir.trim().length > 0;
-  if (hasSource && hasDraftDir) throw new Error("propose_workflow requires exactly one of source or draftDir");
-  if (!hasSource && !hasDraftDir) throw new Error("propose_workflow requires exactly one of source or draftDir");
-  if (hasSource) return { source, filePaths: ["workflow.js"] };
-  if (typeof draftDir !== "string" || !draftDir.trim()) throw new Error("propose_workflow requires exactly one of source or draftDir");
-  const sourceDirectory = resolveDraftWorkflowDirectory(cwd, draftDir);
-  const stats = await stat(sourceDirectory);
-  if (!stats.isDirectory()) throw new Error("propose_workflow draftDir must be a directory containing workflow.js");
-  return {
-    source: await readFile(path.join(sourceDirectory, "workflow.js"), "utf8"),
-    sourceDirectory,
-    filePaths: await listDraftFiles(sourceDirectory),
-  };
-}
-
-async function listDraftFiles(root: string): Promise<string[]> {
-  const files: string[] = [];
-  const walk = async (dir: string): Promise<void> => {
-    const entries = await readdir(dir, { withFileTypes: true });
-    await Promise.all(
-      entries.map(async (entry) => {
-        const absolute = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          await walk(absolute);
-          return;
-        }
-        if (entry.isFile()) files.push(path.relative(root, absolute).split(path.sep).join("/"));
-      }),
-    );
-  };
-  await walk(root);
-  return files.sort((left, right) => left.localeCompare(right));
-}
-
-function resolveDraftWorkflowDirectory(cwd: string, draftDir: string): string {
-  const projectRoot = path.resolve(cwd);
-  const resolved = path.resolve(projectRoot, draftDir);
-  const projectRelative = path.relative(projectRoot, resolved);
-  if (projectRelative.startsWith("..") || path.isAbsolute(projectRelative))
-    throw new Error("propose_workflow draftDir must stay inside the project directory");
-  const publishedRoot = path.join(projectRoot, ".pi", "workflows");
-  if (isInsideOrEqual(publishedRoot, resolved) || isInsideOrEqual(resolved, publishedRoot)) {
-    throw new Error("propose_workflow draftDir must not be inside, equal to, or an ancestor of .pi/workflows");
-  }
-  return resolved;
-}
-
-function isInsideOrEqual(root: string, target: string): boolean {
-  const relative = path.relative(root, target);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-function workflowProposalFromParams(
-  params: { request?: string; summary?: string; steps?: string[]; willRun?: string[] },
-  name: string,
-): WorkflowProposal {
-  return {
-    summary: params.summary ?? `Create workflow '${name}'${params.request ? ` for: ${params.request}` : ""}`,
-    steps: params.steps ?? ["Save the reviewed workflow directory under the project workflow root."],
-    willRun: params.willRun ?? [`Copy the approved draft directory to .pi/workflows/${name}/ after approval.`],
-  };
 }

@@ -120,6 +120,27 @@ void test("workflow_display_tokens_count_assistant_output_not_provider_total_inp
   );
 });
 
+void test("workflow_session_tokens_parse_provider_usage_aliases_without_estimating_totals", async () => {
+  const sessionDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-session-tokens-"));
+  await writeFile(
+    path.join(sessionDir, "workflow-agent-1.jsonl"),
+    [
+      JSON.stringify({ usage: { prompt_tokens: 3, completion_tokens: 2, cache_read_input_tokens: 500 } }),
+      JSON.stringify({ message: { usage: { input_tokens: 5, output_tokens: 7, total_tokens: 900 } } }),
+      JSON.stringify({ usage: { totalTokens: 1234, cacheRead: 1000 } }),
+    ].join("\n"),
+    "utf8",
+  );
+
+  assert.deepEqual(parseSessionTokens(sessionDir), { input: 8, output: 9, total: 17 });
+});
+
+void test("workflow_display_tokens_count_provider_output_aliases", () => {
+  assert.equal(workflowDisplayTokensFromMessage({ usage: { completion_tokens: 12, cache_read_input_tokens: 1000 } }), 12);
+  assert.equal(workflowDisplayTokensFromMessage({ usage: { outputTokenCount: 8, totalTokens: 999 } }), 8);
+  assert.equal(workflowDisplayTokensFromMessage({ usage: { totalTokens: 999, cacheRead: 1000 } }), 0);
+});
+
 void test("workflow_display_tokens_are_zero_without_provider_usage", () => {
   assert.equal(
     workflowDisplayTokensFromMessage({

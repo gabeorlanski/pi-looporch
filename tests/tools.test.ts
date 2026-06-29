@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { createPiWorkflowAgentTools } from "../src/pi-agent.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import type { WorkflowAgent } from "../src/runtime.ts";
+import type { WorkflowReviewRequest } from "../src/request.ts";
 
 const generatedWorkflowDocstring = `/**
  * Purpose: generated test workflow.
@@ -232,6 +233,56 @@ export default async function workflow() {
   assert.match(text, /Workflow handoff started in the background/);
   assert.equal((result.details as { status?: string }).status, "running");
   await waitForCondition(() => notifications.some((message) => message.includes("Workflow handoff complete")));
+});
+
+void test("run_workflow_tool_runs_reviewed_draft_directory_without_saving", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
+  const draftDir = path.join(project, ".pi", "workflow-drafts", "draft-run");
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "draft-run", description: "Run draft", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return { prompt: renderPrompt("prompt.txt", { topic: args.topic }), agent: await agent("draft " + args.topic, { label: "draft helper" }) };
+}`;
+  await mkdir(path.join(draftDir, "prompts"), { recursive: true });
+  await Promise.all([
+    writeFile(path.join(draftDir, "workflow.js"), source, "utf8"),
+    writeFile(path.join(draftDir, "prompts", "prompt.txt"), "Topic {{topic}}", "utf8"),
+  ]);
+  const savedWorkflowFile = path.join(project, ".pi", "workflows", "draft-run", "workflow.js");
+  const agent: WorkflowAgent = (prompt, options) => Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
+  let reviewRequest: WorkflowReviewRequest | undefined;
+  const tool = createWorkflowTools({
+    cwd: project,
+    agent,
+    reviewer: (request) => {
+      reviewRequest = request;
+      return { action: "approve" };
+    },
+  }).find((candidate) => candidate.name === "run_workflow");
+  assert.ok(tool);
+
+  const notifications: string[] = [];
+  const result = await tool.execute(
+    "call-1",
+    { name: "draft-run", draftDir: path.relative(project, draftDir), input: { topic: "cost" } },
+    undefined,
+    undefined,
+    { ui: { notify: (message: string) => notifications.push(message) } } as never,
+  );
+
+  const details = result.details as { status: string; resultPath: string; sourceKind?: string; saved?: boolean };
+  assert.equal(details.status, "running");
+  assert.equal(details.sourceKind, "draftDir");
+  assert.equal(details.saved, false);
+  await waitForCondition(() => existsSync(details.resultPath));
+  assert.deepEqual(JSON.parse(await readFile(details.resultPath, "utf8")), { prompt: "Topic cost", agent: "draft helper:draft cost" });
+  await waitForCondition(() => notifications.some((message) => message.includes("Workflow draft-run complete")));
+  assert.equal(existsSync(savedWorkflowFile), false);
+  assert.ok(reviewRequest);
+  assert.equal(reviewRequest.intent, "run");
+  assert.deepEqual(reviewRequest.draft.proposal.willRun, [
+    "Review and run .pi/workflow-drafts/draft-run/workflow.js once from a temporary workflow root.",
+    "Do not save files under .pi/workflows/draft-run/.",
+  ]);
 });
 
 void test("propose_workflow_tool_saves_only_after_review", async () => {

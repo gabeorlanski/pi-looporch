@@ -1,4 +1,5 @@
 import type { OutlinePrompt, OutlineSection, OutlineStage, OutlineStageKind, WorkflowOutline } from "../workflow-outline.ts";
+import { formatCharCount } from "./text.ts";
 
 export interface WorkflowFlowchartOptions {
   filePaths?: readonly string[];
@@ -67,14 +68,4 @@ function fileSummary(filePaths: readonly string[]): string {
   const visibleFiles = filePaths.slice(0, 5);
   const suffix = filePaths.length > visibleFiles.length ? ` +${String(filePaths.length - visibleFiles.length)} more` : "";
   return `${visibleFiles.join(", ")}${suffix}`;
-}
-
-function formatCharCount(count: number): string {
-  if (count < 1000) return `${String(count)} chars`;
-  if (count < 1_000_000) return `${trimFixed(count / 1000)}k chars`;
-  return `${trimFixed(count / 1_000_000)}M chars`;
-}
-
-function trimFixed(value: number): string {
-  return value.toFixed(1).replace(/\.0$/, "");
 }

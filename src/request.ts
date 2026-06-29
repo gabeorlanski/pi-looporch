@@ -25,6 +25,7 @@ export interface WorkflowReviewRequest {
   cwd: string;
   draft: GeneratedWorkflowDraft;
   request: string;
+  intent?: "run" | "save";
 }
 
 /** Reviewer decision to approve a draft, optionally with updated source, or reject it with a reason. */
@@ -43,15 +44,22 @@ export interface ReviewAndSaveWorkflowDraftOptions {
 
 /** Reviews, validates, and atomically saves an approved generated workflow draft under .pi/workflows. */
 export async function reviewAndSaveWorkflowDraft(options: ReviewAndSaveWorkflowDraftOptions): Promise<GeneratedWorkflowDraft> {
+  const approvedDraft = await reviewWorkflowDraft({ ...options, intent: "save" });
+  await saveApprovedDraft(options.cwd, approvedDraft);
+  return approvedDraft;
+}
+
+/** Reviews and validates a generated workflow draft without saving it; used for one-shot draft runs. */
+export async function reviewWorkflowDraft(
+  options: ReviewAndSaveWorkflowDraftOptions & { intent?: "run" | "save" },
+): Promise<GeneratedWorkflowDraft> {
   if (!options.reviewer) throw new Error("Generated workflows require review before they are saved or run");
-  const decision = await options.reviewer({ cwd: options.cwd, draft: options.draft, request: options.request });
+  const decision = await options.reviewer({ cwd: options.cwd, draft: options.draft, request: options.request, intent: options.intent });
   if (decision.action === "reject") throw new Error(decision.reason ?? "Generated workflow was rejected");
   const approvedSource = decision.source ?? options.draft.source;
   validateGeneratedWorkflowDocstring(approvedSource);
   const approvedMetadata = parseWorkflowSourceMetadata(approvedSource, options.draft.name);
-  const approvedDraft = { ...options.draft, source: approvedSource, metadata: approvedMetadata };
-  await saveApprovedDraft(options.cwd, approvedDraft);
-  return approvedDraft;
+  return { ...options.draft, source: approvedSource, metadata: approvedMetadata };
 }
 
 /** Ensures generated workflow source has default-function JSDoc covering the required runbook topics. */

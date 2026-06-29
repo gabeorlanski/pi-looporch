@@ -25,7 +25,6 @@ void test("workflow_approval_lines_render_flowchart_and_feedback_hint", () => {
   const lines = approvalLines(draft);
 
   assert.ok(lines[0].includes("Review generated workflow: smoke-created"));
-  assert.ok(lines.some((line) => line.includes("Source: 5 lines") && line.includes("1 phases") && line.includes("1 agent calls")));
   assert.ok(lines.some((line) => line.includes("Flowchart")));
   assert.ok(lines.some((line) => line.includes("phase: run")));
   assert.ok(lines.some((line) => line.includes("agent: echo") && line.includes("think default")));

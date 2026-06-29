@@ -70,7 +70,7 @@ Use this guide when integrating with upstream Pi, authoring extensions, creating
 
 - `run_workflow` validates input at the tool boundary, reads merged settings, streams compact progress, starts a background run, and returns temp output/result paths.
 - Keep live workflow snapshots lightweight. Store counters and artifact paths there; write full child outputs and final results to the run outputs directory with an atomic `running`/`done`/`error` manifest.
-- `propose_workflow` requires complete draft directories and explicit chat approval before saving.
+- `propose_workflow` requires complete draft directories and saves directly after validation.
 - Workflow results, including strings, stay in output files and session logs.
 - Runtime `phase()` calls are progress markers, not shared memory.
 - Bounded parallelism must apply across direct concurrent `agent(...)` calls and fan-out helpers.

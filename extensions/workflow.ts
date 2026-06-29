@@ -13,15 +13,15 @@ import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi }
 import { errorMessage } from "../src/errors.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import { workflowLogReviewMessage } from "../src/log-review.ts";
-import { createWorkflowRunId } from "../src/workflow-run-id.ts";
-import { normalizeWorkflowName } from "../src/workflow-paths.ts";
+import { createWorkflowRunId } from "../src/workflow/run-id.ts";
+import { normalizeWorkflowName } from "../src/workflow/paths.ts";
 import {
   readWorkflowSettings,
   writeGlobalWorkflowSettings,
   writeProjectWorkflowSettings,
   type WorkflowSettings,
   type WorkflowSettingsPatch,
-} from "../src/workflow-settings.ts";
+} from "../src/workflow/settings.ts";
 
 const MESSAGE_TYPE = "pi-workflow-message";
 

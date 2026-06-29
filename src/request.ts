@@ -1,10 +1,10 @@
 import { cp, mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { extractWorkflowInputContract } from "./input.ts";
-import type { WorkflowMetadata } from "./runtime-types.ts";
-import { parseWorkflowSourceMetadata } from "./workflow-metadata.ts";
+import type { WorkflowMetadata } from "./runtime/types.ts";
+import { parseWorkflowSourceMetadata } from "./workflow/metadata.ts";
 
-/** Complete generated workflow draft plus source files awaiting user approval. */
+/** Complete generated workflow draft plus source files ready to save. */
 export interface GeneratedWorkflowDraft {
   name: string;
   source: string;
@@ -13,42 +13,23 @@ export interface GeneratedWorkflowDraft {
   sourceDirectory: string;
 }
 
-/** Inputs for saving a user-approved generated workflow draft. */
-export interface SaveApprovedWorkflowDraftOptions {
+/** Inputs for saving a generated workflow draft. */
+export interface SaveWorkflowDraftOptions {
   cwd: string;
   draft: GeneratedWorkflowDraft;
 }
 
-/** Validates and atomically saves a user-approved generated workflow draft under .pi/workflows. */
-export async function saveApprovedWorkflowDraft(options: SaveApprovedWorkflowDraftOptions): Promise<GeneratedWorkflowDraft> {
-  const approvedDraft = approvedWorkflowDraft(options.draft);
-  await saveApprovedDraft(options.cwd, approvedDraft);
-  return approvedDraft;
+/** Validates and atomically saves a generated workflow draft under .pi/workflows. */
+export async function saveWorkflowDraft(options: SaveWorkflowDraftOptions): Promise<GeneratedWorkflowDraft> {
+  const draft = validatedWorkflowDraft(options.draft);
+  await saveDraft(options.cwd, draft);
+  return draft;
 }
 
-/** Validates a generated workflow draft after the current-session agent has obtained explicit user approval. */
-function approvedWorkflowDraft(draft: GeneratedWorkflowDraft): GeneratedWorkflowDraft {
+function validatedWorkflowDraft(draft: GeneratedWorkflowDraft): GeneratedWorkflowDraft {
   validateGeneratedWorkflowDocstring(draft.source);
   const metadata = parseWorkflowSourceMetadata(draft.source, draft.name);
   return { ...draft, metadata };
-}
-
-/** Compact approval text returned to the agent so it can ask the user in normal chat. */
-export function workflowApprovalPrompt(options: { draft: GeneratedWorkflowDraft; request: string }): string {
-  return [
-    "Ask the user for approval before you save this workflow.",
-    "",
-    `Workflow: ${options.draft.name}`,
-    `Request: ${options.request}`,
-    `Description: ${options.draft.metadata.description}`,
-    `Phases: ${options.draft.metadata.phases.map((phase) => phase.title).join(" -> ") || "none"}`,
-    `Files: ${formatFileList(options.draft.filePaths)}`,
-    "",
-    "Will do:",
-    `- Copy the approved draft directory to .pi/workflows/${options.draft.name}/.`,
-    "",
-    "If the user approves, call the same tool again with approved=true. If they do not approve, do not call it again.",
-  ].join("\n");
 }
 
 /** Ensures generated workflow source has default-function JSDoc covering the required runbook topics. */
@@ -62,7 +43,7 @@ function validateGeneratedWorkflowDocstring(source: string): void {
   }
 }
 
-async function saveApprovedDraft(cwd: string, draft: GeneratedWorkflowDraft): Promise<void> {
+async function saveDraft(cwd: string, draft: GeneratedWorkflowDraft): Promise<void> {
   const projectRoot = path.resolve(cwd);
   const workflowRoot = path.join(projectRoot, ".pi", "workflows");
   const workflowDir = path.join(workflowRoot, draft.name);
@@ -115,9 +96,4 @@ function isInsideOrEqual(root: string, target: string): boolean {
 
 function isNotFoundError(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ENOENT";
-}
-
-function formatFileList(filePaths: string[]): string {
-  if (filePaths.length <= 12) return filePaths.join(", ");
-  return `${filePaths.slice(0, 12).join(", ")} and ${String(filePaths.length - 12)} more`;
 }

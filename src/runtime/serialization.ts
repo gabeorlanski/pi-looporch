@@ -1,4 +1,4 @@
-import type { WorkflowSnapshot } from "../runtime-types.ts";
+import type { WorkflowSnapshot } from "./types.ts";
 
 export function cloneSnapshot(snapshot: WorkflowSnapshot): WorkflowSnapshot {
   return {

@@ -42,12 +42,10 @@ npm run check
 
 ## Key types
 
-- `runtime-types.ts`: `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, `WorkflowRunResult`.
+- `runtime/types.ts`: `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, `WorkflowRunResult`.
 - `runtime/`: runtime internals. `run.ts` owns workflow execution wiring, `context.ts` defines the shared primitive protocol, `globals.ts` binds primitives, and `primitives/` owns agent/phase/log/trace/files/parallel/pipeline/coerce/mapreduce/verifier behavior.
-- `workflow-paths.ts`: workflow name/path/cwd resolution.
-- `workflow-sandbox.ts`: sandbox module transform and import/require bans.
-- `workflow-metadata.ts`: static `export const metadata = { ... }` parsing.
-- `request.ts`: `GeneratedWorkflowDraft`, approval prompts, and approved draft saving.
+- `workflow/`: workflow pathing, metadata, sandbox, output, draft, and settings helpers.
+- `request.ts`: `GeneratedWorkflowDraft` validation and draft saving.
 - `discovery.ts`: `WorkflowReference`.
 - `tools.ts`: `WorkflowToolsOptions`.
 - `pi-agent.ts`: `PiWorkflowAgentOptions`.

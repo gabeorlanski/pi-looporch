@@ -32,15 +32,15 @@ const designTopics: DesignTopic[] = [
   },
   {
     name: "draft-directory",
-    summary: "How to stage generated workflows with resources for review/save.",
+    summary: "How to stage generated workflows with resources for saving.",
     guidance: [
       "Create .pi/workflow-drafts/<name>/workflow.js plus workflow-owned prompts, schemas, fixtures, or examples before proposing.",
       "Call propose_workflow with draftDir set to the directory path, not the workflow.js file path.",
-      "Approved drafts copy to .pi/workflows/<name>/ so workflow.js and resources land together.",
+      "Drafts copy to .pi/workflows/<name>/ so workflow.js and resources land together.",
     ],
     examples: [
       `.pi/workflow-drafts/review/\n  workflow.js\n  prompts/review.txt\n  prompts/synthesize.txt\n  schemas/finding.schema.json`,
-      `propose_workflow({ name: "review", draftDir: ".pi/workflow-drafts/review", request })`,
+      `propose_workflow({ name: "review", draftDir: ".pi/workflow-drafts/review" })`,
     ],
   },
   {

@@ -45,7 +45,7 @@ Keep the mental model simple:
 ```text
 User asks for workflow help
   -> current session agent decides: use existing workflow OR author a new one
-  -> new workflow drafts are approved before save
+  -> new workflow drafts are saved directly by propose_workflow
   -> saved workflows run through run_workflow or a named /workflow command
 ```
 
@@ -62,7 +62,7 @@ else:
   include workflow.js metadata { name, description, inputInstructions, phases }
   document workflow(input) with JSDoc:
     purpose, input fields/defaults, phases, child agents, file reads, result
-  call propose_workflow with draftDir pointing at the directory, not workflow.js, so the human can approve before save
+  call propose_workflow with draftDir pointing at the directory, not workflow.js
 ```
 
 When running an existing named workflow:
@@ -98,12 +98,12 @@ The workflow agent sees only what the workflow prompt gives it. Phases are progr
 
 TypeScript interfaces/types are the source of truth:
 
-- `src/runtime-types.ts`: `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, `WorkflowRunResult`.
+- `src/runtime/types.ts`: `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, `WorkflowRunResult`.
 - `src/runtime/run.ts`: workflow execution wiring.
-- `src/workflow-paths.ts`: workflow name/path/cwd resolution.
-- `src/workflow-sandbox.ts`: sandbox module transform and import/require bans.
-- `src/workflow-metadata.ts`: static `export const metadata = { ... }` parsing.
-- `src/request.ts`: `GeneratedWorkflowDraft`, approval prompts, and approved draft saving.
+- `src/workflow/paths.ts`: workflow name/path/cwd resolution.
+- `src/workflow/sandbox.ts`: sandbox module transform and import/require bans.
+- `src/workflow/metadata.ts`: static `export const metadata = { ... }` parsing.
+- `src/request.ts`: `GeneratedWorkflowDraft` validation and draft saving.
 - `src/discovery.ts`: `WorkflowReference`.
 - `src/tools.ts`: `WorkflowToolsOptions`.
 - `src/pi-agent.ts`: `PiWorkflowAgentOptions`.
@@ -120,7 +120,7 @@ TypeScript interfaces/types are the source of truth:
 - Agent-generated workflows should be proposed as complete draft directories (`.pi/workflow-drafts/<name>/`) with `draftDir` pointing at the directory, not the `workflow.js` file.
 - Agent-generated workflow source must include required `metadata.phases` as the planned runbook outline and document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
 - Optimize workflow authoring for power-user/agent-authored executable runbooks: top-level constants, inline schemas, prompt-builder helpers, and local paths are fine when they improve observability and ease of tweaking.
-- Generated workflow approval happens in normal chat: the tool returns a compact prompt, the agent asks the user, and the agent retries with `approved: true` only after explicit approval.
+- Generated workflow saves are direct: `propose_workflow` validates a complete draft directory and copies it to `.pi/workflows/<name>/` in one call.
 - Generated workflow child-agent prompts must be self-contained expert task packets: include mission, source-of-truth paths, prior results, non-negotiable invariants, concrete commands/search strategies, evidence requirements, pass/fail gates, and exact artifacts to read or write.
 - Shared prompt context is allowed, but format it as a compact contract (`Inputs`, `Purpose`, `Definitions`, `Rules`, `Task`, `Output`) instead of an unstructured global preamble dump; omit irrelevant globals for that stage.
 - Put reusable generated-workflow child-agent prompt templates in the workflow draft's `prompts/*.txt` files, use `{{name}}` placeholders, and render them with `renderPrompt`; reserve inline prompts for tiny one-off glue.

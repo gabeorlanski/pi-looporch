@@ -3,17 +3,17 @@ import path from "node:path";
 import { Type } from "typebox";
 import { defineTool, getAgentDir, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { startBackgroundWorkflowRun, type BackgroundWorkflowRunResult } from "./background-runs.ts";
-import { workflowFinalOutputPath } from "./workflow-outputs.ts";
+import { workflowFinalOutputPath } from "./workflow/outputs.ts";
 import { workflowRootsForProject } from "./discovery.ts";
-import type { WorkflowAgent } from "./runtime-types.ts";
+import type { WorkflowAgent } from "./runtime/types.ts";
 import { progressDisplay } from "./display/progress.ts";
-import { saveApprovedWorkflowDraft, workflowApprovalPrompt } from "./request.ts";
-import { createWorkflowRunId } from "./workflow-run-id.ts";
+import { saveWorkflowDraft } from "./request.ts";
+import { createWorkflowRunId } from "./workflow/run-id.ts";
 import { workflowDesignGuidance } from "./authoring-guide.ts";
 import { extractWorkflowInputContract, validateWorkflowInput } from "./input.ts";
-import { readWorkflowSettings } from "./workflow-settings.ts";
-import { readWorkflowDraft } from "./workflow-drafts.ts";
-import { normalizeWorkflowName, resolveWorkflowDirectory } from "./workflow-paths.ts";
+import { readWorkflowSettings } from "./workflow/settings.ts";
+import { readWorkflowDraft } from "./workflow/drafts.ts";
+import { normalizeWorkflowName, resolveWorkflowDirectory } from "./workflow/paths.ts";
 
 /** Dependencies used to construct workflow tools for either an extension session or tests. */
 export interface WorkflowToolsOptions {
@@ -125,15 +125,13 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
   return defineTool({
     name: "propose_workflow",
     label: "Propose Workflow",
-    description: "Propose a new workflow draft directory for user approval before it is saved.",
-    promptSnippet: "propose_workflow: Propose a new workflow draft directory, not a workflow.js file, for user approval before saving.",
+    description: "Save a new workflow from a complete draft directory.",
+    promptSnippet: "propose_workflow: Save a new workflow from a complete draft directory, not a workflow.js file.",
     parameters: Type.Object({
       name: Type.String({ description: "Workflow slug to save under .pi/workflows/<slug>" }),
       draftDir: Type.String({
         description: "Project-relative draft workflow directory containing workflow.js plus prompts/ or other resources",
       }),
-      request: Type.Optional(Type.String({ description: "Original user request this workflow satisfies" })),
-      approved: Type.Optional(Type.Boolean({ description: "Set true only after explicit user approval" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const cwd = options.cwd ?? ctx.cwd;
@@ -144,15 +142,9 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
         draftDir: params.draftDir,
         toolName: "propose_workflow",
       });
-      if (params.approved !== true) {
-        return {
-          content: [{ type: "text", text: workflowApprovalPrompt({ draft, request: params.request ?? name }) }],
-          details: { workflowName: name, saved: false, status: "awaiting_approval" },
-        };
-      }
-      await saveApprovedWorkflowDraft({ cwd, draft });
+      await saveWorkflowDraft({ cwd, draft });
       return {
-        content: [{ type: "text", text: `Saved approved workflow '${name}' to .pi/workflows/${name}/.` }],
+        content: [{ type: "text", text: `Saved workflow '${name}' to .pi/workflows/${name}/.` }],
         details: { workflowName: name, saved: true },
       };
     },

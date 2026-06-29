@@ -1,6 +1,6 @@
-import type { WorkflowAgentOptions, WorkflowAgentProgress, WorkflowAgentSnapshot } from "../../runtime-types.ts";
-import { resolveWorkflowAgentCwd } from "../../workflow-paths.ts";
-import { writeWorkflowAgentOutput } from "../../workflow-outputs.ts";
+import type { WorkflowAgentOptions, WorkflowAgentProgress, WorkflowAgentSnapshot } from ".././types.ts";
+import { resolveWorkflowAgentCwd } from "../../workflow/paths.ts";
+import { writeWorkflowAgentOutput } from "../../workflow/outputs.ts";
 import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
 import { jsonSchemaPrompt, normalizeAttemptCount, parseAndValidateJsonResponse } from "../schema.ts";

@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { ReasoningLevel, RunWorkflowOptions, WorkflowSnapshot } from "../runtime-types.ts";
+import type { ReasoningLevel, RunWorkflowOptions, WorkflowSnapshot } from "./types.ts";
 
 /** A pipeline stage transforms one item and may be a function or object with a run method. */
 export type PipelineStage<T> = ((item: T, index: number) => Promise<T> | T) | { run: (item: T, index: number) => Promise<T> | T };

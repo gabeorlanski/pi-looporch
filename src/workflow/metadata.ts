@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import type { WorkflowMetadata } from "./runtime-types.ts";
+import type { WorkflowMetadata } from "../runtime/types.ts";
 
 export function parseWorkflowSourceMetadata(source: string, workflowName: string, filePath = "workflow.js"): WorkflowMetadata {
   const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);

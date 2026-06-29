@@ -13,11 +13,11 @@ import {
   type CreateAgentSessionOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { WorkflowAgent, WorkflowAgentProgress, WorkflowAgentSessionLog } from "./runtime-types.ts";
+import type { WorkflowAgent, WorkflowAgentProgress, WorkflowAgentSessionLog } from "./runtime/types.ts";
 import { agentTaskPrompt } from "./prompt-templates.ts";
 import { workflowAgentSessionLogDirectory } from "./session-logs.ts";
-import { resolveWorkflowAgentCwd } from "./workflow-paths.ts";
-import { readWorkflowSettings } from "./workflow-settings.ts";
+import { resolveWorkflowAgentCwd } from "./workflow/paths.ts";
+import { readWorkflowSettings } from "./workflow/settings.ts";
 
 export interface PiWorkflowAgentOptions {
   cwd: string;

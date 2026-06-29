@@ -40,7 +40,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 ### Code Organization
 
 - Put pi command, TUI, and extension registration wiring in `extensions/`; put workflow orchestration logic in `src/`.
-- Put runtime implementation under `src/runtime/`, including workflow execution in `src/runtime/run.ts`; import runtime types from `src/runtime-types.ts` and path helpers from `src/workflow-paths.ts`.
+- Put runtime implementation under `src/runtime/`, including workflow execution in `src/runtime/run.ts`; import runtime types from `src/runtime/types.ts` and workflow helpers from `src/workflow/`.
 - Keep workflow runtime primitives in `src/runtime/primitives/` and register their globals through the shared `WorkflowPrimitive` protocol instead of adding ad hoc branches to `src/runtime/globals.ts`.
 - Put TUI and visible text rendering under `src/display/`, with one display concern per file.
 - Keep raw agent prompt text in `src/prompts/*.txt`; keep typed interpolation and domain shaping outside the prompt directory.
@@ -60,10 +60,9 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 ### Runtime and Boundaries
 
 - Inject `WorkflowAgent`; never hardcode model or pi providers into core logic.
-- Keep generated workflows explicitly approved before save.
-- Proposal approval should happen in normal chat: tools return a compact approval prompt, agents ask the user, and agents retry with `approved: true` only after explicit approval.
 - Propose generated workflows as complete project-local draft directories such as `.pi/workflow-drafts/<name>/`; `propose_workflow` `draftDir` values should point at the directory, not the `workflow.js` file.
-- Require workflow metadata to include `phases: [{ title, detail? }]`; this planned runbook outline is required approval/planning data, while runtime `phase()` calls are actual progress.
+- `propose_workflow` saves directly after validating the draft directory; do not add confirmation flags or two-step save flows.
+- Require workflow metadata to include `phases: [{ title, detail? }]`; this planned runbook outline is required planning data, while runtime `phase()` calls are actual progress.
 - Require agent-generated workflow source to document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
 - Let workflow `readText`/`readJson` read files anywhere the pi process can read: absolute paths as absolute, bare relative paths from project `cwd`, and `@workflow/...` paths from the workflow directory.
 - Keep prompt templates behind `renderPrompt` and the workflow's own `prompts/` directory.
@@ -108,11 +107,11 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 ## Key data shapes
 
-- Runtime types: `src/runtime-types.ts` defines `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, and `WorkflowRunResult`.
-- Runtime execution: `src/runtime/run.ts` wires workflow execution; `src/workflow-paths.ts`, `src/workflow-sandbox.ts`, and `src/workflow-metadata.ts` own path resolution, sandbox transforms, and static metadata parsing.
-- Workflow approval: `src/request.ts` defines `GeneratedWorkflowDraft`, approval prompts, and approved draft saving.
+- Runtime types: `src/runtime/types.ts` defines `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, and `WorkflowRunResult`.
+- Runtime execution: `src/runtime/run.ts` wires workflow execution; `src/workflow/paths.ts`, `src/workflow/sandbox.ts`, and `src/workflow/metadata.ts` own path resolution, sandbox transforms, and static metadata parsing.
+- Workflow saving: `src/request.ts` defines `GeneratedWorkflowDraft` validation and draft saving.
 - Discovery: `src/discovery.ts` defines `WorkflowReference` and workflow root handling.
-- Settings: `src/workflow-settings.ts` defines workflow global/project settings parsing and persistence.
+- Settings: `src/workflow/settings.ts` defines workflow global/project settings parsing and persistence.
 - Tools: `src/tools.ts` defines `WorkflowToolsOptions` and tool creation.
 - Pi bridge: `src/pi-agent.ts` defines `PiWorkflowAgentOptions`.
 - Prompt templates: `src/prompts/*.txt` contains raw agent prompt copy; `src/prompt-templates.ts` binds typed data into those templates.
@@ -123,13 +122,13 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 - `extensions/workflow.ts`: pi extension entry, commands, aliases, and passive workflow progress.
 - `src/runtime/run.ts`: sandboxed workflow execution wiring and progress snapshots.
-- `src/runtime-types.ts`: runtime public type contracts.
-- `src/workflow-paths.ts`: workflow path/name/cwd helpers.
-- `src/workflow-sandbox.ts`: source transform and import/require restrictions.
-- `src/workflow-metadata.ts`: static metadata extraction.
+- `src/runtime/types.ts`: runtime public type contracts.
+- `src/workflow/paths.ts`: workflow path/name/cwd helpers.
+- `src/workflow/sandbox.ts`: source transform and import/require restrictions.
+- `src/workflow/metadata.ts`: static metadata extraction.
 - `src/discovery.ts`: local and configured workflow root discovery.
-- `src/workflow-settings.ts`: global `~/.pi/agent/settings.json` and project `.pi/settings.json` workflow settings.
-- `src/request.ts`: generated workflow approval prompts and approved draft saving.
+- `src/workflow/settings.ts`: global `~/.pi/agent/settings.json` and project `.pi/settings.json` workflow settings.
+- `src/request.ts`: generated workflow draft validation and saving.
 - `src/tools.ts`: `run_workflow`, `workflow_design_guidance`, and `propose_workflow` tool definitions.
 - `src/display/`: passive progress and visible message rendering.
 - `src/prompts/`: raw prompt templates for agent-facing instructions.

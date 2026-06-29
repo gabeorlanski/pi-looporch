@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { WorkflowSnapshot } from "./runtime-types.ts";
+import type { WorkflowSnapshot } from "./runtime/types.ts";
 import { errorMessage } from "./errors.ts";
 
 export interface WorkflowSessionSummaryOptions {

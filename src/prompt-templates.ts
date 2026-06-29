@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { WorkflowInputContract } from "./input.ts";
-import type { WorkflowAgentOptions, WorkflowMetadata } from "./runtime-types.ts";
+import type { WorkflowAgentOptions, WorkflowMetadata } from "./runtime/types.ts";
 
 const sessionRequestTemplate = readFileSync(new URL("./prompts/session-request.txt", import.meta.url), "utf8").trim();
 const agentTaskTemplate = readFileSync(new URL("./prompts/agent-task.txt", import.meta.url), "utf8").trim();

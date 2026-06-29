@@ -1,4 +1,4 @@
-import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime-types.ts";
+import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
 import { fit, titleLine, trimFixed } from "./text.ts";
 
 const DEFAULT_WIDTH = 96;

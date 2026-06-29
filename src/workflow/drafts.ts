@@ -1,7 +1,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import type { GeneratedWorkflowDraft } from "./request.ts";
-import { parseWorkflowSourceMetadata } from "./workflow-metadata.ts";
+import type { GeneratedWorkflowDraft } from "../request.ts";
+import { parseWorkflowSourceMetadata } from "./metadata.ts";
 
 export interface WorkflowDraftReadOptions {
   cwd: string;
@@ -10,7 +10,7 @@ export interface WorkflowDraftReadOptions {
   toolName: string;
 }
 
-/** Reads a directory-backed generated workflow draft into the canonical approval shape. */
+/** Reads a directory-backed generated workflow draft into the canonical save shape. */
 export async function readWorkflowDraft(options: WorkflowDraftReadOptions): Promise<GeneratedWorkflowDraft> {
   const { source, sourceDirectory, filePaths } = await readWorkflowDraftSource(options);
   return {

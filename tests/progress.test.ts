@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { formatTokenCount, initialProgressDisplay, progressDisplay } from "../src/display/progress.ts";
-import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../src/runtime-types.ts";
+import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../src/runtime/types.ts";
 
 void test("workflow_progress_summarizes_status_input_tokens_and_active_agents", () => {
   const snapshot: WorkflowSnapshot = {

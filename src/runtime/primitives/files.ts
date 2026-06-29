@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { resolveWorkflowReadPath } from "../../workflow-paths.ts";
+import { resolveWorkflowReadPath } from "../../workflow/paths.ts";
 import type { WorkflowPrimitive } from "../context.ts";
 import { renderWorkflowPrompt } from "../prompts.ts";
 

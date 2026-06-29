@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import type { WorkflowMetadata } from "./runtime-types.ts";
-import { parseWorkflowSourceMetadata } from "./workflow-metadata.ts";
-import { normalizeWorkflowName } from "./workflow-paths.ts";
+import type { WorkflowMetadata } from "./runtime/types.ts";
+import { parseWorkflowSourceMetadata } from "./workflow/metadata.ts";
+import { normalizeWorkflowName } from "./workflow/paths.ts";
 
 export interface WorkflowReference {
   name: string;

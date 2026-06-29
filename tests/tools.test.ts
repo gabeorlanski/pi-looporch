@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { createWorkflowTools } from "../src/tools.ts";
-import type { WorkflowAgent } from "../src/runtime-types.ts";
+import type { WorkflowAgent } from "../src/runtime/types.ts";
 
 const generatedWorkflowDocstring = `/**
  * Purpose: generated test workflow.
@@ -106,7 +105,7 @@ export default async function workflow(input) {
   });
 });
 
-void test("propose_workflow_tool_saves_only_after_explicit_approval", async () => {
+void test("propose_workflow_tool_saves_draft_directory", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const draftDir = path.join(project, ".pi", "workflow-drafts", "summarize");
   const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
@@ -119,30 +118,20 @@ export default async function workflow({ prompt }) {
   const tool = createWorkflowTools({ cwd: project }).find((candidate) => candidate.name === "propose_workflow");
   assert.ok(tool);
 
-  const approval = await tool.execute(
-    "call-1",
-    { name: "summarize", draftDir: path.relative(project, draftDir), request: "summarize" },
-    undefined,
-    undefined,
-    {} as never,
-  );
-  assert.deepEqual(approval.details, { workflowName: "summarize", saved: false, status: "awaiting_approval" });
-  assert.match(approval.content[0]?.type === "text" ? approval.content[0].text : "", /Ask the user for approval/);
-  assert.equal(existsSync(workflowFile), false);
-
   const result = await tool.execute(
-    "call-2",
-    { name: "summarize", draftDir: path.relative(project, draftDir), request: "summarize", approved: true },
+    "call-1",
+    { name: "summarize", draftDir: path.relative(project, draftDir) },
     undefined,
     undefined,
     {} as never,
   );
 
   assert.deepEqual(result.details, { workflowName: "summarize", saved: true });
+  assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /Saved workflow 'summarize'/);
   assert.equal((await readFile(workflowFile, "utf8")).trim(), source);
 });
 
-void test("propose_workflow_tool_accepts_approved_draft_directory_and_copies_assets", async () => {
+void test("propose_workflow_tool_copies_draft_directory_assets", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const draftDir = path.join(project, ".pi", "workflow-drafts", "summarize");
   const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
@@ -158,13 +147,7 @@ export default async function workflow({ prompt }) {
   const tool = createWorkflowTools({ cwd: project }).find((candidate) => candidate.name === "propose_workflow");
   assert.ok(tool);
 
-  await tool.execute(
-    "call-1",
-    { name: "summarize", draftDir: path.relative(project, draftDir), request: "summarize", approved: true },
-    undefined,
-    undefined,
-    {} as never,
-  );
+  await tool.execute("call-1", { name: "summarize", draftDir: path.relative(project, draftDir) }, undefined, undefined, {} as never);
 
   assert.equal((await readFile(path.join(workflowDir, "workflow.js"), "utf8")).trim(), source);
   assert.equal(await readFile(path.join(workflowDir, "prompts", "summary.txt"), "utf8"), "Summarize {{prompt}}");
@@ -183,13 +166,7 @@ export default async function workflow({ prompt }) {
   assert.ok(tool);
 
   await assert.rejects(
-    tool.execute(
-      "call-1",
-      { name: "summarize", draftDir: path.relative(project, draftDir), request: "summarize" },
-      undefined,
-      undefined,
-      {} as never,
-    ),
+    tool.execute("call-1", { name: "summarize", draftDir: path.relative(project, draftDir) }, undefined, undefined, {} as never),
     /must not be inside, equal to, or an ancestor of \.pi\/workflows/,
   );
 });
@@ -206,12 +183,12 @@ export default async function workflow({ prompt }) {
   assert.ok(tool);
 
   await assert.rejects(
-    tool.execute("call-1", { name: "summarize", draftDir: ".", request: "summarize" }, undefined, undefined, {} as never),
+    tool.execute("call-1", { name: "summarize", draftDir: "." }, undefined, undefined, {} as never),
     /must not be inside, equal to, or an ancestor of \.pi\/workflows/,
   );
 });
 
-void test("propose_workflow_tool_rejects_approved_draft_without_docstring", async () => {
+void test("propose_workflow_tool_rejects_draft_without_docstring", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const draftDir = path.join(project, ".pi", "workflow-drafts", "summarize");
   const source = `export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
@@ -224,13 +201,7 @@ export default async function workflow({ prompt }) {
   assert.ok(tool);
 
   await assert.rejects(
-    tool.execute(
-      "call-2",
-      { name: "summarize", draftDir: path.relative(project, draftDir), request: "summarize", approved: true },
-      undefined,
-      undefined,
-      {} as never,
-    ),
+    tool.execute("call-2", { name: "summarize", draftDir: path.relative(project, draftDir) }, undefined, undefined, {} as never),
     /must start with a JSDoc docstring/,
   );
 });

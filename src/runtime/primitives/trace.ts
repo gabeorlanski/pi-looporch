@@ -1,4 +1,4 @@
-import type { WorkflowTraceSnapshot } from "../../runtime-types.ts";
+import type { WorkflowTraceSnapshot } from ".././types.ts";
 import type { ActiveWorkflowRuntime, WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
 import { cloneSerializable } from "../serialization.ts";

@@ -1,7 +1,7 @@
 /** Child-agent reasoning effort labels accepted by workflow APIs and forwarded to Pi model sessions. */
 export type ReasoningLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
-/** Static phase metadata declared by workflow authors for approval and run planning. */
+/** Static phase metadata declared by workflow authors for run planning. */
 export interface WorkflowPhaseMetadata {
   title: string;
   detail?: string;

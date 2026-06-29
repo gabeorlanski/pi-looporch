@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { startBackgroundWorkflowRun } from "../src/background-runs.ts";
-import type { WorkflowAgent } from "../src/runtime-types.ts";
+import type { WorkflowAgent } from "../src/runtime/types.ts";
 
 async function writeWorkflow(project: string, name: string, source: string): Promise<void> {
   const workflowDir = path.join(project, ".pi", "workflows", name);

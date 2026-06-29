@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { RunWorkflowOptions, WorkflowPhaseMetadata, WorkflowRunResult, WorkflowSnapshot } from "../runtime-types.ts";
-import { normalizeWorkflowName, resolveWorkflowDirectory } from "../workflow-paths.ts";
-import { compileWorkflow } from "../workflow-sandbox.ts";
-import { writeWorkflowFinalOutput, writeWorkflowOutputManifest } from "../workflow-outputs.ts";
+import type { RunWorkflowOptions, WorkflowPhaseMetadata, WorkflowRunResult, WorkflowSnapshot } from "./types.ts";
+import { normalizeWorkflowName, resolveWorkflowDirectory } from "../workflow/paths.ts";
+import { compileWorkflow } from "../workflow/sandbox.ts";
+import { writeWorkflowFinalOutput, writeWorkflowOutputManifest } from "../workflow/outputs.ts";
 import type { ActiveWorkflowRuntime } from "./context.ts";
 import { workflowGlobals } from "./globals.ts";
-import { parseWorkflowSourceMetadata } from "../workflow-metadata.ts";
+import { parseWorkflowSourceMetadata } from "../workflow/metadata.ts";
 import { appendRunMessage } from "./messages.ts";
 import { createAgentLaunchQueue, normalizeMaxParallelAgents } from "./queue.ts";
 import { cloneSerializable, cloneSnapshot } from "./serialization.ts";

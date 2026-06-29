@@ -1,4 +1,4 @@
-import type { WorkflowFanOutSnapshot } from "../../runtime-types.ts";
+import type { WorkflowFanOutSnapshot } from ".././types.ts";
 import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
 

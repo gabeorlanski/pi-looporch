@@ -1,7 +1,7 @@
-import type { RunWorkflowOptions, WorkflowRunResult, WorkflowSnapshot } from "./runtime-types.ts";
+import type { RunWorkflowOptions, WorkflowRunResult, WorkflowSnapshot } from "./runtime/types.ts";
 import { runWorkflowFromDirectory } from "./runtime/run.ts";
 import { writeWorkflowSessionSummary } from "./session-logs.ts";
-import { createWorkflowOutputsDir } from "./workflow-outputs.ts";
+import { createWorkflowOutputsDir } from "./workflow/outputs.ts";
 
 export interface StartBackgroundWorkflowRunOptions extends RunWorkflowOptions {
   runId: string;

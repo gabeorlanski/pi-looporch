@@ -1,8 +1,8 @@
 import { mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { errorMessage } from "./errors.ts";
-import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "./runtime-types.ts";
+import { errorMessage } from "../errors.ts";
+import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
 
 type WorkflowOutputStatus = "done" | "error" | "running";
 

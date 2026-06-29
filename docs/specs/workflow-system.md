@@ -89,7 +89,7 @@ export default async function workflow({ files, focus = "general review" }) {
 }
 ```
 
-The workflow directory name is the command name. `metadata.name` must match the directory name. `metadata.description` is used for discovery, approval prompts, and display. `metadata.inputInstructions` is passed to the current-session resolver when freeform named-command input needs to become workflow JSON. `metadata.phases` is a required list of `{ title, detail? }` entries used for planning and approval; runtime `phase()` calls remain the source of actual progress.
+The workflow directory name is the command name. `metadata.name` must match the directory name. `metadata.description` is used for discovery and display. `metadata.inputInstructions` is passed to the current-session resolver when freeform named-command input needs to become workflow JSON. `metadata.phases` is a required list of `{ title, detail? }` entries used for planning; runtime `phase()` calls remain the source of actual progress.
 
 Generated workflow quality depends on the child-agent prompts as much as on the control flow. Each child-agent prompt should be a concise task packet with the mission, source-of-truth paths, relevant prior results or compact summaries, non-negotiable invariants, concrete operating instructions, evidence requirements, pass/fail gates, exact artifact paths to read or write, and an output contract. Fan-out prompts must repeat the context their child needs because child agents do not share memory, but shared context should be shaped as a compact prompt-file contract (`Inputs`, `Purpose`, `Definitions`, `Rules`, `Task`, `Output`) rather than an unstructured global preamble dump. Use `{{name}}` placeholders in prompt files and render them with `renderPrompt(...)`; do not put JS template variables like `${input.file}` inside prompt text. Prompts should pass paths, `taskFile`, `cwd`, commands/search strategy, and schemas instead of pasted bulk content. A prior-result handoff is explicit only when the workflow renders the result text, compact summary, or artifact path into a later child prompt; traces, phase history, and final workflow results do not become parent-agent context automatically. Workflow results remain machine-readable data for output files and session logs. Important artifact-producing workflows should include adversarial review and bounded repair stages only when the risk justifies the extra agents; default to one voter and one bounded repair pass.
 
@@ -168,7 +168,7 @@ A generic workflow invocation should let the agent decide how to handle the requ
 
 For generic invocation, the agent is responsible for finding the correct existing workflow or making a new one when no existing workflow fits.
 
-Generated new workflows must require explicit user approval before they are saved. The first `propose_workflow` call for a draft returns a compact approval prompt instead of saving; the current-session agent asks the user in normal chat and calls `propose_workflow` again with `approved: true` only after approval. Saved workflows run through `run_workflow` or a named workflow command.
+Generated new workflows are saved directly from complete draft directories. `propose_workflow` validates `.pi/workflow-drafts/<name>/workflow.js` plus any workflow-local resources, then copies the directory to `.pi/workflows/<name>/` in one call. Saved workflows run through `run_workflow` or a named workflow command.
 
 Workflow session logs have a separate cost-review command:
 
@@ -184,7 +184,7 @@ Workflow runtime settings are configured with `/workflow-settings`. With no args
 
 Normal TUI execution should stay lean. Named workflow commands should execute saved workflows directly rather than routing through a session-agent `run_workflow` tool call. While a workflow runs, show compact progress, phase names, active/error child agents, and token totals. Do not expose prompts, child agent output, workflow result content, runtime log messages, or tool-argument previews in live snapshots, tool update details, or completion messages; outputs belong in the temp output files and transcripts belong in the child pi session JSONL. The runtime widget is passive display only. Deeper inspection happens through the completion paths, `/workflow-review`, and child session logs.
 
-New-workflow approval (`propose_workflow`) is a normal chat turn, not a terminal review UI. Agents pass a project-local draft directory containing `workflow.js` and any workflow-local prompts/assets; the `draftDir` argument points to that directory, not to the `workflow.js` file. The tool returns a compact approval prompt listing the request, description, phases, files, and after-approval actions; the agent asks the user and calls the tool again with `approved: true` only after explicit approval.
+New-workflow saving (`propose_workflow`) is direct. Agents pass a project-local draft directory containing `workflow.js` and any workflow-local prompts/assets; the `draftDir` argument points to that directory, not to the `workflow.js` file. The tool validates the draft and copies it to `.pi/workflows/<name>/`.
 
 ## Migration Direction
 

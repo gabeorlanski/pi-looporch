@@ -8,7 +8,7 @@ import {
   readWorkflowSettings,
   writeGlobalWorkflowSettings,
   writeProjectWorkflowSettings,
-} from "../src/workflow-settings.ts";
+} from "../src/workflow/settings.ts";
 
 void test("workflow_settings_default_to_four_parallel_agents", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-"));

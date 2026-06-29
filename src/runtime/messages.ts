@@ -1,4 +1,4 @@
-import type { WorkflowRunMessageSnapshot } from "../runtime-types.ts";
+import type { WorkflowRunMessageSnapshot } from "./types.ts";
 import type { ActiveWorkflowRuntime } from "./context.ts";
 
 export function appendRunMessage(runtime: ActiveWorkflowRuntime, message: WorkflowRunMessageSnapshot): void {

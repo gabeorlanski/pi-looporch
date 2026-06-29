@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { resolveInsideRoot } from "../workflow-paths.ts";
+import { resolveInsideRoot } from "../workflow/paths.ts";
 
 export function renderPromptTemplate(template: string, context: Record<string, unknown>): string {
   return template.replace(/{{\s*([A-Za-z_$][\w$]*)\s*}}/g, (_match, key: string) => promptTemplateValue(context[key]));

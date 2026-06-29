@@ -17,7 +17,7 @@ npm run check
 
 - Keep this layer thin; delegate workflow behavior to `src/`.
 - Parse and coerce command text here before calling core code.
-- Keep generated workflow approval in normal chat. Tools return a compact approval prompt and agents retry with `approved: true` only after explicit user approval.
+- Keep generated workflow saving direct. `propose_workflow` validates a complete draft directory and saves it in one call.
 - Register commands/tools with clear descriptions and stable names.
 - Do not add workflow keybindings unless the user explicitly asks for an interactive control surface.
 - Do not put testable orchestration logic here.

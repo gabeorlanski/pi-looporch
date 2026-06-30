@@ -81,6 +81,13 @@ export default async function workflow(input) {
 
   const updates: string[] = [];
   const notifications: string[] = [];
+  const toolContext = {
+    mode: "print",
+    sessionManager: {
+      getSessionId: () => "tool-session",
+    },
+    ui: { notify: (message: string) => notifications.push(message) },
+  } as never;
   const result = await tool.execute(
     "call-1",
     { name: "echo", input: { message: "hello" } },
@@ -89,7 +96,7 @@ export default async function workflow(input) {
       const content = partial.content[0];
       if (content.type === "text") updates.push(content.text);
     },
-    { ui: { notify: (message: string) => notifications.push(message) } } as never,
+    toolContext,
   );
 
   const details = result.details as { workflowName: string; status: string; outputsDir: string; resultPath: string };
@@ -99,6 +106,10 @@ export default async function workflow(input) {
   assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /Workflow echo started in the background/);
   await waitForCondition(() => updates.some((update) => update.includes("workflow echo") && update.includes("#1 helper")));
   await waitForCondition(() => notifications.some((message) => message.includes("Workflow echo complete")));
+  const completionNotice = notifications.find((message) => message.includes("Workflow echo complete")) ?? "";
+  assert.match(completionNotice, /Result: .*final\.json/);
+  assert.match(completionNotice, /Workflow outputs: /);
+  assert.match(completionNotice, /Session logs: /);
   assert.deepEqual(JSON.parse(await readFile(path.join(details.outputsDir, "outputs", "final.json"), "utf8")), {
     input: { message: "hello" },
     agent: "helper:say hi",

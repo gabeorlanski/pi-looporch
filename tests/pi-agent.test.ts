@@ -4,12 +4,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
+import type { WorkflowAgentProgress, WorkflowAgentReporter } from "../src/runtime/types.ts";
 import {
   workflowAgentLogEvent,
   parseSessionTokens,
   workflowAgentSessionLogDirectory,
   createWorkflowAgentResourceLoader,
+  createWorkflowAgentProgressTracker,
   resolveChildAgentExtensionPaths,
+  workflowAgentLaunchPrompt,
 } from "../src/pi-agent.ts";
 
 void test("workflow_child_resource_loader_disables_ambient_extensions", async () => {
@@ -27,6 +30,69 @@ void test("workflow_child_extension_paths_resolve_project_relative_entries", () 
     "pi-subagents",
     path.join("/project", "extensions", "todo.ts"),
     "/abs/ext.ts",
+  ]);
+});
+
+void test("workflow_agent_launch_prompt_matches_reported_child_session_prompt", () => {
+  const prompt = workflowAgentLaunchPrompt("Review auth", { label: "security", taskFile: "tasks/security.md" });
+
+  assert.match(prompt, /Workflow task label: security/);
+  assert.match(prompt, /Task file: tasks\/security\.md/);
+  assert.match(prompt, /Review auth/);
+});
+
+void test("workflow_agent_progress_tracker_reports_tool_start_arguments", () => {
+  const progressReports: unknown[] = [];
+  const reportProgress = (progress: WorkflowAgentProgress): void => {
+    progressReports.push(progress);
+  };
+  const reporter: WorkflowAgentReporter = {
+    launched(): void {
+      return undefined;
+    },
+    progress: reportProgress,
+  };
+  const tracker = createWorkflowAgentProgressTracker(reporter);
+
+  tracker.handleEvent({ type: "message_start" });
+  tracker.handleEvent({ type: "tool_execution_start", toolName: "read", args: { path: "src/auth.ts" } });
+  tracker.handleEvent({ type: "tool_execution_update", toolName: "read" });
+  tracker.handleEvent({ type: "message_end", message: { usage: { inputTokens: 10, outputTokens: 4 } } });
+  tracker.handleEvent({ type: "turn_end" });
+
+  assert.deepEqual(progressReports, [
+    { statusMessage: "thinking", inputTokenCount: 0, outputTokenCount: 0, toolCallCount: 0, toolActivity: [], stepCount: 0 },
+    {
+      statusMessage: "active",
+      inputTokenCount: 0,
+      outputTokenCount: 0,
+      toolCallCount: 1,
+      toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
+      stepCount: 0,
+    },
+    {
+      statusMessage: "active",
+      inputTokenCount: 0,
+      outputTokenCount: 0,
+      toolCallCount: 1,
+      toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
+      stepCount: 0,
+    },
+    {
+      inputTokenCount: 10,
+      outputTokenCount: 4,
+      toolCallCount: 1,
+      toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
+      stepCount: 0,
+    },
+    {
+      statusMessage: "waiting",
+      inputTokenCount: 10,
+      outputTokenCount: 4,
+      toolCallCount: 1,
+      toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
+      stepCount: 1,
+    },
   ]);
 });
 

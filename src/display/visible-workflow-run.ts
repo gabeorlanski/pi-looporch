@@ -24,6 +24,7 @@ export interface VisibleWorkflowRun {
 
 export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOptions): Promise<VisibleWorkflowRun> {
   const showRunningUi = options.ctx.mode === "tui";
+  const ownerSessionId = options.ctx.sessionManager.getSessionId();
   const activeWorkflow = showRunningUi ? beginDynamicWorkflow(options.ctx) : undefined;
   let run: BackgroundWorkflowRun | undefined;
   let runId: string | undefined;
@@ -50,6 +51,7 @@ export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOp
     run = await startPreparedWorkflowRun({
       prepared,
       agent: options.agent,
+      ownerSessionId,
       signal: options.signal,
       onSnapshot: (snapshot) => {
         if (!run) return;

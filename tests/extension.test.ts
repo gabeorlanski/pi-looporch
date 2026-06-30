@@ -125,6 +125,7 @@ void test("session_start_restores_running_workflow_widget_from_active_registry",
     workflowName: "reloadable",
     outputsDir,
     startedAt: Date.now(),
+    ownerSessionId: "test-session",
   });
   await writeWorkflowOutputManifest({
     outputsDir,
@@ -146,6 +147,51 @@ void test("session_start_restores_running_workflow_widget_from_active_registry",
   await command;
   clearRunningWorkflowUi(harness.ctx, "run-reloadable");
   await removeActiveWorkflowRun(project, "run-reloadable");
+});
+
+void test("session_start_does_not_restore_workflow_owned_by_another_session", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const outputsDir = path.join(project, "outputs", "other-session-run");
+  await registerActiveWorkflowRun(project, {
+    runId: "run-other-session",
+    workflowName: "other-session",
+    outputsDir,
+    startedAt: Date.now(),
+    ownerSessionId: "other-session",
+  });
+  await writeWorkflowOutputManifest({
+    outputsDir,
+    workflowName: "other-session",
+    status: "running",
+    snapshot: runningWorkflowSnapshot("other-session"),
+  });
+  await writeWorkflowSnapshot(outputsDir, runningWorkflowSnapshot("other-session"));
+  const harness = createExtensionHarness({ cwd: project, sessionId: "current-session" });
+
+  await harness.sessionStart("reload");
+
+  assert.equal(harness.widgetInstallCount(), 0);
+  await harness.command("view-workflow", "");
+  assert.deepEqual(harness.notifications.at(-1), { message: "No running workflows to view.", type: "warning" });
+  await removeActiveWorkflowRun(project, "run-other-session");
+});
+
+void test("view_workflow_command_does_not_use_same_cwd_workflow_from_another_session", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const ownerHarness = createExtensionHarness({ cwd: project, sessionId: "owner-session" });
+  const viewerHarness = createExtensionHarness({ cwd: project, sessionId: "viewer-session" });
+
+  updateRunningWorkflowUi(ownerHarness.ctx, {
+    runId: "run-owner",
+    snapshot: runningWorkflowSnapshot("owner-workflow"),
+    abortWorkflow: () => undefined,
+  });
+
+  await viewerHarness.command("view-workflow", "");
+
+  assert.equal(viewerHarness.customOpenCount(), 0);
+  assert.deepEqual(viewerHarness.notifications.at(-1), { message: "No running workflows to view.", type: "warning" });
+  clearRunningWorkflowUi(ownerHarness.ctx, "run-owner");
 });
 
 void test("view_workflow_command_warns_when_no_workflow_is_running", async () => {

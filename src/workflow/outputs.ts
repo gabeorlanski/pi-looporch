@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { errorMessage } from "../errors.ts";
-import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
+import type { WorkflowAgentSnapshot, WorkflowSnapshot, WorkflowToolActivitySnapshot } from "../runtime/types.ts";
 
 type WorkflowOutputStatus = "done" | "error" | "running";
 
@@ -39,6 +39,18 @@ function workflowAgentOutputPath(outputsDir: string, agentId: number, label: str
   return path.join(outputsDir, "outputs", `agent-${String(agentId).padStart(3, "0")}-${slugText(label, 72)}.json`);
 }
 
+function workflowAgentArtifactDir(outputsDir: string, agentId: number, label: string): string {
+  return path.join(outputsDir, "agents", `agent-${String(agentId).padStart(3, "0")}-${slugText(label, 72)}`);
+}
+
+function workflowAgentPromptPath(outputsDir: string, agentId: number, label: string): string {
+  return path.join(workflowAgentArtifactDir(outputsDir, agentId, label), "prompt.txt");
+}
+
+function workflowAgentActivityPath(outputsDir: string, agentId: number, label: string): string {
+  return path.join(workflowAgentArtifactDir(outputsDir, agentId, label), "activity.jsonl");
+}
+
 export async function writeWorkflowFinalOutput(outputsDir: string, output: unknown): Promise<string> {
   const outputPath = workflowFinalOutputPath(outputsDir);
   await mkdir(path.dirname(outputPath), { recursive: true });
@@ -51,6 +63,26 @@ export async function writeWorkflowAgentOutput(outputsDir: string, agentId: numb
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeJsonFileAtomic(outputPath, output);
   return outputPath;
+}
+
+export async function writeWorkflowAgentPrompt(outputsDir: string, agentId: number, label: string, prompt: string): Promise<string> {
+  const promptPath = workflowAgentPromptPath(outputsDir, agentId, label);
+  await mkdir(path.dirname(promptPath), { recursive: true });
+  await writeFileAtomic(promptPath, prompt.endsWith("\n") ? prompt : `${prompt}\n`);
+  return promptPath;
+}
+
+export async function writeWorkflowAgentActivity(
+  outputsDir: string,
+  agentId: number,
+  label: string,
+  activity: WorkflowToolActivitySnapshot[],
+): Promise<string> {
+  const activityPath = workflowAgentActivityPath(outputsDir, agentId, label);
+  await mkdir(path.dirname(activityPath), { recursive: true });
+  const body = activity.map((entry) => JSON.stringify(entry)).join("\n");
+  await writeFileAtomic(activityPath, body ? `${body}\n` : "");
+  return activityPath;
 }
 
 export async function readWorkflowOutputManifest(outputsDir: string): Promise<WorkflowOutputManifest> {
@@ -107,8 +139,12 @@ function outputManifestEntries(agents: WorkflowAgentSnapshot[]): WorkflowOutputM
 }
 
 async function writeJsonFileAtomic(filePath: string, value: unknown): Promise<void> {
+  await writeFileAtomic(filePath, `${JSON.stringify(value ?? null, null, 2)}\n`);
+}
+
+async function writeFileAtomic(filePath: string, content: string): Promise<void> {
   const temporaryPath = `${filePath}.${String(process.pid)}.${randomUUID()}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await writeFile(temporaryPath, content, "utf8");
   await rename(temporaryPath, filePath);
 }
 

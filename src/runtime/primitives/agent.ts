@@ -1,6 +1,13 @@
-import type { WorkflowAgentOptions, WorkflowAgentProgress, WorkflowAgentSnapshot } from ".././types.ts";
+import type {
+  WorkflowAgentLaunchMetadata,
+  WorkflowAgentOptions,
+  WorkflowAgentProgress,
+  WorkflowAgentReporter,
+  WorkflowAgentSnapshot,
+  WorkflowToolActivitySnapshot,
+} from ".././types.ts";
 import { resolveWorkflowAgentCwd } from "../../workflow/paths.ts";
-import { writeWorkflowAgentOutput } from "../../workflow/outputs.ts";
+import { writeWorkflowAgentActivity, writeWorkflowAgentOutput, writeWorkflowAgentPrompt } from "../../workflow/outputs.ts";
 import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
 import { jsonSchemaPrompt, normalizeAttemptCount, parseAndValidateJsonResponse } from "../schema.ts";
@@ -72,18 +79,22 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       message: `${agent.label} started`,
     });
     runtime.emit();
+    let reporter: RuntimeWorkflowAgentReporter | undefined;
     try {
       const heartbeat = setInterval(runtime.emit, 1000);
       let result: unknown;
       try {
-        result = await runtime.options.agent(prompt, workflowAgentOptionsForLaunch(runtime, agent, agentOptions, agentCwd), (progress) => {
-          if (!applyAgentProgress(agent, progress)) return;
-          runtime.emit();
-        });
+        reporter = workflowAgentReporter(runtime, agent);
+        result = await runtime.options.agent(
+          prompt,
+          workflowAgentOptionsForLaunch(runtime, agent, agentOptions, agentCwd),
+          reporter.reporter,
+        );
       } finally {
         clearInterval(heartbeat);
       }
       if (runtime.options.signal?.aborted) throw new Error("Workflow aborted");
+      await reporter.flush();
       agent.status = "done";
       agent.endedAt = Date.now();
       const output = cloneSerializable(result);
@@ -101,6 +112,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       runtime.emit();
       return result;
     } catch (error) {
+      await reporter?.flush();
       agent.status = "error";
       agent.endedAt = Date.now();
       agent.error = error instanceof Error ? error.message : String(error);
@@ -118,6 +130,41 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
   } finally {
     releaseAgentSlot();
   }
+}
+
+interface RuntimeWorkflowAgentReporter {
+  reporter: WorkflowAgentReporter;
+  flush: () => Promise<void>;
+}
+
+function workflowAgentReporter(runtime: ActiveWorkflowRuntime, agent: WorkflowAgentSnapshot): RuntimeWorkflowAgentReporter {
+  let promptWrite: Promise<void> = Promise.resolve();
+  let activityWrite: Promise<void> = Promise.resolve();
+  let latestToolActivity: WorkflowToolActivitySnapshot[] = [];
+  const reportProgress = (progress: WorkflowAgentProgress): void => {
+    if (progress.toolActivity !== undefined && !sameToolActivity(progress.toolActivity, latestToolActivity)) {
+      latestToolActivity = progress.toolActivity.map(cloneToolActivity);
+      activityWrite = enqueueActivityWrite(activityWrite, runtime, agent, latestToolActivity);
+    }
+    if (!applyAgentProgress(agent, progress)) return;
+    runtime.emit();
+  };
+  return {
+    reporter: {
+      progress: reportProgress,
+      launched(metadata: WorkflowAgentLaunchMetadata): void {
+        if (!runtime.options.outputsDir) return;
+        promptWrite = writeWorkflowAgentPrompt(runtime.options.outputsDir, agent.id, agent.label, metadata.prompt)
+          .then((promptPath) => {
+            if (agent.promptPath === promptPath) return;
+            agent.promptPath = promptPath;
+            runtime.emit();
+          })
+          .catch(() => undefined);
+      },
+    },
+    flush: () => Promise.all([promptWrite, activityWrite]).then(() => undefined),
+  };
 }
 
 function applyAgentProgress(agent: WorkflowAgentSnapshot, progress: WorkflowAgentProgress): boolean {
@@ -159,6 +206,39 @@ function applyAgentProgress(agent: WorkflowAgentSnapshot, progress: WorkflowAgen
     changed = true;
   }
   return changed;
+}
+
+function enqueueActivityWrite(
+  previous: Promise<void>,
+  runtime: ActiveWorkflowRuntime,
+  agent: WorkflowAgentSnapshot,
+  activity: WorkflowToolActivitySnapshot[],
+): Promise<void> {
+  const outputsDir = runtime.options.outputsDir;
+  if (!outputsDir) return previous;
+  return previous
+    .catch(() => undefined)
+    .then(() => writeWorkflowAgentActivity(outputsDir, agent.id, agent.label, activity))
+    .then((activityPath) => {
+      if (agent.activityPath === activityPath) return;
+      agent.activityPath = activityPath;
+      runtime.emit();
+    })
+    .catch(() => undefined);
+}
+
+function sameToolActivity(left: WorkflowToolActivitySnapshot[], right: WorkflowToolActivitySnapshot[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every(
+    (value, index) => value.name === right[index]?.name && JSON.stringify(value.arguments) === JSON.stringify(right[index]?.arguments),
+  );
+}
+
+function cloneToolActivity(tool: WorkflowToolActivitySnapshot): WorkflowToolActivitySnapshot {
+  return {
+    ...tool,
+    ...(tool.arguments !== undefined ? { arguments: cloneSerializable(tool.arguments) } : {}),
+  };
 }
 
 function workflowAgentOptionsForLaunch(

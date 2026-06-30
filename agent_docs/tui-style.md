@@ -14,7 +14,7 @@ Use this guide when changing terminal UI, display renderers, progress views, ove
 
 - Keep display modules pure: normalized state plus width plus theme in, strings out.
 - Keep terminal capability detection at the boundary: TTY, width, color support, plain mode, CI, and script output are not core renderer concerns.
-- Prefer compact progress views over verbose live logs. Put transcripts and debug data in files, then show the path.
+- Prefer compact progress views over verbose live logs. Put transcripts and debug data in files, then show the path; explicit on-demand inspectors may show exact prompt/tool/output details when that is their documented purpose.
 - Make every visible row meaningful without color. Use text, counters, stable labels, and glyphs before relying on foreground color.
 - Keep render output deterministic. Inject or isolate clocks for durations.
 
@@ -42,7 +42,7 @@ Use this guide when changing terminal UI, display renderers, progress views, ove
 - Do not interleave parallel child-agent logs into the main progress pane. Show running state in the TUI and persist details in session logs.
 - Log terminal-debug details to files while the TUI owns stdout/stderr.
 - Prefer stable counters over animated noise: steps, tools, input tokens, output tokens, elapsed time, phase, and current agent label.
-- Keep result content out of live and completion messages. Large content belongs in transcripts, JSONL, or artifact files.
+- Keep result content out of compact widgets and completion messages. Large content belongs in transcripts, JSONL, artifact files, or explicit on-demand inspectors that the user opens for details.
 
 ## Testing Checklist
 

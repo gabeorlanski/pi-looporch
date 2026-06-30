@@ -20,8 +20,8 @@ export default async function workflow({ files }) {
 }`,
     { "prompt.txt": "review " },
   );
-  const agent: WorkflowAgent = (prompt, options, reportProgress) => {
-    reportProgress({ inputTokenCount: 5, outputTokenCount: 2, model: "fake-model" });
+  const agent: WorkflowAgent = (prompt, options, reporter) => {
+    reporter.progress({ inputTokenCount: 5, outputTokenCount: 2, model: "fake-model" });
     return Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
   };
 
@@ -72,8 +72,8 @@ export default async function workflow() {
   return { child, ok: true };
 }`,
   );
-  const agent: WorkflowAgent = (_prompt, _options, reportProgress) => {
-    reportProgress({ toolCallCount: 1 });
+  const agent: WorkflowAgent = (_prompt, _options, reporter) => {
+    reporter.progress({ toolCallCount: 1 });
     return Promise.resolve({ slug: "01_retail_signal_audit", score: 4 });
   };
 
@@ -110,6 +110,35 @@ export default async function workflow() {
       },
     ],
   });
+});
+
+void test("workflow_writes_valid_json_for_undefined_agent_and_final_outputs", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  const outputsDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-outputs-"));
+  await writeWorkflow(
+    project,
+    "undefined-outputs",
+    `export const metadata = { name: "undefined-outputs", description: "Undefined outputs", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  await agent("return undefined", { label: "empty" });
+  return undefined;
+}`,
+  );
+  const agent: WorkflowAgent = () => Promise.resolve(undefined);
+
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "undefined-outputs",
+    input: {},
+    agent,
+    outputsDir,
+  });
+
+  assert.equal(result.result, undefined);
+  assert.match(result.snapshot.agents[0]?.outputPath ?? "", /agent-001-empty\.json$/);
+  assert.equal(JSON.parse(await readFile(result.snapshot.agents[0]?.outputPath ?? "", "utf8")), null);
+  assert.equal(JSON.parse(await readFile(result.resultPath ?? "", "utf8")), null);
 });
 
 void test("workflow_trace_records_structured_debug_values", async () => {

@@ -69,9 +69,10 @@ Use this guide when integrating with upstream Pi, authoring extensions, creating
 ## Workflow Harness Rules
 
 - `run_workflow` validates input at the tool boundary, reads merged settings, streams compact progress, starts a background run, and returns temp output/result paths.
-- Keep live workflow snapshots lightweight. Store counters and artifact paths there; write full child outputs and final results to the run outputs directory with an atomic `running`/`done`/`error` manifest.
+- Running-workflow UI state and active-run reattachment are scoped by the parent Pi session id as well as cwd; sessions in the same project directory must not adopt each other's active workflows.
+- Live workflow snapshots store counters and artifact paths. Exact child-agent prompts, structured tool activity, and child-agent outputs live in artifacts that the running-workflow inspector reads on demand.
 - `propose_workflow` requires complete draft directories and saves directly after validation.
-- Workflow results, including strings, stay in output files and session logs.
+- Final workflow results, including strings, stay in output files and session logs; completion messages link them instead of pasting them into chat.
 - Runtime `phase()` calls are progress markers, not shared memory.
 - Bounded parallelism must apply across direct concurrent `agent(...)` calls and fan-out helpers.
 

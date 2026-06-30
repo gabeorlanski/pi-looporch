@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -110,7 +113,14 @@ void test("workflow_widget_and_inspector_render_within_width", () => {
     traces: [],
     agents: [
       agent({ id: 1, phaseIndex: 1, phase: "collect", label: "inventory", status: "done", inputTokenCount: 1200 }),
-      agent({ id: 2, phaseIndex: 2, phase: "fanout", label: "review src/auth.ts", status: "running", outputTokenCount: 300 }),
+      agent({
+        id: 2,
+        phaseIndex: 2,
+        phase: "fanout",
+        label: "review src/auth.ts",
+        status: "running",
+        outputTokenCount: 300,
+      }),
     ],
     fanOuts: [],
     messages: [{ phaseIndex: 2, phase: "fanout", agentId: 2, agentLabel: "review src/auth.ts", level: "info", message: "review started" }],
@@ -130,6 +140,75 @@ void test("workflow_widget_and_inspector_render_within_width", () => {
   assert.ok(inspectorLines.every((line) => visibleWidth(line) <= 100));
 });
 
+void test("workflow_inspector_shows_exact_activity_output_and_expandable_prompt", async () => {
+  const artifactsDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-inspector-"));
+  const promptPath = path.join(artifactsDir, "prompt.txt");
+  const activityPath = path.join(artifactsDir, "activity.jsonl");
+  const outputPath = path.join(artifactsDir, "output.json");
+  await Promise.all([
+    writeFile(promptPath, "EXACT PROMPT\nRead src/auth.ts\n", "utf8"),
+    writeFile(
+      activityPath,
+      [
+        { name: "find", arguments: { pattern: "*.ts" } },
+        { name: "read", arguments: { path: "src/auth.ts" } },
+        { name: "bash", arguments: { command: `npm test ${"界".repeat(30)}` } },
+        { name: "write", arguments: { path: "out.txt" } },
+      ]
+        .map((entry) => JSON.stringify(entry))
+        .join("\n") + "\n",
+      "utf8",
+    ),
+    writeFile(outputPath, JSON.stringify(`EXACT OUTPUT\nDone ${"界".repeat(40)}`), "utf8"),
+  ]);
+  const model = new WorkflowInspectorModel(
+    {
+      workflowName: "review",
+      description: "Review auth-sensitive files",
+      plannedPhases: [{ title: "collect" }],
+      phases: ["collect"],
+      traces: [],
+      agents: [
+        agent({
+          id: 1,
+          phaseIndex: 1,
+          phase: "collect",
+          label: "inventory",
+          status: "done",
+          promptPath,
+          activityPath,
+          outputPath,
+          sessionFile: "/tmp/session.jsonl",
+          eventsFile: "/tmp/events.jsonl",
+        }),
+      ],
+      fanOuts: [],
+      messages: [],
+      status: "done",
+    },
+    () => 2_000,
+  );
+  const inspector = new WorkflowInspector(model, plainWorkflowTuiTheme, () => 34);
+
+  inspector.handleInput("\r");
+  const collapsed = inspector.render(120).join("\n");
+
+  assert.match(collapsed, /session file: \/tmp\/session\.jsonl/);
+  assert.match(collapsed, /events file: \/tmp\/events\.jsonl/);
+  assert.doesNotMatch(collapsed, /find \{"pattern":"\*\.ts"\}/);
+  assert.match(collapsed, /read \{"path":"src\/auth\.ts"\}/);
+  assert.match(collapsed, /bash \{"command":"npm test/);
+  assert.match(collapsed, /write \{"path":"out\.txt"\}/);
+  assert.match(collapsed, /EXACT OUTPUT/);
+  assert.doesNotMatch(collapsed, /EXACT PROMPT/);
+  assert.ok(inspector.render(50).every((line) => visibleWidth(line) <= 50));
+
+  inspector.handleInput("\r");
+  const expanded = inspector.render(120).join("\n");
+
+  assert.match(expanded, /EXACT PROMPT/);
+});
+
 void test("running_workflow_ui_handles_widget_selection_inspector_and_abort", () => {
   let editorText = "";
   let terminalInputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
@@ -140,6 +219,9 @@ void test("running_workflow_ui_handles_widget_selection_inspector_and_abort", ()
     mode: "tui",
     hasUI: true,
     cwd: process.cwd(),
+    sessionManager: {
+      getSessionId: () => "progress-test-session",
+    },
     ui: {
       setStatus(): void {
         return undefined;

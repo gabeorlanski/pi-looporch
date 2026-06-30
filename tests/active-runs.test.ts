@@ -14,16 +14,22 @@ void test("active_workflow_runs_are_independent_per_run_files", async () => {
       workflowName: "a",
       outputsDir: path.join(project, "outputs", "a"),
       startedAt: 1,
+      ownerSessionId: "session-a",
     }),
     registerActiveWorkflowRun(project, {
       runId: "run-b",
       workflowName: "b",
       outputsDir: path.join(project, "outputs", "b"),
       startedAt: 2,
+      ownerSessionId: "session-b",
     }),
   ]);
 
   assert.deepEqual((await readActiveWorkflowRuns(project)).map((record) => record.runId).sort(), ["run-a", "run-b"]);
+  assert.deepEqual(
+    (await readActiveWorkflowRuns(project, "session-a")).map((record) => record.runId),
+    ["run-a"],
+  );
 
   await removeActiveWorkflowRun(project, "run-a");
 

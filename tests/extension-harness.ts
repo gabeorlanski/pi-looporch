@@ -39,6 +39,7 @@ function isTestWidgetFactory(content: unknown): content is TestWidgetFactory {
 
 export interface ExtensionHarnessOptions {
   cwd: string;
+  sessionId?: string;
   idle?: boolean;
   editorText?: string;
   sendMessage?: (message: SentMessage, options?: unknown) => void;
@@ -79,6 +80,7 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
   let widgetPlacement: string | undefined;
   let terminalInputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
   const sessionStartHandlers: TestSessionStartHandler[] = [];
+  const sessionId = options.sessionId ?? "test-session";
   const pi = {
     registerTool(tool: ToolDefinition): void {
       tools.set(tool.name, tool);
@@ -103,6 +105,9 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
   piWorkflow(pi);
   const ctx = {
     cwd: options.cwd,
+    sessionManager: {
+      getSessionId: () => sessionId,
+    },
     mode: "tui",
     hasUI: true,
     signal: undefined,

@@ -58,6 +58,7 @@ export async function prepareWorkflowRun(options: {
 export async function startPreparedWorkflowRun(options: {
   prepared: PreparedWorkflowRun;
   agent: WorkflowAgent;
+  ownerSessionId: string;
   signal?: AbortSignal;
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
 }): Promise<BackgroundWorkflowRun> {
@@ -71,6 +72,7 @@ export async function startPreparedWorkflowRun(options: {
     workflowRoots: prepared.workflowRoots,
     agentLogParentId: prepared.runId,
     maxParallelAgents: prepared.maxParallelAgents,
+    ownerSessionId: options.ownerSessionId,
     signal: options.signal,
     onSnapshot: options.onSnapshot,
   });
@@ -82,6 +84,7 @@ export async function startWorkflowRun(options: {
   input: unknown;
   agentDir: string;
   agent: WorkflowAgent;
+  ownerSessionId: string;
   signal?: AbortSignal;
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
 }): Promise<StartedWorkflowRun> {
@@ -89,6 +92,7 @@ export async function startWorkflowRun(options: {
   const run = await startPreparedWorkflowRun({
     prepared,
     agent: options.agent,
+    ownerSessionId: options.ownerSessionId,
     signal: options.signal,
     onSnapshot: options.onSnapshot,
   });

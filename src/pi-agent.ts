@@ -11,7 +11,7 @@ import {
   type CreateAgentSessionOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { WorkflowAgent, WorkflowAgentProgress } from "./runtime/types.ts";
+import type { WorkflowAgent, WorkflowAgentReporter, WorkflowToolActivitySnapshot } from "./runtime/types.ts";
 import { createLoggedWorkflowAgentSession } from "./agent-session-logs.ts";
 import { agentTaskPrompt } from "./prompt-templates.ts";
 import { parseSessionTokens, workflowTokenUsageFromMessage } from "./session-usage.ts";
@@ -40,7 +40,7 @@ export function resolveChildAgentExtensionPaths(projectCwd: string, childAgentEx
 }
 
 export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): WorkflowAgent {
-  return async (prompt, agentOptions, reportProgress) => {
+  return async (prompt, agentOptions, reporter) => {
     const agentDir = getAgentDir();
     const authStorage = options.session?.authStorage ?? AuthStorage.create();
     const modelRegistry = options.session?.modelRegistry ?? ModelRegistry.create(authStorage);
@@ -84,19 +84,19 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
     });
 
     const sessionModel = session.model ? displayModelName(session.model) : undefined;
-    if (sessionModel || loggedSession) {
-      reportProgress({
-        ...(sessionModel ? { model: sessionModel } : {}),
-        ...(loggedSession
-          ? {
-              sessionDir: loggedSession.sessionDir,
-              sessionFile: loggedSession.sessionFile,
-              eventsFile: loggedSession.eventsFile,
-            }
-          : {}),
-      });
-    }
-    const progress = createProgressTracker(reportProgress);
+    const sessionPrompt = workflowAgentLaunchPrompt(prompt, agentOptions);
+    reporter.launched({ prompt: sessionPrompt });
+    reporter.progress({
+      ...(sessionModel ? { model: sessionModel } : {}),
+      ...(loggedSession
+        ? {
+            sessionDir: loggedSession.sessionDir,
+            sessionFile: loggedSession.sessionFile,
+            eventsFile: loggedSession.eventsFile,
+          }
+        : {}),
+    });
+    const progress = createWorkflowAgentProgressTracker(reporter);
     const unsubscribe = session.subscribe((event) => {
       loggedSession?.recordEvent(event);
       progress.handleEvent(event);
@@ -111,9 +111,9 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
         removeAbortListener = () => agentOptions.signal?.removeEventListener("abort", abortSession);
       }
 
-      await session.prompt(agentTaskPrompt(prompt, agentOptions));
+      await session.prompt(sessionPrompt);
       const usage = loggedSession ? parseSessionTokens(loggedSession.sessionManager.getSessionDir()) : null;
-      reportProgress({
+      reporter.progress({
         statusMessage: "done",
         ...(usage ? { inputTokenCount: usage.input, outputTokenCount: usage.output } : {}),
       });
@@ -146,17 +146,31 @@ function displayModelName(model: { name: string; provider: string; id: string })
   return model.name.trim() ? model.name : `${model.provider}/${model.id}`;
 }
 
-function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress) => void) {
+/** Builds the exact prompt sent to a Pi child-agent session for workflow launch reporting and execution. */
+export function workflowAgentLaunchPrompt(prompt: string, agentOptions: Parameters<WorkflowAgent>[1]): string {
+  return agentTaskPrompt(prompt, agentOptions);
+}
+
+/** Deterministic tracker for translating Pi child-agent session events into workflow progress snapshots. */
+export interface WorkflowAgentProgressTracker {
+  /** Applies one Pi session event and emits progress when it changes child-agent runtime state. */
+  handleEvent(event: unknown): void;
+}
+
+/** Creates a deterministic Pi session event tracker that reports workflow child-agent progress snapshots. */
+export function createWorkflowAgentProgressTracker(reporter: WorkflowAgentReporter): WorkflowAgentProgressTracker {
   let inputTokenCount = 0;
   let outputTokenCount = 0;
   let toolCallCount = 0;
   let stepCount = 0;
+  const toolActivity: WorkflowToolActivitySnapshot[] = [];
   const report = (statusMessage?: string): void => {
-    reportProgress({
+    reporter.progress({
       ...(statusMessage ? { statusMessage } : {}),
       inputTokenCount,
       outputTokenCount,
       toolCallCount,
+      toolActivity: toolActivity.map((tool) => ({ ...tool })),
       stepCount,
     });
   };
@@ -165,7 +179,10 @@ function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress)
       if (!isEventObject(event)) return;
       if (event.type === "message_start") report("thinking");
       if (event.type === "tool_execution_start" || event.type === "tool_execution_update" || event.type === "tool_execution_end") {
-        if (event.type === "tool_execution_start") toolCallCount++;
+        if (event.type === "tool_execution_start") {
+          toolCallCount++;
+          toolActivity.push(toolActivitySnapshot(event));
+        }
         report("active");
       }
       if (event.type === "message_end") {
@@ -180,6 +197,13 @@ function createProgressTracker(reportProgress: (progress: WorkflowAgentProgress)
       }
     },
   };
+}
+
+function toolActivitySnapshot(event: Record<string, unknown>): WorkflowToolActivitySnapshot {
+  const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
+  const argumentsValue = event.args ?? event.arguments ?? event.input;
+  if (argumentsValue === undefined) return { name: toolName };
+  return { name: toolName, arguments: argumentsValue };
 }
 
 function isEventObject(value: unknown): value is Record<string, unknown> {

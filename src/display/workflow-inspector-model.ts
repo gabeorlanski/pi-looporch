@@ -1,4 +1,4 @@
-import type { WorkflowAgentSnapshot, WorkflowRunMessageSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
+import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
 
 export type WorkflowUiStatus = "running" | "done" | "error";
 export type WorkflowUiPhaseStatus = "done" | "running" | "pending" | "error";
@@ -15,8 +15,11 @@ export interface WorkflowUiAgent {
   steps: number;
   durationSeconds: number;
   detailLines: string[];
-  activity: string[];
-  outcome: string;
+  promptPath?: string;
+  activityPath?: string;
+  outputPath?: string;
+  message?: string;
+  error?: string;
 }
 
 export interface WorkflowUiPhase {
@@ -89,7 +92,7 @@ function workflowPhases(snapshot: WorkflowSnapshot, now: number): WorkflowUiPhas
 }
 
 function setupPhase(snapshot: WorkflowSnapshot, now: number): WorkflowUiPhase | undefined {
-  const setupAgents = snapshot.agents.filter((agent) => agent.phaseIndex === 0).map((agent) => uiAgent(agent, snapshot, now));
+  const setupAgents = snapshot.agents.filter((agent) => agent.phaseIndex === 0).map((agent) => uiAgent(agent, now));
   const hasSetupMessages = snapshot.messages.some((message) => message.phaseIndex === 0);
   const hasSetupTraces = snapshot.traces.some((trace) => trace.phaseIndex === 0);
   if (setupAgents.length === 0 && !hasSetupMessages && !hasSetupTraces) return undefined;
@@ -104,7 +107,7 @@ function setupPhase(snapshot: WorkflowSnapshot, now: number): WorkflowUiPhase | 
 }
 
 function phaseFromSnapshot(snapshot: WorkflowSnapshot, index: number, name: string, now: number): WorkflowUiPhase {
-  const agents = snapshot.agents.filter((agent) => agent.phaseIndex === index).map((agent) => uiAgent(agent, snapshot, now));
+  const agents = snapshot.agents.filter((agent) => agent.phaseIndex === index).map((agent) => uiAgent(agent, now));
   return {
     index,
     name,
@@ -136,7 +139,7 @@ function phaseStatus(snapshot: WorkflowSnapshot, phaseIndex: number): WorkflowUi
   return "done";
 }
 
-function uiAgent(agent: WorkflowAgentSnapshot, snapshot: WorkflowSnapshot, now: number): WorkflowUiAgent {
+function uiAgent(agent: WorkflowAgentSnapshot, now: number): WorkflowUiAgent {
   const detailLines = [
     `id: ${String(agent.id)}`,
     `label: ${agent.label}`,
@@ -148,6 +151,8 @@ function uiAgent(agent: WorkflowAgentSnapshot, snapshot: WorkflowSnapshot, now: 
     ...(agent.sessionDir ? [`session dir: ${agent.sessionDir}`] : []),
     ...(agent.sessionFile ? [`session file: ${agent.sessionFile}`] : []),
     ...(agent.eventsFile ? [`events file: ${agent.eventsFile}`] : []),
+    ...(agent.promptPath ? [`prompt: ${agent.promptPath}`] : []),
+    ...(agent.activityPath ? [`activity: ${agent.activityPath}`] : []),
     ...(agent.outputPath ? [`output: ${agent.outputPath}`] : []),
   ];
   return {
@@ -161,8 +166,11 @@ function uiAgent(agent: WorkflowAgentSnapshot, snapshot: WorkflowSnapshot, now: 
     steps: agent.stepCount,
     durationSeconds: agentDurationSeconds(agent, now),
     detailLines,
-    activity: agentActivity(agent, snapshot.messages),
-    outcome: agentOutcome(agent),
+    promptPath: agent.promptPath,
+    activityPath: agent.activityPath,
+    outputPath: agent.outputPath,
+    message: agent.message,
+    error: agent.error,
   };
 }
 
@@ -174,17 +182,4 @@ function agentStatus(status: WorkflowAgentSnapshot["status"]): WorkflowUiAgentSt
 
 function agentDurationSeconds(agent: WorkflowAgentSnapshot, now: number): number {
   return Math.max(0, Math.floor(((agent.endedAt ?? now) - agent.startedAt) / 1000));
-}
-
-function agentActivity(agent: WorkflowAgentSnapshot, messages: WorkflowRunMessageSnapshot[]): string[] {
-  const agentMessages = messages.filter((message) => message.agentId === agent.id).map((message) => `${message.level}: ${message.message}`);
-  const live = agent.message ? [`status: ${agent.message}`] : [];
-  return [...agentMessages, ...live];
-}
-
-function agentOutcome(agent: WorkflowAgentSnapshot): string {
-  if (agent.error) return agent.error;
-  if (agent.outputPath) return `Agent output saved to ${agent.outputPath}`;
-  if (agent.status === "running") return agent.message ?? "Agent is still running.";
-  return "Agent completed. See the session transcript for details.";
 }

@@ -113,7 +113,7 @@ export function clearRunningWorkflowUi(ctx: ExtensionContext, runId?: string): v
 }
 
 async function refreshRehydratedWorkflowUi(ctx: ExtensionContext): Promise<number> {
-  const snapshots = await readActiveWorkflowSnapshots(ctx.cwd);
+  const snapshots = await readActiveWorkflowSnapshots(ctx.cwd, ctx.sessionManager.getSessionId());
   for (const snapshot of snapshots) updateRunningWorkflowUi(ctx, snapshot);
   if (snapshots.length === 0) clearRunningWorkflowUi(ctx);
   return snapshots.length;
@@ -220,7 +220,7 @@ function findRunningWorkflowUiState(ctx: ExtensionContext): RunningWorkflowUiSta
 }
 
 function workflowUiScope(ctx: ExtensionContext): string {
-  return ctx.cwd;
+  return `${ctx.cwd}\0${ctx.sessionManager.getSessionId()}`;
 }
 
 function activeRun(state: RunningWorkflowUiState): RunningWorkflowRunState {

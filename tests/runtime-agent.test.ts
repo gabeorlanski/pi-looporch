@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -115,8 +115,9 @@ export default async function workflow() {
   assert.ok(snapshots >= 4);
 });
 
-void test("workflow_tracks_agent_progress_without_auto_logging_tool_names", async () => {
+void test("workflow_tracks_agent_progress_with_exact_prompt_tools_and_output", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  const outputsDir = path.join(project, "outputs");
   await writeWorkflow(
     project,
     "progress-log",
@@ -125,12 +126,27 @@ export default async function workflow() {
   return agent("work", { label: "worker" });
 }`,
   );
-  const agent: WorkflowAgent = (_prompt, _options, reportProgress) => {
-    reportProgress({ statusMessage: "thinking" });
-    reportProgress({ statusMessage: "read", toolCallCount: 1 });
-    reportProgress({ statusMessage: "read", toolCallCount: 1 });
-    reportProgress({ statusMessage: "bash", toolCallCount: 2 });
-    reportProgress({ statusMessage: "done", toolCallCount: 2 });
+  const agent: WorkflowAgent = (_prompt, _options, reporter) => {
+    reporter.launched({ prompt: "exact prompt sent to child" });
+    reporter.progress({ statusMessage: "thinking" });
+    reporter.progress({ statusMessage: "read", toolCallCount: 1, toolActivity: [{ name: "read", arguments: { path: "src/index.ts" } }] });
+    reporter.progress({ statusMessage: "read", toolCallCount: 1, toolActivity: [{ name: "read", arguments: { path: "src/index.ts" } }] });
+    reporter.progress({
+      statusMessage: "bash",
+      toolCallCount: 2,
+      toolActivity: [
+        { name: "read", arguments: { path: "src/index.ts" } },
+        { name: "bash", arguments: { command: "npm test" } },
+      ],
+    });
+    reporter.progress({
+      statusMessage: "done",
+      toolCallCount: 2,
+      toolActivity: [
+        { name: "read", arguments: { path: "src/index.ts" } },
+        { name: "bash", arguments: { command: "npm test" } },
+      ],
+    });
     return Promise.resolve("ok");
   };
 
@@ -140,6 +156,7 @@ export default async function workflow() {
     workflowName: "progress-log",
     input: {},
     agent,
+    outputsDir,
   });
 
   assert.deepEqual(
@@ -147,7 +164,22 @@ export default async function workflow() {
     ["workflow progress-log started", "worker started", "worker done", "workflow completed"],
   );
   assert.equal(result.snapshot.agents[0]?.message, "done");
+  assert.match(result.snapshot.agents[0]?.promptPath ?? "", /prompt\.txt$/);
+  assert.match(result.snapshot.agents[0]?.activityPath ?? "", /activity\.jsonl$/);
+  assert.match(result.snapshot.agents[0]?.outputPath ?? "", /agent-001-worker\.json$/);
+  assert.equal(await readFile(result.snapshot.agents[0]?.promptPath ?? "", "utf8"), "exact prompt sent to child\n");
+  assert.deepEqual(JSON.parse(await readFile(result.snapshot.agents[0]?.outputPath ?? "", "utf8")), "ok");
   assert.equal(result.snapshot.agents[0]?.toolCallCount, 2);
+  assert.deepEqual(
+    (await readFile(result.snapshot.agents[0]?.activityPath ?? "", "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as unknown),
+    [
+      { name: "read", arguments: { path: "src/index.ts" } },
+      { name: "bash", arguments: { command: "npm test" } },
+    ],
+  );
 });
 
 void test("workflow_passes_session_log_context_to_each_launched_agent", async () => {
@@ -163,11 +195,11 @@ export default async function workflow() {
 }`,
   );
   const sessionLogs: unknown[] = [];
-  const agent: WorkflowAgent = (_prompt, options, reportProgress) => {
+  const agent: WorkflowAgent = (_prompt, options, reporter) => {
     sessionLogs.push(options.sessionLog);
     const sessionLog = options.sessionLog;
     if (!sessionLog) throw new Error("expected session log context");
-    reportProgress({ sessionFile: `/tmp/${sessionLog.agentKey}.jsonl` });
+    reporter.progress({ sessionFile: `/tmp/${sessionLog.agentKey}.jsonl` });
     return Promise.resolve("ok");
   };
 

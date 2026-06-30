@@ -6,6 +6,7 @@ import { createWorkflowOutputsDir, writeWorkflowSnapshot } from "./workflow/outp
 
 export interface StartBackgroundWorkflowRunOptions extends RunWorkflowOptions {
   runId: string;
+  ownerSessionId: string;
 }
 
 export interface BackgroundWorkflowRunResult extends WorkflowRunResult {
@@ -28,6 +29,7 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
     workflowName: options.workflowName,
     outputsDir,
     startedAt: Date.now(),
+    ownerSessionId: options.ownerSessionId,
   });
   const controller = new AbortController();
   let latestSnapshot: WorkflowSnapshot | undefined;

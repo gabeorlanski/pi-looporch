@@ -7,8 +7,8 @@ export interface ActiveWorkflowSnapshot {
   snapshot: WorkflowSnapshot;
 }
 
-export async function readActiveWorkflowSnapshots(cwd: string): Promise<ActiveWorkflowSnapshot[]> {
-  const records = await readActiveWorkflowRuns(cwd);
+export async function readActiveWorkflowSnapshots(cwd: string, ownerSessionId: string): Promise<ActiveWorkflowSnapshot[]> {
+  const records = await readActiveWorkflowRuns(cwd, ownerSessionId);
   const snapshots = await Promise.all(records.map((record) => readActiveWorkflowSnapshot(cwd, record)));
   return snapshots.filter((snapshot): snapshot is ActiveWorkflowSnapshot => snapshot !== undefined);
 }

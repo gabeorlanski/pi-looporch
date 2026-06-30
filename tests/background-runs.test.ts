@@ -38,6 +38,7 @@ export default async function workflow() {
     input: {},
     agent,
     maxParallelAgents: 1,
+    ownerSessionId: "test-session",
   });
   void run.finished.then(() => {
     finished = true;
@@ -93,6 +94,7 @@ export default async function workflow() {
     agent,
     maxParallelAgents: 1,
     signal: controller.signal,
+    ownerSessionId: "test-session",
   });
 
   await assert.rejects(run.finished, /Workflow aborted/);
@@ -119,6 +121,7 @@ export default async function workflow() {
     input: {},
     agent,
     maxParallelAgents: 1,
+    ownerSessionId: "test-session",
   });
 
   await assert.rejects(run.finished, /child exploded/);

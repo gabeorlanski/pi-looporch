@@ -41,12 +41,24 @@ export interface WorkflowAgentSessionLog {
   fanOutId?: number;
 }
 
+/** Exact child-agent tool invocation recorded for live inspection. */
+export interface WorkflowToolActivitySnapshot {
+  name: string;
+  arguments?: unknown;
+}
+
+/** Stable child-agent launch metadata reported by the Pi adapter to the workflow runtime. */
+export interface WorkflowAgentLaunchMetadata {
+  prompt: string;
+}
+
 /** Incremental child-agent progress reported by the Pi adapter to the workflow runtime. */
 export interface WorkflowAgentProgress {
   statusMessage?: string;
   inputTokenCount?: number;
   outputTokenCount?: number;
   toolCallCount?: number;
+  toolActivity?: WorkflowToolActivitySnapshot[];
   stepCount?: number;
   model?: string;
   sessionDir?: string;
@@ -54,12 +66,14 @@ export interface WorkflowAgentProgress {
   eventsFile?: string;
 }
 
+/** Callback surface used by child-agent implementations to report launch metadata and progress. */
+export interface WorkflowAgentReporter {
+  launched(metadata: WorkflowAgentLaunchMetadata): void;
+  progress(progress: WorkflowAgentProgress): void;
+}
+
 /** Injected child-agent function used by the runtime; implementations must report progress and honor abort options. */
-export type WorkflowAgent = (
-  prompt: string,
-  options: WorkflowAgentOptions,
-  reportProgress: (progress: WorkflowAgentProgress) => void,
-) => Promise<unknown>;
+export type WorkflowAgent = (prompt: string, options: WorkflowAgentOptions, reporter: WorkflowAgentReporter) => Promise<unknown>;
 
 /** Live and final state for one child-agent launch inside a workflow run. */
 export interface WorkflowAgentSnapshot {
@@ -78,6 +92,8 @@ export interface WorkflowAgentSnapshot {
   toolCallCount: number;
   stepCount: number;
   fanOutId?: number;
+  promptPath?: string;
+  activityPath?: string;
   outputPath?: string;
   sessionDir?: string;
   sessionFile?: string;

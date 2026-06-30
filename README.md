@@ -52,11 +52,12 @@ behavior, or artifacts.
 
 While a workflow runs from a named command or from the current-session agent's
 `run_workflow` tool call, pi shows a compact widget below the editor. The widget
-reattaches after extension reloads from transient per-run files under
-`.pi/workflow-runs/active/` and the run's latest `snapshot.json`. Run
-`/view-workflow` to open the inspector directly, or press `Down` on an empty
-prompt to select the widget, `Enter` to open the inspector, and `Esc` or `Up` to
-return to the prompt.
+reattaches within the same parent Pi session after extension reloads from
+transient per-run files under `.pi/workflow-runs/active/` and the run's latest
+`snapshot.json`. Runs from other sessions in the same project directory are not
+shown as this session's active workflow. Run `/view-workflow` to open the
+inspector directly, or press `Down` on an empty prompt to select the widget,
+`Enter` to open the inspector, and `Esc` or `Up` to return to the prompt.
 
 ```text
   ↓ select (on an empty prompt) to inspect
@@ -78,9 +79,10 @@ The inspector shows phases on the left and child agents on the right.
  ↕ select · → agents · x abort workflow · esc back · s snapshot path
 ```
 
-The live UI stays compact. Full prompts, child-agent transcripts, tool results, and
-workflow outputs are written to session logs and output files instead of being
-dumped into the chat.
+The live UI stays compact in the widget. The inspector keeps details expanded,
+loads exact prompt/tool/output artifacts on demand, and keeps the exact prompt
+collapsed until you press `Enter`. Completion messages still point at output
+files and session logs instead of dumping results into the chat.
 
 ## Write A Workflow
 

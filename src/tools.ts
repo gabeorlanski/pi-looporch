@@ -92,8 +92,12 @@ function runningWorkflowToolDetails(
 }
 
 function notifyBackgroundToolCompletion(ctx: ExtensionContext, result: BackgroundWorkflowRunResult): void {
-  const resultLocation = result.resultPath ?? result.outputsDir ?? result.sessionLogDir;
-  ctx.ui.notify(`Workflow ${result.workflowName} complete. Result: ${resultLocation}`, "info");
+  const locations = [
+    result.resultPath ? `Result: ${result.resultPath}` : undefined,
+    result.outputsDir ? `Workflow outputs: ${result.outputsDir}` : undefined,
+    result.sessionLogDir ? `Session logs: ${result.sessionLogDir}` : undefined,
+  ].filter((location): location is string => location !== undefined);
+  ctx.ui.notify(`Workflow ${result.workflowName} complete. ${locations.join("\n")}`, "info");
 }
 
 function createWorkflowDesignGuidanceTool(): ToolDefinition {

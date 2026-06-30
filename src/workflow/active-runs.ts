@@ -7,15 +7,19 @@ export interface ActiveWorkflowRunRecord {
   workflowName: string;
   outputsDir: string;
   startedAt: number;
+  ownerSessionId: string;
 }
 
-export async function readActiveWorkflowRuns(cwd: string): Promise<ActiveWorkflowRunRecord[]> {
+export async function readActiveWorkflowRuns(cwd: string, ownerSessionId?: string): Promise<ActiveWorkflowRunRecord[]> {
   try {
     const entries = await readdir(activeWorkflowRunsDir(cwd), { withFileTypes: true });
     const records = await Promise.all(
       entries.filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => readActiveWorkflowRunFile(cwd, entry.name)),
     );
-    return records.filter((record): record is ActiveWorkflowRunRecord => record !== undefined);
+    return records.filter(
+      (record): record is ActiveWorkflowRunRecord =>
+        record !== undefined && (ownerSessionId === undefined || record.ownerSessionId === ownerSessionId),
+    );
   } catch (error) {
     if (isMissingFileError(error)) return [];
     throw error;
@@ -60,7 +64,8 @@ function isActiveWorkflowRunRecord(value: unknown): value is ActiveWorkflowRunRe
     typeof candidate.runId === "string" &&
     typeof candidate.workflowName === "string" &&
     typeof candidate.outputsDir === "string" &&
-    typeof candidate.startedAt === "number"
+    typeof candidate.startedAt === "number" &&
+    typeof candidate.ownerSessionId === "string"
   );
 }
 

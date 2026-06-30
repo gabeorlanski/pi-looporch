@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import piWorkflow from "../extensions/workflow.ts";
 
 interface RegisteredTestCommand {
   handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> | void;
 }
+
+interface TestSessionStartEvent {
+  type: "session_start";
+  reason: "startup" | "reload";
+}
+
+type TestSessionStartHandler = (event: TestSessionStartEvent, ctx: ExtensionCommandContext) => Promise<void> | void;
 
 export interface SentMessage {
   customType: string;
@@ -39,38 +46,48 @@ export interface ExtensionHarnessOptions {
 
 export interface ExtensionHarness {
   commands: Map<string, RegisteredTestCommand>;
+  tools: Map<string, ToolDefinition>;
   ctx: ExtensionCommandContext;
   sentMessages: { message: SentMessage; options: unknown }[];
   sentUserMessages: { message: unknown; options: unknown }[];
   notifications: { message: string; type?: "info" | "warning" | "error" }[];
   statusUpdates: (string | undefined)[];
   widgetUpdates: (string[] | undefined)[];
+  customUpdates: string[][];
   widgetInstallCount: () => number;
   widgetPlacement: () => string | undefined;
+  customOpenCount: () => number;
+  closeCustom: () => void;
+  sessionStart: (reason?: "startup" | "reload") => Promise<void>;
   command: (name: string, args: string) => Promise<void>;
 }
 
 export function createExtensionHarness(options: ExtensionHarnessOptions): ExtensionHarness {
   const commands = new Map<string, RegisteredTestCommand>();
+  const tools = new Map<string, ToolDefinition>();
   const sentMessages: { message: SentMessage; options: unknown }[] = [];
   const sentUserMessages: { message: unknown; options: unknown }[] = [];
   const notifications: { message: string; type?: "info" | "warning" | "error" }[] = [];
   const statusUpdates: (string | undefined)[] = [];
   const widgetUpdates: (string[] | undefined)[] = [];
+  const customUpdates: string[][] = [];
   let activeWidget: TestWidgetComponent | undefined;
+  let activeCustom: TestWidgetComponent | undefined;
+  let closeActiveCustom: (() => void) | undefined;
   let widgetInstallCount = 0;
+  let customOpenCount = 0;
   let widgetPlacement: string | undefined;
   let terminalInputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+  const sessionStartHandlers: TestSessionStartHandler[] = [];
   const pi = {
-    registerTool(tool: unknown): void {
-      void tool;
+    registerTool(tool: ToolDefinition): void {
+      tools.set(tool.name, tool);
     },
     registerCommand(name: string, command: RegisteredTestCommand): void {
       commands.set(name, command);
     },
     on(event: string, handler: unknown): void {
-      void event;
-      void handler;
+      if (event === "session_start") sessionStartHandlers.push(handler as TestSessionStartHandler);
     },
     sendMessage(message: SentMessage, sendOptions?: unknown): void {
       if (options.sendMessage) {
@@ -117,18 +134,24 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
           done: (result: T) => void,
         ) => TestWidgetComponent,
       ): Promise<T> {
+        customOpenCount++;
         return await new Promise<T>((resolve) => {
-          activeWidget = factory(
+          closeActiveCustom = () => resolve(undefined as T);
+          activeCustom = factory(
             {
               terminal: { rows: 32 },
               requestRender(): void {
-                return undefined;
+                if (activeCustom) customUpdates.push(activeCustom.render(96));
               },
             },
             plainTheme,
             {},
             resolve,
           );
+          customUpdates.push(activeCustom.render(96));
+        }).finally(() => {
+          activeCustom = undefined;
+          closeActiveCustom = undefined;
         });
       },
       setWidget(key: string, content: unknown, widgetOptions?: { placement?: string }): void {
@@ -155,14 +178,21 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
   } as unknown as ExtensionCommandContext;
   return {
     commands,
+    tools,
     ctx,
     sentMessages,
     sentUserMessages,
     notifications,
     statusUpdates,
     widgetUpdates,
+    customUpdates,
     widgetInstallCount: () => widgetInstallCount,
     widgetPlacement: () => widgetPlacement,
+    customOpenCount: () => customOpenCount,
+    closeCustom: () => closeActiveCustom?.(),
+    async sessionStart(reason = "reload") {
+      await Promise.all(sessionStartHandlers.map((handler) => Promise.resolve(handler({ type: "session_start", reason }, ctx))));
+    },
     async command(name, args) {
       const command = commands.get(name);
       assert.ok(command);

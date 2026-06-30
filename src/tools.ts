@@ -6,9 +6,9 @@ import type { WorkflowAgent } from "./runtime/types.ts";
 import { progressDisplay } from "./display/progress.ts";
 import { saveWorkflowDraft } from "./request.ts";
 import { workflowDesignGuidance } from "./authoring-guide.ts";
+import { startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
 import { readWorkflowDraft } from "./workflow/drafts.ts";
 import { normalizeWorkflowName } from "./workflow/paths.ts";
-import { startWorkflowRun } from "./workflow/start.ts";
 
 /** Dependencies used to construct workflow tools for either an extension session or tests. */
 export interface WorkflowToolsOptions {
@@ -37,48 +37,58 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
       const workflowName = normalizeWorkflowName(params.name);
       const agent = options.agent ?? options.agentForContext?.(ctx);
       if (!agent) throw new Error("run_workflow requires a workflow agent");
-      const started = await startWorkflowRun({
+      const visible = await startVisibleWorkflowRun({
+        ctx,
         cwd,
         workflowName,
         input: params.input ?? {},
         agentDir: getAgentDir(),
         agent,
         signal,
-        onSnapshot: (snapshot) => {
+        onSnapshot: (snapshot, prepared, run) => {
           onUpdate?.({
             content: [{ type: "text", text: progressDisplay(snapshot).text }],
-            details: {
-              workflowName,
-              status: "running",
-              runId: started.runId,
-              outputsDir: started.run.outputsDir,
-              resultPath: workflowFinalOutputPath(started.run.outputsDir),
-            },
+            details: runningWorkflowToolDetails(prepared.workflowName, prepared.runId, run.outputsDir),
           });
         },
       });
-      void started.run.finished
+      void visible.run.finished
         .then((result) => notifyBackgroundToolCompletion(ctx, result))
         .catch((error: unknown) =>
           ctx.ui.notify(`Workflow ${workflowName} failed: ${error instanceof Error ? error.message : String(error)}`, "error"),
-        );
+        )
+        .finally(visible.cleanup);
       return {
         content: [
           {
             type: "text",
-            text: `Workflow ${workflowName} started in the background.\n\nWorkflow outputs: ${started.run.outputsDir}\nWorkflow result: ${workflowFinalOutputPath(started.run.outputsDir)}`,
+            text: `Workflow ${workflowName} started in the background.\n\nWorkflow outputs: ${visible.run.outputsDir}\nWorkflow result: ${workflowFinalOutputPath(visible.run.outputsDir)}`,
           },
         ],
-        details: {
-          workflowName,
-          status: "running",
-          runId: started.runId,
-          outputsDir: started.run.outputsDir,
-          resultPath: workflowFinalOutputPath(started.run.outputsDir),
-        },
+        details: runningWorkflowToolDetails(visible.prepared.workflowName, visible.prepared.runId, visible.run.outputsDir),
       };
     },
   });
+}
+
+function runningWorkflowToolDetails(
+  workflowName: string,
+  runId: string,
+  outputsDir: string,
+): {
+  workflowName: string;
+  status: "running";
+  runId: string;
+  outputsDir: string;
+  resultPath: string;
+} {
+  return {
+    workflowName,
+    status: "running",
+    runId,
+    outputsDir,
+    resultPath: workflowFinalOutputPath(outputsDir),
+  };
 }
 
 function notifyBackgroundToolCompletion(ctx: ExtensionContext, result: BackgroundWorkflowRunResult): void {

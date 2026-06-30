@@ -2,9 +2,9 @@ Handle this workflow request in the current session.
 
 If an existing workflow fits, call run_workflow with its name and JSON input.
 
-If required input for an existing workflow is missing or ambiguous, ask the user a concise clarification question before calling tools.
+You MUST try to resolve clear ambiguities from available context before asking the user. Inspect relevant project files, docs, tests, and existing workflows when the request points to them or when missing fields may be inferable. Ask a concise clarification question only when required input remains unknowable, multiple materially different interpretations remain plausible, or a high-impact choice would change scope, behavior, or artifacts. Proceed with stated assumptions for low-risk reversible details.
 
-If a new reusable workflow is clearly needed, you may call workflow_design_guidance({ topic: "overview" }) and request narrower guidance topics as needed.
+If a new reusable workflow is clearly needed, call workflow_design_guidance({ topic: "overview" }) and request narrower guidance topics as needed. Infer the workflow purpose, inputs/defaults, phases, child-agent roles, file reads, and result shape from the user's request and project context before asking. Do not ask "what is the purpose?" when a reasonable purpose is inferable.
 
 Draft a project-local workflow directory and propose it with propose_workflow using draftDir.
 

@@ -11,6 +11,7 @@ const designTopics: DesignTopic[] = [
     summary: "Shortest path for deciding whether and how to author a workflow.",
     guidance: [
       "Use an existing workflow when one fits; author a new workflow only when the request is reusable or multi-step enough to deserve a runbook.",
+      "Before asking about missing purpose or contract details, inspect relevant project context and infer the workflow purpose, inputs/defaults, phases, child-agent roles, file reads, and result shape when they are reasonably clear.",
       "Draft the workflow as a project-local directory such as .pi/workflow-drafts/<name>/, then propose it with draftDir pointing at that directory.",
       "Keep workflow.js as orchestration code. Put reusable child-agent prompt text in prompts/*.txt and render it with renderPrompt(...).",
       "Ask this tool for narrower topics only when needed: workflow-api, draft-directory, prompt-files, child-agents, structured-outputs, fanout, verification, artifacts.",

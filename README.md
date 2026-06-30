@@ -30,6 +30,7 @@ Saved workflows live under `.pi/workflows/<name>/workflow.js`.
 /workflow <name> [input]
 /workflow:<name> [input]
 /workflow <natural-language request>
+/view-workflow
 ```
 
 Examples:
@@ -42,13 +43,19 @@ Examples:
 ```
 
 JSON, `key=value`, `--key value`, and comma-separated lists run directly. Freeform
-named-workflow input stays visible in the current chat so the agent can ask for
-missing fields before starting the workflow.
+named-workflow input stays visible in the current chat. The agent must first try
+to resolve clear ambiguities from project context, then ask only when required
+input remains unknowable or a high-impact choice would change workflow scope,
+behavior, or artifacts.
 
 ## What The TUI Looks Like
 
-While a workflow runs, pi shows a compact widget below the editor. Press `Down` on
-an empty prompt to select it, `Enter` to open the inspector, and `Esc` or `Up` to
+While a workflow runs from a named command or from the current-session agent's
+`run_workflow` tool call, pi shows a compact widget below the editor. The widget
+reattaches after extension reloads from transient per-run files under
+`.pi/workflow-runs/active/` and the run's latest `snapshot.json`. Run
+`/view-workflow` to open the inspector directly, or press `Down` on an empty
+prompt to select the widget, `Enter` to open the inspector, and `Esc` or `Up` to
 return to the prompt.
 
 ```text

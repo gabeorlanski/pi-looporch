@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { errorMessage } from "../errors.ts";
@@ -14,7 +15,7 @@ interface WorkflowOutputManifestEntry {
   path: string;
 }
 
-interface WorkflowOutputManifest {
+export interface WorkflowOutputManifest {
   workflowName: string;
   status: WorkflowOutputStatus;
   resultPath?: string;
@@ -28,6 +29,10 @@ export async function createWorkflowOutputsDir(runId: string): Promise<string> {
 
 export function workflowFinalOutputPath(outputsDir: string): string {
   return path.join(outputsDir, "outputs", "final.json");
+}
+
+export function workflowSnapshotPath(outputsDir: string): string {
+  return path.join(outputsDir, "snapshot.json");
 }
 
 function workflowAgentOutputPath(outputsDir: string, agentId: number, label: string): string {
@@ -46,6 +51,19 @@ export async function writeWorkflowAgentOutput(outputsDir: string, agentId: numb
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeJsonFileAtomic(outputPath, output);
   return outputPath;
+}
+
+export async function readWorkflowOutputManifest(outputsDir: string): Promise<WorkflowOutputManifest> {
+  return JSON.parse(await readFile(path.join(outputsDir, "manifest.json"), "utf8")) as WorkflowOutputManifest;
+}
+
+export async function readWorkflowSnapshot(outputsDir: string): Promise<WorkflowSnapshot> {
+  return JSON.parse(await readFile(workflowSnapshotPath(outputsDir), "utf8")) as WorkflowSnapshot;
+}
+
+export async function writeWorkflowSnapshot(outputsDir: string, snapshot: WorkflowSnapshot): Promise<void> {
+  await mkdir(outputsDir, { recursive: true });
+  await writeJsonFileAtomic(workflowSnapshotPath(outputsDir), snapshot);
 }
 
 export async function writeWorkflowOutputManifest(options: {
@@ -89,7 +107,7 @@ function outputManifestEntries(agents: WorkflowAgentSnapshot[]): WorkflowOutputM
 }
 
 async function writeJsonFileAtomic(filePath: string, value: unknown): Promise<void> {
-  const temporaryPath = `${filePath}.${String(process.pid)}.${String(Date.now())}.tmp`;
+  const temporaryPath = `${filePath}.${String(process.pid)}.${randomUUID()}.tmp`;
   await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   await rename(temporaryPath, filePath);
 }

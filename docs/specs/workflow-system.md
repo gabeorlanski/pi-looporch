@@ -158,7 +158,7 @@ Named workflow invocation should use colon syntax and accept ergonomic non-JSON 
 /workflow:review files=src/index.ts,tests/index.test.ts prompt="focus on auth"
 ```
 
-Manual input handling should support JSON, `key=value`, `--key value`, and comma-separated lists directly. JSON and key-value inputs validate against the workflow function contract before execution and report missing required fields without starting the workflow. Freeform text should be sent into the current session as a normal steerable conversation; the agent receives `metadata.inputInstructions`, the workflow function JSDoc/signature contract, and the original input, asks clarifying questions if required fields are missing, and calls `run_workflow` only once the input is complete.
+Manual input handling should support JSON, `key=value`, `--key value`, and comma-separated lists directly. JSON and key-value inputs validate against the workflow function contract before execution and report missing required fields without starting the workflow. Freeform text should be sent into the current session as a normal steerable conversation; the agent receives `metadata.inputInstructions`, the workflow function JSDoc/signature contract, and the original input. The agent must try to resolve clear ambiguities from available project files, docs, tests, and existing workflows before asking. It should ask clarifying questions only when required input remains unknowable, multiple materially different interpretations remain plausible, or a high-impact choice would change workflow scope, behavior, or artifacts, and calls `run_workflow` only once the input is complete.
 
 A generic workflow invocation should let the agent decide how to handle the request:
 
@@ -166,7 +166,7 @@ A generic workflow invocation should let the agent decide how to handle the requ
 /workflow <input>
 ```
 
-For generic invocation, the agent is responsible for finding the correct existing workflow or making a new one when no existing workflow fits.
+For generic invocation, the agent is responsible for finding the correct existing workflow or making a new one when no existing workflow fits. When authoring a new workflow, it should infer the workflow purpose, inputs/defaults, phases, child-agent roles, file reads, and result shape from the user request and project context before asking, and should proceed with stated assumptions for low-risk reversible details.
 
 Generated new workflows are saved directly from complete draft directories. `propose_workflow` validates `.pi/workflow-drafts/<name>/workflow.js` plus any workflow-local resources, then copies the directory to `.pi/workflows/<name>/` in one call. Saved workflows run through `run_workflow` or a named workflow command.
 
@@ -182,7 +182,7 @@ Workflow runtime settings are configured with `/workflow-settings`. With no args
 
 ## Runtime UI
 
-Normal TUI execution should stay lean. Named workflow commands should execute saved workflows directly rather than routing through a session-agent `run_workflow` tool call. While a workflow runs, show a compact below-editor widget with workflow name, subtitle, agent counts, elapsed time, and token totals. Pressing ↓ on an empty prompt selects the widget, Enter opens a full-screen phase/agent inspector, and Esc/↑ returns to the prompt. Do not expose prompts, child agent output, workflow result content, or tool-argument previews in live snapshots, tool update details, the widget, or completion messages; outputs belong in the temp output files and transcripts belong in the child pi session JSONL. Deeper cost and transcript inspection happens through the completion paths, `/workflow-review`, and child session logs.
+Normal TUI execution should stay lean. Named workflow commands should execute saved workflows directly rather than routing through a session-agent `run_workflow` tool call. Workflows started by named commands and workflows started by the current-session agent through the `run_workflow` tool should both show the same compact below-editor widget with workflow name, subtitle, agent counts, elapsed time, and token totals. Active runs are registered as transient per-run files under `.pi/workflow-runs/active/<run-id>.json` and deleted when the run settles; the latest live snapshot is persisted as `snapshot.json` in the workflow output directory so the widget and `/view-workflow` can reattach after extension reloads. Pressing ↓ on an empty prompt selects the widget, Enter opens a full-screen phase/agent inspector, and Esc/↑ returns to the prompt. `/view-workflow` opens that same inspector directly for the active running workflow and warns when none is running. Do not expose prompts, child agent output, workflow result content, or tool-argument previews in live snapshots, tool update details, the widget, or completion messages; outputs belong in the temp output files and transcripts belong in the child pi session JSONL. Deeper cost and transcript inspection happens through the completion paths, `/workflow-review`, and child session logs.
 
 New-workflow saving (`propose_workflow`) is direct. Agents pass a project-local draft directory containing `workflow.js` and any workflow-local prompts/assets; the `draftDir` argument points to that directory, not to the `workflow.js` file. The tool validates the draft and copies it to `.pi/workflows/<name>/`.
 

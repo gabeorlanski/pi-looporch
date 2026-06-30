@@ -126,6 +126,7 @@ TypeScript interfaces/types are the source of truth:
 - Put reusable generated-workflow child-agent prompt templates in the workflow draft's `prompts/*.txt` files, use `{{name}}` placeholders, and render them with `renderPrompt`; reserve inline prompts for tiny one-off glue.
 - Use adversarial verifier/repair stages for important generated artifacts only when the risk justifies the extra agents; verifier prompts should cite evidence and separate major correctness failures from recommendations.
 - Prefer `agent(prompt, { schema, maxAttempts? })` for structured child-agent work; use `log(message)` for visible workflow milestones and `trace(label, value?)` for workflow-local structured debug state that should show up in snapshots/session summaries.
+- Keep running-workflow TUI behavior shared between named workflow commands, current-session `run_workflow` tool calls, `/view-workflow` inspector entry, and reload reattachment.
 - Give every function a clear job; inline short helpers that only hide one expression or rename a local concept.
 - Prefer simple functions over managers, frameworks, or class hierarchies.
 - Inject agents; never call real models from tests.

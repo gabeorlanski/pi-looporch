@@ -6,12 +6,13 @@ import { createPiWorkflowAgent } from "../src/pi-agent.ts";
 import type { BackgroundWorkflowRunResult } from "../src/background-runs.ts";
 import { WorkflowInputError, parseWorkflowInput } from "../src/input.ts";
 import { completeMessage, failureMessage } from "../src/display/messages.ts";
-import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
+import { openRunningWorkflowInspector, restoreRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
+import { startVisibleWorkflowRun } from "../src/display/visible-workflow-run.ts";
 import { errorMessage } from "../src/errors.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import { workflowLogReviewMessage } from "../src/log-review.ts";
 import { normalizeWorkflowName } from "../src/workflow/paths.ts";
-import { prepareWorkflowRun, readWorkflowInputContract, startPreparedWorkflowRun } from "../src/workflow/start.ts";
+import { readWorkflowInputContract } from "../src/workflow/start.ts";
 import {
   readWorkflowSettings,
   writeGlobalWorkflowSettings,
@@ -43,12 +44,18 @@ export default function piWorkflow(pi: ExtensionAPI) {
     handler: async (args, ctx) => reviewWorkflowCommand(pi, ctx, args),
   });
 
+  pi.registerCommand("view-workflow", {
+    description: "Open the running workflow inspector",
+    handler: async (_args, ctx) => viewWorkflowCommand(ctx),
+  });
+
   pi.registerCommand("workflow-settings", {
     description: "Configure project workflow settings",
     handler: async (args, ctx) => workflowSettingsCommand(pi, ctx, args),
   });
 
   pi.on("session_start", async (_event, ctx) => {
+    await restoreRunningWorkflowUi(ctx);
     for (const workflow of await discoverWorkflows(ctx.cwd)) {
       const command = `workflow:${workflow.name}`;
       if (aliases.has(command)) continue;
@@ -102,13 +109,10 @@ async function runExistingWorkflowCommand(
     return;
   }
   const abortControls = createWorkflowAbortControls(ctx);
-  const activeWorkflow = beginDynamicWorkflow(ctx);
-  let runId: string | undefined;
   try {
     const inputContract = await readWorkflowInputContract(workflow);
     const parsedInput = parseWorkflowInput(rawInput);
     if (parsedInput.action === "resolve") {
-      activeWorkflow.done();
       abortControls.dispose();
       ctx.ui.notify(`Workflow '${workflowName}' input resolution sent to current session`, "info");
       sendWhenReady(
@@ -123,38 +127,24 @@ async function runExistingWorkflowCommand(
       );
       return;
     }
-    const prepared = await prepareWorkflowRun({
+    const agent = createPiWorkflowAgent({ cwd: ctx.cwd });
+    ctx.ui.notify(`Running workflow '${workflowName}' in the background`, "info");
+    const visible = await startVisibleWorkflowRun({
+      ctx,
       cwd: ctx.cwd,
       workflowName,
       input: parsedInput.input,
       agentDir: getAgentDir(),
-    });
-    runId = prepared.runId;
-    const currentRunId = prepared.runId;
-    const agent = createPiWorkflowAgent({ cwd: ctx.cwd });
-    ctx.ui.notify(`Running workflow '${workflowName}' in the background`, "info");
-    updateRunningWorkflowUi(ctx, {
-      runId: currentRunId,
-      snapshot: prepared.initialSnapshot,
-      abortWorkflow: abortControls.abort,
-    });
-    const run = await startPreparedWorkflowRun({
-      prepared,
       agent,
       signal: abortControls.signal,
-      onSnapshot: (snapshot) => {
-        updateRunningWorkflowUi(ctx, { runId: currentRunId, snapshot, abortWorkflow: abortControls.abort });
-      },
+      abortWorkflow: abortControls.abort,
     });
-    void settleBackgroundWorkflowRun(pi, ctx, workflowName, run.finished, () => {
-      activeWorkflow.done();
+    void settleBackgroundWorkflowRun(pi, ctx, workflowName, visible.run.finished, () => {
+      visible.cleanup();
       abortControls.dispose();
-      clearRunningWorkflowUi(ctx, currentRunId);
     });
   } catch (error) {
-    activeWorkflow.done();
     abortControls.dispose();
-    clearRunningWorkflowUi(ctx, runId);
     const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
     pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName } });
@@ -236,6 +226,11 @@ function sendWhenReady(pi: ExtensionAPI, ctx: ExtensionCommandContext, message: 
     },
     ctx.isIdle() ? { triggerTurn: true } : { triggerTurn: true, deliverAs: "followUp" },
   );
+}
+
+async function viewWorkflowCommand(ctx: ExtensionCommandContext): Promise<void> {
+  const opened = await openRunningWorkflowInspector(ctx);
+  if (!opened) ctx.ui.notify("No running workflows to view.", "warning");
 }
 
 async function workflowSettingsCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {

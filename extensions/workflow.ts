@@ -1,20 +1,17 @@
-import path from "node:path";
-import { readFile } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { naturalLanguageRequestMessage, steerableInputResolutionMessage } from "../src/prompt-templates.ts";
-import { discoverWorkflows, workflowRootsForProject } from "../src/discovery.ts";
+import { discoverWorkflows } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
-import { startBackgroundWorkflowRun, type BackgroundWorkflowRunResult } from "../src/background-runs.ts";
-import { WorkflowInputError, extractWorkflowInputContract, parseWorkflowInput, validateWorkflowInput } from "../src/input.ts";
+import type { BackgroundWorkflowRunResult } from "../src/background-runs.ts";
+import { WorkflowInputError, parseWorkflowInput } from "../src/input.ts";
 import { completeMessage, failureMessage } from "../src/display/messages.ts";
 import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
 import { errorMessage } from "../src/errors.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import { workflowLogReviewMessage } from "../src/log-review.ts";
-import { createWorkflowRunId } from "../src/workflow/run-id.ts";
-import type { WorkflowSnapshot } from "../src/runtime/types.ts";
 import { normalizeWorkflowName } from "../src/workflow/paths.ts";
+import { prepareWorkflowRun, readWorkflowInputContract, startPreparedWorkflowRun } from "../src/workflow/start.ts";
 import {
   readWorkflowSettings,
   writeGlobalWorkflowSettings,
@@ -106,10 +103,9 @@ async function runExistingWorkflowCommand(
   }
   const abortControls = createWorkflowAbortControls(ctx);
   const activeWorkflow = beginDynamicWorkflow(ctx);
-  let parentRunId: string | undefined;
+  let runId: string | undefined;
   try {
-    const source = await readFile(workflow.entryFile, "utf8");
-    const inputContract = extractWorkflowInputContract(source);
+    const inputContract = await readWorkflowInputContract(workflow);
     const parsedInput = parseWorkflowInput(rawInput);
     if (parsedInput.action === "resolve") {
       activeWorkflow.done();
@@ -127,40 +123,38 @@ async function runExistingWorkflowCommand(
       );
       return;
     }
-    const input = validateWorkflowInput(parsedInput.input, workflowName, inputContract);
-    parentRunId = createWorkflowRunId(workflowName);
-    const runId = parentRunId;
-    const workflowSettings = await readWorkflowSettings(ctx.cwd, getAgentDir());
+    const prepared = await prepareWorkflowRun({
+      cwd: ctx.cwd,
+      workflowName,
+      input: parsedInput.input,
+      agentDir: getAgentDir(),
+    });
+    runId = prepared.runId;
+    const currentRunId = prepared.runId;
     const agent = createPiWorkflowAgent({ cwd: ctx.cwd });
     ctx.ui.notify(`Running workflow '${workflowName}' in the background`, "info");
     updateRunningWorkflowUi(ctx, {
-      runId,
-      snapshot: initialWorkflowSnapshot(workflowName, workflow.metadata.description, workflow.metadata.phases, input),
+      runId: currentRunId,
+      snapshot: prepared.initialSnapshot,
       abortWorkflow: abortControls.abort,
     });
-    const run = await startBackgroundWorkflowRun({
-      runId,
-      cwd: ctx.cwd,
-      workflowName,
-      input,
+    const run = await startPreparedWorkflowRun({
+      prepared,
       agent,
-      workflowRoots: await workflowRootsForProject(ctx.cwd),
-      agentLogParentId: runId,
-      maxParallelAgents: workflowSettings.maxParallelAgents,
       signal: abortControls.signal,
       onSnapshot: (snapshot) => {
-        updateRunningWorkflowUi(ctx, { runId, snapshot, abortWorkflow: abortControls.abort });
+        updateRunningWorkflowUi(ctx, { runId: currentRunId, snapshot, abortWorkflow: abortControls.abort });
       },
     });
     void settleBackgroundWorkflowRun(pi, ctx, workflowName, run.finished, () => {
       activeWorkflow.done();
       abortControls.dispose();
-      clearRunningWorkflowUi(ctx, runId);
+      clearRunningWorkflowUi(ctx, currentRunId);
     });
   } catch (error) {
     activeWorkflow.done();
     abortControls.dispose();
-    clearRunningWorkflowUi(ctx, parentRunId);
+    clearRunningWorkflowUi(ctx, runId);
     const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
     pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName } });
@@ -209,26 +203,6 @@ function failBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, 
   const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
   ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
   pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName } });
-}
-
-function initialWorkflowSnapshot(
-  workflowName: string,
-  description: string,
-  plannedPhases: WorkflowSnapshot["plannedPhases"],
-  input: unknown,
-): WorkflowSnapshot {
-  return {
-    workflowName,
-    description,
-    plannedPhases,
-    phases: [],
-    traces: [],
-    agents: [],
-    fanOuts: [],
-    messages: [],
-    status: "running",
-    input,
-  };
 }
 
 function createWorkflowAbortControls(ctx: ExtensionCommandContext): { signal: AbortSignal; abort: () => void; dispose: () => void } {
@@ -319,7 +293,7 @@ function workflowSettingsSavedMessage(scope: "global" | "project", settings: Wor
 }
 
 function workflowSettingsMessage(agentDir: string, settings: WorkflowSettings): string {
-  const globalSettings = path.join(agentDir, "settings.json");
+  const globalSettings = `${agentDir}/settings.json`;
   return [
     "# Workflow Settings",
     "",

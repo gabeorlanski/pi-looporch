@@ -59,3 +59,26 @@ export default async function workflow() {
     ["valid"],
   );
 });
+
+void test("discover_workflows_uses_configured_workflow_dirs_from_canonical_settings", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-discovery-"));
+  const sharedRoot = path.join(project, "shared-workflows");
+  await mkdir(path.join(project, ".pi"), { recursive: true });
+  await writeFile(path.join(project, ".pi", "settings.json"), '{"workflow":{"workflowDirs":["shared-workflows"]}}\n', "utf8");
+  await mkdir(path.join(sharedRoot, "shared"), { recursive: true });
+  await writeFile(
+    path.join(sharedRoot, "shared", "workflow.js"),
+    `export const metadata = { name: "shared", description: "Shared workflow", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return "ok";
+}`,
+    "utf8",
+  );
+
+  const workflows = await discoverWorkflows(project);
+
+  assert.deepEqual(
+    workflows.map((workflow) => workflow.name),
+    ["shared"],
+  );
+});

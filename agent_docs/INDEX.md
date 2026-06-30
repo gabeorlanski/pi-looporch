@@ -108,12 +108,13 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 ## Key data shapes
 
 - Runtime types: `src/runtime/types.ts` defines `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, and `WorkflowRunResult`.
-- Runtime execution: `src/runtime/run.ts` wires workflow execution; `src/workflow/paths.ts`, `src/workflow/sandbox.ts`, and `src/workflow/metadata.ts` own path resolution, sandbox transforms, and static metadata parsing.
+- Runtime execution: `src/runtime/run.ts` wires workflow execution; `src/workflow/start.ts` owns shared run preparation/start policy for commands and tools.
+- Workflow source analysis: `src/workflow/source-analysis.ts`, `src/workflow/sandbox.ts`, and `src/workflow/metadata.ts` own shared AST restrictions, sandbox transforms, and static metadata parsing.
 - Workflow saving: `src/request.ts` defines `GeneratedWorkflowDraft` validation and draft saving.
-- Discovery: `src/discovery.ts` defines `WorkflowReference` and workflow root handling.
-- Settings: `src/workflow/settings.ts` defines workflow global/project settings parsing and persistence.
+- Discovery: `src/discovery.ts` defines `WorkflowReference` and workflow root handling; workflow root settings come from `src/workflow/settings.ts`.
+- Settings: `src/workflow/settings.ts` defines workflow global/project settings parsing and persistence, including configured workflow roots.
 - Tools: `src/tools.ts` defines `WorkflowToolsOptions` and tool creation.
-- Pi bridge: `src/pi-agent.ts` defines `PiWorkflowAgentOptions`.
+- Pi bridge: `src/pi-agent.ts` defines `PiWorkflowAgentOptions`; session event filtering, token usage, and logged child-session persistence live in `src/session-events.ts`, `src/session-usage.ts`, and `src/agent-session-logs.ts`.
 - Prompt templates: `src/prompts/*.txt` contains raw agent prompt copy; `src/prompt-templates.ts` binds typed data into those templates.
 - Authoring guide: `src/authoring-guide.ts` owns on-demand workflow design guidance returned by `workflow_design_guidance`; routing prompts should stay compact and point agents to the tool instead of embedding verbose examples.
 - Display: `src/display/` contains progress and message renderers.
@@ -123,6 +124,8 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - `extensions/workflow.ts`: pi extension entry, commands, aliases, and passive workflow progress.
 - `src/runtime/run.ts`: sandboxed workflow execution wiring and progress snapshots.
 - `src/runtime/types.ts`: runtime public type contracts.
+- `src/workflow/start.ts`: shared workflow lookup, input validation, settings, run id, initial snapshot, and background-start policy.
+- `src/workflow/source-analysis.ts`: shared workflow AST validation and module-edit analysis used by metadata parsing and sandbox compilation.
 - `src/workflow/paths.ts`: workflow path/name/cwd helpers.
 - `src/workflow/sandbox.ts`: source transform and import/require restrictions.
 - `src/workflow/metadata.ts`: static metadata extraction.
@@ -130,6 +133,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - `src/workflow/settings.ts`: global `~/.pi/agent/settings.json` and project `.pi/settings.json` workflow settings.
 - `src/request.ts`: generated workflow draft validation and saving.
 - `src/tools.ts`: `run_workflow`, `workflow_design_guidance`, and `propose_workflow` tool definitions.
+- `src/session-events.ts`, `src/session-usage.ts`, `src/agent-session-logs.ts`: child-agent session event filtering, token usage parsing, and persisted child-session setup.
 - `src/display/`: passive progress and visible message rendering.
 - `src/prompts/`: raw prompt templates for agent-facing instructions.
 - `tests/`: deterministic coverage for each core module.

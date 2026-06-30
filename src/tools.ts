@@ -1,19 +1,14 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { Type } from "typebox";
 import { defineTool, getAgentDir, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { startBackgroundWorkflowRun, type BackgroundWorkflowRunResult } from "./background-runs.ts";
+import type { BackgroundWorkflowRunResult } from "./background-runs.ts";
 import { workflowFinalOutputPath } from "./workflow/outputs.ts";
-import { workflowRootsForProject } from "./discovery.ts";
 import type { WorkflowAgent } from "./runtime/types.ts";
 import { progressDisplay } from "./display/progress.ts";
 import { saveWorkflowDraft } from "./request.ts";
-import { createWorkflowRunId } from "./workflow/run-id.ts";
 import { workflowDesignGuidance } from "./authoring-guide.ts";
-import { extractWorkflowInputContract, validateWorkflowInput } from "./input.ts";
-import { readWorkflowSettings } from "./workflow/settings.ts";
 import { readWorkflowDraft } from "./workflow/drafts.ts";
-import { normalizeWorkflowName, resolveWorkflowDirectory } from "./workflow/paths.ts";
+import { normalizeWorkflowName } from "./workflow/paths.ts";
+import { startWorkflowRun } from "./workflow/start.ts";
 
 /** Dependencies used to construct workflow tools for either an extension session or tests. */
 export interface WorkflowToolsOptions {
@@ -42,21 +37,12 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
       const workflowName = normalizeWorkflowName(params.name);
       const agent = options.agent ?? options.agentForContext?.(ctx);
       if (!agent) throw new Error("run_workflow requires a workflow agent");
-      const workflowRoots = await workflowRootsForProject(cwd);
-      const workflowDir = resolveWorkflowDirectory(cwd, workflowName, workflowRoots);
-      const source = await readFile(path.join(workflowDir, "workflow.js"), "utf8");
-      const input = validateWorkflowInput(params.input ?? {}, workflowName, extractWorkflowInputContract(source));
-      const parentRunId = createWorkflowRunId(workflowName);
-      const workflowSettings = await readWorkflowSettings(cwd, getAgentDir());
-      const run = await startBackgroundWorkflowRun({
-        runId: parentRunId,
+      const started = await startWorkflowRun({
         cwd,
         workflowName,
-        input,
+        input: params.input ?? {},
+        agentDir: getAgentDir(),
         agent,
-        workflowRoots,
-        maxParallelAgents: workflowSettings.maxParallelAgents,
-        agentLogParentId: parentRunId,
         signal,
         onSnapshot: (snapshot) => {
           onUpdate?.({
@@ -64,14 +50,14 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
             details: {
               workflowName,
               status: "running",
-              runId: parentRunId,
-              outputsDir: run.outputsDir,
-              resultPath: workflowFinalOutputPath(run.outputsDir),
+              runId: started.runId,
+              outputsDir: started.run.outputsDir,
+              resultPath: workflowFinalOutputPath(started.run.outputsDir),
             },
           });
         },
       });
-      void run.finished
+      void started.run.finished
         .then((result) => notifyBackgroundToolCompletion(ctx, result))
         .catch((error: unknown) =>
           ctx.ui.notify(`Workflow ${workflowName} failed: ${error instanceof Error ? error.message : String(error)}`, "error"),
@@ -80,15 +66,15 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
         content: [
           {
             type: "text",
-            text: `Workflow ${workflowName} started in the background.\n\nWorkflow outputs: ${run.outputsDir}\nWorkflow result: ${workflowFinalOutputPath(run.outputsDir)}`,
+            text: `Workflow ${workflowName} started in the background.\n\nWorkflow outputs: ${started.run.outputsDir}\nWorkflow result: ${workflowFinalOutputPath(started.run.outputsDir)}`,
           },
         ],
         details: {
           workflowName,
           status: "running",
-          runId: parentRunId,
-          outputsDir: run.outputsDir,
-          resultPath: workflowFinalOutputPath(run.outputsDir),
+          runId: started.runId,
+          outputsDir: started.run.outputsDir,
+          resultPath: workflowFinalOutputPath(started.run.outputsDir),
         },
       };
     },

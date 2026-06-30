@@ -4,6 +4,7 @@ import path from "node:path";
 import type { WorkflowMetadata } from "./runtime/types.ts";
 import { parseWorkflowSourceMetadata } from "./workflow/metadata.ts";
 import { normalizeWorkflowName } from "./workflow/paths.ts";
+import { readProjectWorkflowSettings } from "./workflow/settings.ts";
 
 export interface WorkflowReference {
   name: string;
@@ -12,18 +13,10 @@ export interface WorkflowReference {
   metadata: WorkflowMetadata;
 }
 
-interface WorkflowSettings {
-  workflowDirs: string[];
-}
-
-interface RawWorkflowSettings {
-  workflowDirs?: string[];
-}
-
 export async function workflowRootsForProject(cwd: string): Promise<string[]> {
   const projectRoot = path.resolve(cwd);
   const localRoot = path.join(projectRoot, ".pi", "workflows");
-  const settings = await readWorkflowSettings(projectRoot);
+  const settings = await readProjectWorkflowSettings(projectRoot);
   const configuredRoots = settings.workflowDirs.map((workflowDir) => path.resolve(projectRoot, workflowDir));
   return [...new Set([localRoot, ...configuredRoots])];
 }
@@ -37,28 +30,6 @@ export async function discoverWorkflows(cwd: string): Promise<WorkflowReference[
     }
   }
   return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name));
-}
-
-async function readWorkflowSettings(projectRoot: string): Promise<WorkflowSettings> {
-  const settingsPath = path.join(projectRoot, ".pi", "settings.json");
-  if (!existsSync(settingsPath)) return { workflowDirs: [] };
-  const raw = await readFile(settingsPath, "utf8");
-  const parsed = JSON.parse(raw) as unknown;
-  const workflow = typeof parsed === "object" && parsed !== null ? (parsed as { workflow?: unknown }).workflow : undefined;
-  if (workflow === undefined) return { workflowDirs: [] };
-  if (!isWorkflowSettings(workflow)) {
-    throw new Error('.pi/settings.json workflow config must use { "workflowDirs": ["path"] } when workflowDirs is present');
-  }
-  return { workflowDirs: workflow.workflowDirs ?? [] };
-}
-
-function isWorkflowSettings(value: unknown): value is RawWorkflowSettings {
-  if (typeof value !== "object" || value === null) return false;
-  const workflowDirs = (value as { workflowDirs?: unknown }).workflowDirs;
-  return (
-    workflowDirs === undefined ||
-    (Array.isArray(workflowDirs) && workflowDirs.every((item) => typeof item === "string" && item.trim().length > 0))
-  );
 }
 
 async function discoverWorkflowsInRoot(root: string): Promise<WorkflowReference[]> {

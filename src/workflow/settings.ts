@@ -2,17 +2,20 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface WorkflowSettings {
+  workflowDirs: string[];
   maxParallelAgents: number;
   childAgentExtensions: string[];
 }
 
 export interface WorkflowSettingsPatch {
+  workflowDirs?: string[];
   maxParallelAgents?: number;
   childAgentExtensions?: string[];
 }
 
 export const DEFAULT_MAX_PARALLEL_AGENTS = 4;
 const DEFAULT_CHILD_AGENT_EXTENSIONS: string[] = [];
+const DEFAULT_WORKFLOW_DIRS: string[] = [];
 
 function globalSettingsPath(agentDir: string): string {
   return path.join(agentDir, "settings.json");
@@ -26,6 +29,10 @@ export async function readWorkflowSettings(cwd: string, agentDir: string): Promi
   const globalWorkflow = await readWorkflowSettingsObject(globalSettingsPath(agentDir));
   const projectWorkflow = await readWorkflowSettingsObject(projectSettingsPath(cwd));
   return normalizeWorkflowSettings({ ...globalWorkflow, ...projectWorkflow });
+}
+
+export async function readProjectWorkflowSettings(cwd: string): Promise<WorkflowSettings> {
+  return normalizeWorkflowSettings(await readWorkflowSettingsObject(projectSettingsPath(cwd)));
 }
 
 export async function writeGlobalWorkflowSettings(agentDir: string, settings: WorkflowSettingsPatch): Promise<void> {
@@ -55,6 +62,19 @@ function normalizeChildAgentExtensions(value: unknown): string[] {
   return extensions;
 }
 
+function normalizeWorkflowDirs(value: unknown): string[] {
+  if (value === undefined) return [...DEFAULT_WORKFLOW_DIRS];
+  if (!Array.isArray(value)) throw new Error('workflow config must use { "workflowDirs": ["path"] } when workflowDirs is present');
+  const workflowDirs: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string" || !entry.trim()) {
+      throw new Error('workflow config must use { "workflowDirs": ["path"] } when workflowDirs is present');
+    }
+    workflowDirs.push(entry.trim());
+  }
+  return workflowDirs;
+}
+
 async function readWorkflowSettingsObject(settingsPath: string): Promise<Record<string, unknown>> {
   let rawSettings: unknown;
   try {
@@ -72,6 +92,7 @@ async function readWorkflowSettingsObject(settingsPath: string): Promise<Record<
 
 function normalizeWorkflowSettings(workflow: Record<string, unknown>): WorkflowSettings {
   return {
+    workflowDirs: normalizeWorkflowDirs(workflow.workflowDirs),
     maxParallelAgents: normalizeMaxParallelAgents(workflow.maxParallelAgents ?? DEFAULT_MAX_PARALLEL_AGENTS),
     childAgentExtensions: normalizeChildAgentExtensions(workflow.childAgentExtensions),
   };
@@ -95,6 +116,7 @@ async function writeWorkflowSettingsFile(settingsPath: string, settings: Workflo
 
 function normalizeWorkflowSettingsPatch(settings: WorkflowSettingsPatch): WorkflowSettingsPatch {
   const patch: WorkflowSettingsPatch = {};
+  if (settings.workflowDirs !== undefined) patch.workflowDirs = normalizeWorkflowDirs(settings.workflowDirs);
   if (settings.maxParallelAgents !== undefined) patch.maxParallelAgents = normalizeMaxParallelAgents(settings.maxParallelAgents);
   if (settings.childAgentExtensions !== undefined)
     patch.childAgentExtensions = normalizeChildAgentExtensions(settings.childAgentExtensions);

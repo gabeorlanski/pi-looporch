@@ -15,6 +15,7 @@ void test("workflow_settings_default_to_four_parallel_agents", async () => {
   const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-agent-"));
 
   assert.deepEqual(await readWorkflowSettings(project, agentDir), {
+    workflowDirs: [],
     maxParallelAgents: DEFAULT_MAX_PARALLEL_AGENTS,
     childAgentExtensions: [],
   });
@@ -34,6 +35,7 @@ void test("workflow_settings_read_and_write_project_settings_json", async () => 
     workflow: { other: true, maxParallelAgents: 8, childAgentExtensions: ["pi-subagents", "./extensions/todo.ts"] },
   });
   assert.deepEqual(await readWorkflowSettings(project, agentDir), {
+    workflowDirs: [],
     maxParallelAgents: 8,
     childAgentExtensions: ["pi-subagents", "./extensions/todo.ts"],
   });
@@ -47,8 +49,22 @@ void test("workflow_settings_merge_global_and_project_settings", async () => {
   await writeProjectWorkflowSettings(project, { maxParallelAgents: 2 });
 
   assert.deepEqual(await readWorkflowSettings(project, agentDir), {
+    workflowDirs: [],
     maxParallelAgents: 2,
     childAgentExtensions: ["pi-subagents"],
+  });
+});
+
+void test("workflow_settings_normalize_workflow_dirs_with_other_settings", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-"));
+  const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-agent-"));
+  await mkdir(path.join(project, ".pi"), { recursive: true });
+  await writeFile(path.join(project, ".pi", "settings.json"), '{"workflow":{"workflowDirs":["../shared-workflows"]}}\n', "utf8");
+
+  assert.deepEqual(await readWorkflowSettings(project, agentDir), {
+    workflowDirs: ["../shared-workflows"],
+    maxParallelAgents: DEFAULT_MAX_PARALLEL_AGENTS,
+    childAgentExtensions: [],
   });
 });
 

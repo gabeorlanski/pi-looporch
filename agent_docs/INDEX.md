@@ -32,10 +32,10 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 ### Topic Guides
 
-- [TUI style](tui-style.md): terminal rendering, width, color, interaction, progress, logging, and tests.
-- [Pi agent harness](pi-agent-harness.md): upstream Pi SDK/extension integration, child-agent isolation, sessions, logs, trust, and workflow harness conventions.
-- [TypeScript and JavaScript style](typescript-javascript-style.md): strict TypeScript, Node/ESM modules, boundaries, errors, async, tests, linting, and formatting.
-- [Documentation style](documentation-style.md): README/docs/agent_docs/AGENTS structure, prose style, examples, synchronization, and API comments.
+- [Terminal UI Style](tui-style.md): predictable terminal rendering across widths, non-TTY sinks, color-off environments, and concurrent agent activity.
+- [Pi Agent Harness & Orchestration](pi-agent-harness.md): agent SDK boundaries, child-agent isolation, session lifecycle, and observability.
+- [TypeScript and JavaScript Style](typescript-javascript-style.md): strict, ESM-first TypeScript with boundary coercion, errors, async hygiene, and deterministic tests.
+- [Documentation Style](documentation-style.md): concise technical docs with exact names, runnable examples, and doc/behavior synchronization.
 
 ### Code Organization
 

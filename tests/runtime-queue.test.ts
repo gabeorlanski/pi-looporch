@@ -108,3 +108,40 @@ export default async function workflow() {
     ["three", "four"],
   ]);
 });
+
+void test("workflow_abort_rejects_queued_agent_without_launching_it", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "queued-abort",
+    `export const metadata = { name: "queued-abort", description: "Abort queued agent", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return Promise.all([
+    agent("first", { label: "first" }),
+    agent("second", { label: "second" }),
+  ]);
+}`,
+  );
+  const controller = new AbortController();
+  const launchedLabels: unknown[] = [];
+  const agent: WorkflowAgent = (_prompt, options) => {
+    launchedLabels.push(options.label);
+    return new Promise((resolve) => {
+      options.signal?.addEventListener("abort", () => resolve("aborted"), { once: true });
+    });
+  };
+
+  const run = runWorkflowFromDirectory({
+    maxParallelAgents: 1,
+    cwd: project,
+    workflowName: "queued-abort",
+    input: {},
+    agent,
+    signal: controller.signal,
+  });
+  while (launchedLabels.length === 0) await new Promise((resolve) => setImmediate(resolve));
+  controller.abort();
+
+  await assert.rejects(run, /Workflow aborted/);
+  assert.deepEqual(launchedLabels, ["first"]);
+});

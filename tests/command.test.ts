@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { naturalLanguageRequestMessage } from "../src/prompt-templates.ts";
+import { defaultWorkflowDraftRoot } from "../src/workflow/drafts.ts";
 
 void test("natural_language_workflow_command_steers_current_session_to_tools_without_authoring_bloat", () => {
   const message = naturalLanguageRequestMessage("create a workflow named smoke-created", ["echo"]);
@@ -11,12 +12,12 @@ void test("natural_language_workflow_command_steers_current_session_to_tools_wit
   assert.match(message, /workflow_design_guidance\(\{ topic: "overview" \}\)/);
   assert.match(message, /MUST try to resolve clear ambiguities/);
   assert.match(message, /Infer the workflow purpose, inputs\/defaults, phases, child-agent roles, file reads, and result shape/);
-  assert.doesNotMatch(message, /Workflow primitives:/);
-  assert.doesNotMatch(message, /`metadata` \(required\): `export const metadata/);
-  assert.doesNotMatch(message, /`agent` \(optional\): `agent\(prompt, options\?\)`/);
-  assert.doesNotMatch(message, /Bare workflow primitives/);
+  assert.match(message, new RegExp(escapeRegExp(defaultWorkflowDraftRoot())));
+  assert.match(message, /omit draftDir when using that default location/);
   assert.match(message, /echo/);
-  assert.doesNotMatch(message, /Workflow source requirements/);
-  assert.doesNotMatch(message, /Child-agent prompt quality requirements/);
   assert.doesNotMatch(message, /Available workflow globals/);
 });
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

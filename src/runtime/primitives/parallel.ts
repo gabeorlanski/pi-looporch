@@ -1,6 +1,7 @@
 import type { WorkflowFanOutSnapshot } from ".././types.ts";
 import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
+import { throwIfWorkflowAborted } from "../abort.ts";
 
 export const parallelPrimitive: WorkflowPrimitive<{
   parallel: <T, R>(
@@ -22,6 +23,7 @@ export async function runParallel<T, R>(
   worker: (item: T, index: number) => Promise<R> | R,
   label: string | undefined,
 ): Promise<R[]> {
+  throwIfWorkflowAborted(runtime.options.signal);
   const fanOut: WorkflowFanOutSnapshot = {
     id: runtime.snapshot.fanOuts.length + 1,
     label: label ?? `parallel ${String(runtime.snapshot.fanOuts.length + 1)}`,
@@ -38,7 +40,8 @@ export async function runParallel<T, R>(
     message: `fan-out ${fanOut.label} started with ${String(fanOut.total)} items`,
   });
   runtime.emit();
-  return runQueuedParallel(items, runtime.options.maxParallelAgents, async (item, index) => {
+  return runQueuedParallel(items, runtime.options.maxParallelAgents, runtime.options.signal, async (item, index) => {
+    throwIfWorkflowAborted(runtime.options.signal);
     if (index >= runtime.options.maxParallelAgents) {
       fanOut.running++;
       runtime.emit();
@@ -60,6 +63,7 @@ export async function runParallel<T, R>(
 async function runQueuedParallel<T, R>(
   items: readonly T[],
   maxParallelAgents: number,
+  signal: AbortSignal | undefined,
   worker: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
   if (items.length === 0) return [];
@@ -68,6 +72,7 @@ async function runQueuedParallel<T, R>(
   let nextIndex = 0;
   const runWorker = async (): Promise<void> => {
     while (nextIndex < items.length) {
+      throwIfWorkflowAborted(signal);
       const index = nextIndex;
       nextIndex++;
       try {

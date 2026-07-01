@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { clearRunningWorkflowUi, updateRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
-import type { WorkflowSnapshot } from "../src/runtime/types.ts";
-import { registerActiveWorkflowRun, removeActiveWorkflowRun } from "../src/workflow/active-runs.ts";
+import { startVisibleWorkflowRun } from "../src/display/visible-workflow-run.ts";
+import type { WorkflowAgent, WorkflowSnapshot } from "../src/runtime/types.ts";
+import { readActiveWorkflowRuns, registerActiveWorkflowRun, removeActiveWorkflowRun } from "../src/workflow/active-runs.ts";
 import { writeWorkflowOutputManifest, writeWorkflowSnapshot } from "../src/workflow/outputs.ts";
 import { createExtensionHarness, waitForCondition, writeProjectWorkflow } from "./extension-harness.ts";
 
@@ -39,6 +40,16 @@ export default async function workflow(input) {
     /Workflow 'echo' complete\.\n\nWorkflow result: .*final\.json\n\nWorkflow session logs: /,
   );
   assert.doesNotMatch(harness.sentMessages[0].message.content, /hello world/);
+  const details = harness.sentMessages[0].message.details as { resultPath?: string; workflowName?: string };
+  assert.equal(details.workflowName, "echo");
+  assert.ok(details.resultPath);
+  assert.deepEqual(JSON.parse(await readFile(details.resultPath, "utf8")), {
+    message: "hello",
+    count: 10,
+    debug: true,
+    files: ["src/index.ts", "tests/index.test.ts"],
+    note: "hello world",
+  });
 });
 
 void test("existing_workflow_command_does_not_report_success_notification_failure_as_workflow_failure", async () => {
@@ -97,6 +108,50 @@ export default async function workflow(input) {
   await waitForCondition(() => harness.statusUpdates.at(-1) === undefined);
 });
 
+void test("session_shutdown_aborts_visible_workflow_and_cleans_active_registry", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  await writeProjectWorkflow(
+    project,
+    "slow",
+    `export const metadata = { name: "slow", description: "Slow workflow", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  await agent("wait", { label: "slow child" });
+  return { ok: true };
+}`,
+  );
+  const harness = createExtensionHarness({ cwd: project });
+  let childStarted = false;
+  let childAbortSeen = false;
+  const agent: WorkflowAgent = (_prompt, options) =>
+    new Promise((_resolve, reject) => {
+      childStarted = true;
+      options.signal?.addEventListener(
+        "abort",
+        () => {
+          childAbortSeen = true;
+          reject(new Error("child aborted"));
+        },
+        { once: true },
+      );
+    });
+  const visible = await startVisibleWorkflowRun({
+    ctx: harness.ctx,
+    cwd: project,
+    workflowName: "slow",
+    input: {},
+    agentDir: path.join(project, "agent-dir"),
+    agent,
+  });
+
+  await waitForCondition(() => childStarted);
+  await harness.sessionShutdown();
+
+  await assert.rejects(visible.run.finished, /child aborted/);
+  assert.equal(childAbortSeen, true);
+  assert.deepEqual(await readActiveWorkflowRuns(project), []);
+  assert.equal(harness.statusUpdates.at(-1), undefined);
+});
+
 void test("view_workflow_command_opens_running_workflow_inspector", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const harness = createExtensionHarness({ cwd: project });
@@ -147,6 +202,37 @@ void test("session_start_restores_running_workflow_widget_from_active_registry",
   await command;
   clearRunningWorkflowUi(harness.ctx, "run-reloadable");
   await removeActiveWorkflowRun(project, "run-reloadable");
+});
+
+void test("session_start_removes_active_workflow_from_dead_process", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const outputsDir = path.join(project, "outputs", "dead-process-run");
+  await mkdir(path.join(project, ".pi", "workflow-runs", "active"), { recursive: true });
+  await writeFile(
+    path.join(project, ".pi", "workflow-runs", "active", "run-dead-process.json"),
+    `${JSON.stringify({
+      runId: "run-dead-process",
+      workflowName: "dead-process",
+      outputsDir,
+      startedAt: Date.now(),
+      ownerSessionId: "test-session",
+      ownerProcessId: -1,
+    })}\n`,
+    "utf8",
+  );
+  await writeWorkflowOutputManifest({
+    outputsDir,
+    workflowName: "dead-process",
+    status: "running",
+    snapshot: runningWorkflowSnapshot("dead-process"),
+  });
+  await writeWorkflowSnapshot(outputsDir, runningWorkflowSnapshot("dead-process"));
+  const harness = createExtensionHarness({ cwd: project });
+
+  await harness.sessionStart("reload");
+
+  assert.equal(harness.widgetInstallCount(), 0);
+  assert.deepEqual(await readActiveWorkflowRuns(project), []);
 });
 
 void test("session_start_does_not_restore_workflow_owned_by_another_session", async () => {
@@ -202,6 +288,27 @@ void test("view_workflow_command_warns_when_no_workflow_is_running", async () =>
 
   assert.deepEqual(harness.notifications.at(-1), { message: "No running workflows to view.", type: "warning" });
   assert.equal(harness.customOpenCount(), 0);
+});
+
+void test("existing_workflow_command_reports_background_failure_and_cleans_up_ui", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  await writeProjectWorkflow(
+    project,
+    "fail",
+    `export const metadata = { name: "fail", description: "Fail workflow", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  throw new Error("workflow exploded");
+}`,
+  );
+  const harness = createExtensionHarness({ cwd: project });
+
+  await harness.command("workflow", "fail");
+  await waitForCondition(() => harness.sentMessages.length === 1 && harness.statusUpdates.at(-1) === undefined);
+
+  assert.deepEqual(harness.notifications.at(-1), { message: "Workflow 'fail' failed: workflow exploded", type: "error" });
+  assert.equal(harness.sentMessages[0].message.content, "Workflow 'fail' failed: workflow exploded");
+  assert.deepEqual(harness.sentMessages[0].message.details, { workflowName: "fail" });
+  assert.equal(harness.widgetUpdates.at(-1), undefined);
 });
 
 void test("workflow_settings_command_writes_project_settings", async () => {

@@ -70,10 +70,10 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
       }
       throw error;
     })
-    .finally(() => {
+    .finally(async () => {
       removeParentAbortListener();
-      void snapshotWrite;
-      void removeActiveWorkflowRun(options.cwd, options.runId);
+      await snapshotWrite;
+      await removeActiveWorkflowRun(options.cwd, options.runId);
     });
   return {
     runId: options.runId,

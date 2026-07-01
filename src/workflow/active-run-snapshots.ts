@@ -14,6 +14,10 @@ export async function readActiveWorkflowSnapshots(cwd: string, ownerSessionId: s
 }
 
 async function readActiveWorkflowSnapshot(cwd: string, record: ActiveWorkflowRunRecord): Promise<ActiveWorkflowSnapshot | undefined> {
+  if (record.ownerProcessId !== process.pid) {
+    await removeActiveWorkflowRun(cwd, record.runId);
+    return undefined;
+  }
   try {
     const manifest = await readWorkflowOutputManifest(record.outputsDir);
     if (manifest.status !== "running") {

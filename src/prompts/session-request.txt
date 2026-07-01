@@ -6,7 +6,11 @@ You MUST try to resolve clear ambiguities from available context before asking t
 
 If a new reusable workflow is clearly needed, call workflow_design_guidance({ topic: "overview" }) and request narrower guidance topics as needed. Infer the workflow purpose, inputs/defaults, phases, child-agent roles, file reads, and result shape from the user's request and project context before asking. Do not ask "what is the purpose?" when a reasonable purpose is inferable.
 
-Draft a project-local workflow directory and propose it with propose_workflow using draftDir.
+If a new workflow is needed, create its complete draft directory under this default draft root outside the project:
+
+{{defaultWorkflowDraftRoot}}
+
+Use {{defaultWorkflowDraftRoot}}/<workflow-name>/workflow.js plus any workflow-local prompts/assets, then call propose_workflow with the workflow name. You may omit draftDir when using that default location.
 
 Available workflows: {{availableWorkflowNames}}
 

@@ -1,4 +1,5 @@
 import { readFile, readdir, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import type { GeneratedWorkflowDraft } from "../request.ts";
 import { parseWorkflowSourceMetadata } from "./metadata.ts";
@@ -6,7 +7,7 @@ import { parseWorkflowSourceMetadata } from "./metadata.ts";
 export interface WorkflowDraftReadOptions {
   cwd: string;
   name: string;
-  draftDir: string;
+  draftDir?: string;
   toolName: string;
 }
 
@@ -25,8 +26,11 @@ export async function readWorkflowDraft(options: WorkflowDraftReadOptions): Prom
 async function readWorkflowDraftSource(
   options: WorkflowDraftReadOptions,
 ): Promise<{ source: string; filePaths: string[]; sourceDirectory: string }> {
-  if (!options.draftDir.trim()) throw new Error(`${options.toolName} requires draftDir`);
-  const sourceDirectory = resolveDraftWorkflowDirectory(options.cwd, options.draftDir, options.toolName);
+  const sourceDirectory = resolveDraftWorkflowDirectory(
+    options.cwd,
+    options.draftDir ?? defaultWorkflowDraftDirectory(options.name),
+    options.toolName,
+  );
   const stats = await stat(sourceDirectory);
   if (!stats.isDirectory()) throw new Error(`${options.toolName} draftDir must be a directory containing workflow.js`);
   return {
@@ -55,13 +59,17 @@ async function listDraftFiles(root: string): Promise<string[]> {
   return files.sort((left, right) => left.localeCompare(right));
 }
 
+export function defaultWorkflowDraftRoot(): string {
+  return path.join(tmpdir(), "pi-workflow-drafts");
+}
+
+export function defaultWorkflowDraftDirectory(name: string): string {
+  return path.join(defaultWorkflowDraftRoot(), name);
+}
+
 function resolveDraftWorkflowDirectory(cwd: string, draftDir: string, toolName: string): string {
   const projectRoot = path.resolve(cwd);
   const resolved = path.resolve(projectRoot, draftDir);
-  const projectRelative = path.relative(projectRoot, resolved);
-  if (projectRelative.startsWith("..") || path.isAbsolute(projectRelative)) {
-    throw new Error(`${toolName} draftDir must stay inside the project directory`);
-  }
   const publishedRoot = path.join(projectRoot, ".pi", "workflows");
   if (isInsideOrEqual(publishedRoot, resolved) || isInsideOrEqual(resolved, publishedRoot)) {
     throw new Error(`${toolName} draftDir must not be inside, equal to, or an ancestor of .pi/workflows`);

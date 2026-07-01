@@ -2,13 +2,11 @@
 
 A small pi extension for code-first project workflows.
 
-Use it when a repo has repeatable agent work: review a set of files, fan out across
-tasks, synthesize findings, generate artifacts, or run a custom checklist. Workflows
-are plain JavaScript files in your project, so you can inspect and edit the runbook.
+Use it when a repo has repeatable agent work: review files, fan out across tasks,
+synthesize findings, generate artifacts, or run a custom checklist. Workflows are
+plain JavaScript files under `.pi/workflows/<name>/workflow.js`.
 
 ## Install
-
-From this checkout:
 
 ```bash
 pi install /path/to/pi-workflow
@@ -22,15 +20,14 @@ npm run check
 pi -e ./extensions/workflow.ts
 ```
 
-## Run A Workflow
-
-Saved workflows live under `.pi/workflows/<name>/workflow.js`.
+## Run
 
 ```text
 /workflow <name> [input]
 /workflow:<name> [input]
 /workflow <natural-language request>
 /view-workflow
+/workflow-review latest
 ```
 
 Examples:
@@ -38,33 +35,24 @@ Examples:
 ```text
 /workflow count-to-target target=10
 /workflow:review files=src/index.ts,tests/index.test.ts
-/workflow:review prompt="focus on auth edge cases" files=src/auth.ts
 /workflow review the auth flow and create a reusable workflow if needed
 ```
 
-JSON, `key=value`, `--key value`, and comma-separated lists run directly. Freeform
-named-workflow input stays visible in the current chat. The agent must first try
-to resolve clear ambiguities from project context, then ask only when required
-input remains unknowable or a high-impact choice would change workflow scope,
-behavior, or artifacts.
+JSON, `key=value`, `--key value`, and comma-separated lists run directly.
+Freeform workflow requests stay visible in the current chat for the agent to
+resolve before calling `run_workflow`.
 
-## What The TUI Looks Like
+## TUI
 
-While a workflow runs from a named command or from the current-session agent's
-`run_workflow` tool call, pi shows a compact widget below the editor. The widget
-reattaches within the same parent Pi session after extension reloads from
-transient per-run files under `.pi/workflow-runs/active/` and the run's latest
-`snapshot.json`. Runs from other sessions in the same project directory are not
-shown as this session's active workflow. Run `/view-workflow` to open the
-inspector directly, or press `Down` on an empty prompt to select the widget,
-`Enter` to open the inspector, and `Esc` or `Up` to return to the prompt.
+Running workflows show a compact widget below the editor. Press `Down` on an
+empty prompt to select it, `Enter` to inspect, and `Esc` or `Up` to return.
 
 ```text
   ↓ select (on an empty prompt) to inspect
   ◐ review  reviewing src/auth.ts and tests/auth.test.ts        2/5 agents done · 1m12s · ↓18.4k tokens
 ```
 
-The inspector shows phases on the left and child agents on the right.
+Inspector view:
 
 ```text
  review                                                       2/5 agents · 1m12s
@@ -79,14 +67,9 @@ The inspector shows phases on the left and child agents on the right.
  ↕ select · → agents · x abort workflow · esc back · s snapshot path
 ```
 
-The live UI stays compact in the widget. The inspector keeps details expanded,
-loads exact prompt/tool/output artifacts on demand, and keeps the exact prompt
-collapsed until you press `Enter`. Completion messages still point at output
-files and session logs instead of dumping results into the chat.
+## Write
 
-## Write A Workflow
-
-Create one directory per workflow:
+A workflow directory contains `workflow.js` and optional prompt files:
 
 ```text
 .pi/workflows/<workflow-name>/
@@ -94,69 +77,18 @@ Create one directory per workflow:
   prompts/
 ```
 
-`workflow.js` exports static metadata and a default async function:
+`workflow.js` exports static `metadata` and a default async function. Workflow
+code runs in a sandbox with globals such as `agent`, `parallel`, `pipeline`,
+`coerce`, `mapreduce`, `verifier`, `phase`, `log`, `trace`, file helpers, and
+`renderPrompt`.
 
-```js
-export const metadata = {
-  name: "review",
-  description: "Review files in parallel and synthesize findings",
-  inputInstructions: "Resolve explicit paths as files. Treat remaining prose as focus.",
-  phases: [
-    { title: "fanout", detail: "review each file independently" },
-    { title: "synthesis", detail: "combine findings" },
-  ],
-};
-
-/**
- * Purpose: review files in parallel and synthesize findings.
- * Input: files is required; focus defaults to a general review.
- * Phase: fanout reviews each file, synthesis combines findings.
- * Agent: launches one child agent per file and one synthesis agent.
- * Result: returns the synthesis response.
- * @param {object} input
- * @param {string[]} input.files - Files to review.
- * @param {string} [input.focus="general review"] - Optional focus.
- */
-export default async function workflow({ files, focus = "general review" }) {
-  phase("fanout");
-  const reviews = await parallel(
-    files,
-    (file) =>
-      agent(renderPrompt("review.txt", { file, focus }), {
-        label: file,
-        reasoning: "minimal",
-        taskFile: file,
-      }),
-    { label: "file reviews", reduction: "synthesize reviews" },
-  );
-
-  phase("synthesis");
-  const reviewText = JSON.stringify(reviews).slice(0, 8000);
-  return agent("Synthesize these reviews:\n\n" + reviewText, {
-    label: "synthesis",
-    reasoning: "minimal",
-  });
-}
-```
-
-Workflow code runs in a sandbox. It receives the workflow input as the function
-argument and uses these globals:
-
-```text
-agent, parallel, pipeline, coerce, mapreduce, verifier, phase, log, trace,
-cwd, budget, readText, readJson, writeText, writeJson, renderPrompt
-```
-
-Use `renderPrompt("review.txt", values)` for files under the workflow's
-`prompts/` directory. Use `readText`/`readJson` and `writeText`/`writeJson` for
-project files, absolute paths, and `@workflow/...` paths. Write helpers create
-parent directories, overwrite existing files atomically, and return the resolved
-path.
+Agents can call `workflow_design_guidance` for focused authoring help and
+`propose_workflow` to save complete generated workflow draft directories.
 
 ## Settings
 
-Project settings live in `.pi/settings.json`. Global settings can live in
-`~/.pi/agent/settings.json`; project settings win.
+Project settings live in `.pi/settings.json`; global settings can live in
+`~/.pi/agent/settings.json`.
 
 ```json
 {
@@ -167,8 +99,6 @@ Project settings live in `.pi/settings.json`. Global settings can live in
 }
 ```
 
-Commands:
-
 ```text
 /workflow-settings
 /workflow-settings maxParallelAgents=8
@@ -176,33 +106,17 @@ Commands:
 /workflow-settings --global maxParallelAgents=4
 ```
 
-Child agents load only `workflow.childAgentExtensions`, so parent-session
-extensions do not leak into workflow runs unless you opt in.
-
-## Review A Run
-
-When a workflow completes, pi prints the final result path and workflow session-log
-directory. Review the latest run with:
-
-```text
-/workflow-review latest
-```
-
-`/workflow-review` reads the recorded workflow logs and reports token spend,
-repeated tool activity, common commands, and concrete cost-reduction targets.
-
 ## Development
 
 ```bash
-npm run lint          # strict ESLint
-npm run lint:fix      # auto-fix lint violations
-npm run format        # Prettier write
-npm run format:check  # Prettier check
-npm run docs:check    # exported API docstrings and docs-sync contracts
-npm run typecheck     # TypeScript without emit
-npm test              # deterministic node:test suite
-npm run loadcheck     # verify pi can load the extension
-npm run check         # full gate
+npm run lint
+npm run format:check
+npm run docs:check
+npm run typecheck
+npm test
+npm run loadcheck
+npm run check
 ```
 
-Tests use deterministic fake agents only.
+Detailed design notes live in `docs/`; agent-facing repo guidance lives in
+`agent_docs/`.

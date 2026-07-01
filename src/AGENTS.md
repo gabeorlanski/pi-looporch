@@ -25,7 +25,7 @@ npm run check
 - Put TUI and visible text rendering in `display/`, one display concern per file.
 - Put raw prompt text in `prompts/*.txt`; keep interpolation code outside `prompts/`.
 - Keep generated workflow authoring docs in `authoring-guide.ts`; render them into prompts through placeholders.
-- Steer generated workflows toward complete draft directories (`.pi/workflow-drafts/<name>/`) and `propose_workflow` `draftDir` values that point at the directory, not the `workflow.js` file.
+- Steer generated workflows toward the default outside-project draft root provided in the current session prompt; when using that default, call `propose_workflow` with the workflow name and omit `draftDir`. If an explicit alternate `draftDir` is needed, it must point at the directory, not the `workflow.js` file.
 - Require generated workflow source to document the default workflow function with JSDoc covering input fields/defaults, phases, child agents, file reads, and result shape.
 - Generated workflow child-agent prompts must be self-contained expert task packets with source-of-truth paths, prior results, invariants, concrete operating instructions, evidence requirements, pass/fail gates, and exact artifacts to read or write.
 - Shared prompt context is allowed, but format it as a compact contract (`Inputs`, `Purpose`, `Definitions`, `Rules`, `Task`, `Output`) instead of an unstructured global preamble dump; omit irrelevant globals for that stage.
@@ -37,6 +37,7 @@ npm run check
 - Encourage workflow authors to add `log(message)` for visible milestones and `trace(label, value?)` for structured handoff/debug data.
 - Treat structured JSON as a control surface: keep schemas bounded and compact, return manifest/status/IDs/paths, and put large reasoning/evidence/artifacts in files or JSONL.
 - Keep workflow results, including strings, in output files and session logs; do not inject them into the parent session as hidden follow-up prompts.
+- Keep abort and shutdown handling in the workflow lifecycle layer. Live visible runs abort on `session_shutdown`, settled runs await active-record cleanup, and stale active records from dead processes must not rehydrate.
 - Never estimate token counts; only report provider/session usage or zero/unknown when actual usage is unavailable.
 - Update tests and docs when exported behavior or workflow primitives change.
 

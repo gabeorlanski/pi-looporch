@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { defaultWorkflowDraftRoot } from "./workflow/drafts.ts";
 import type { WorkflowInputContract } from "./input.ts";
 import type { WorkflowAgentOptions, WorkflowMetadata } from "./runtime/types.ts";
 
@@ -43,6 +44,7 @@ export function steerableInputResolutionMessage(options: SteerableInputResolutio
 export function naturalLanguageRequestMessage(request: string, availableWorkflowNames: string[]): string {
   return renderPromptTemplate(sessionRequestTemplate, {
     availableWorkflowNames: availableWorkflowNames.length ? availableWorkflowNames.join(", ") : "none",
+    defaultWorkflowDraftRoot: defaultWorkflowDraftRoot(),
     request,
   });
 }

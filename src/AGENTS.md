@@ -37,6 +37,7 @@ npm run check
 - Encourage workflow authors to add `log(message)` for visible milestones and `trace(label, value?)` for structured handoff/debug data.
 - Treat structured JSON as a control surface: keep schemas bounded and compact, return manifest/status/IDs/paths, and put large reasoning/evidence/artifacts in files or JSONL.
 - Keep workflow results, including strings, in output files and session logs; do not inject them into the parent session as hidden follow-up prompts.
+- Keep abort and shutdown handling in the workflow lifecycle layer. Live visible runs abort on `session_shutdown`, settled runs await active-record cleanup, and stale active records from dead processes must not rehydrate.
 - Never estimate token counts; only report provider/session usage or zero/unknown when actual usage is unavailable.
 - Update tests and docs when exported behavior or workflow primitives change.
 

@@ -13,6 +13,7 @@ import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from 
 import { appendRunMessage } from "../messages.ts";
 import { jsonSchemaPrompt, normalizeAttemptCount, parseAndValidateJsonResponse } from "../schema.ts";
 import { cloneSerializable } from "../serialization.ts";
+import { throwIfWorkflowAborted } from "../abort.ts";
 import { recordTrace } from "./trace.ts";
 
 export const agentPrimitive: WorkflowPrimitive<{
@@ -49,11 +50,11 @@ function structuredAgentPrompt(prompt: string, schema: unknown, validationFailur
 }
 
 async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
-  if (runtime.options.signal?.aborted) throw new Error("Workflow aborted");
+  throwIfWorkflowAborted(runtime.options.signal);
   const agentCwd = resolveWorkflowAgentCwd(runtime.options.cwd, agentOptions.cwd);
   const releaseAgentSlot = await runtime.agentLaunchQueue.acquire(runtime.options.signal);
   try {
-    if (runtime.options.signal?.aborted) throw new Error("Workflow aborted");
+    throwIfWorkflowAborted(runtime.options.signal);
     const agent: WorkflowAgentSnapshot = {
       id: runtime.snapshot.agents.length + 1,
       label: agentOptions.label ?? `agent ${String(runtime.snapshot.agents.length + 1)}`,
@@ -94,7 +95,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       } finally {
         clearInterval(heartbeat);
       }
-      if (runtime.options.signal?.aborted) throw new Error("Workflow aborted");
+      throwIfWorkflowAborted(runtime.options.signal);
       await reporter.flush();
       agent.status = "done";
       agent.endedAt = Date.now();

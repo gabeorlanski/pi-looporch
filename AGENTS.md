@@ -38,6 +38,8 @@ Keep these in sync with every behavior or convention change. Pre-commit enforces
 
 When the user gives coding guidance or pushes back on code, add a rule to `agent_docs/INDEX.md` only if it is a generalizable coding pattern. Do not record one-off preferences, task-specific notes, or stale workarounds.
 
+Keep this root `AGENTS.md` limited to the highest-level, durable rules agents need across the whole repository. Do not add feature-specific behavior details, implementation notes, or test recipes here; put those in `docs/`, `agent_docs/`, or a narrower `AGENTS.md`.
+
 ## Workflow authoring and running model
 
 Keep the mental model simple:

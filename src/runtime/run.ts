@@ -11,6 +11,7 @@ import { appendRunMessage } from "./messages.ts";
 import { createAgentLaunchQueue, normalizeMaxParallelAgents } from "./queue.ts";
 import { cloneSerializable, cloneSnapshot } from "./serialization.ts";
 import { errorMessage } from "../errors.ts";
+import { throwIfWorkflowAborted } from "./abort.ts";
 
 export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Promise<WorkflowRunResult> {
   throwIfWorkflowAborted(options.signal);
@@ -47,6 +48,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
   try {
     throwIfWorkflowAborted(options.signal);
     const result = cloneSerializable(await compiled.workflow(options.input));
+    throwIfWorkflowAborted(options.signal);
     snapshot.status = "done";
     const resultPath = options.outputsDir ? await writeWorkflowFinalOutput(options.outputsDir, result) : undefined;
     if (options.outputsDir)
@@ -72,8 +74,4 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     runtime.emit();
     throw error;
   }
-}
-
-function throwIfWorkflowAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw new Error("Workflow aborted");
 }

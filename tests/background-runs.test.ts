@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { startBackgroundWorkflowRun } from "../src/background-runs.ts";
 import { workflowAgentSessionLogParentDirectory } from "../src/session-logs.ts";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
+import { readActiveWorkflowRuns } from "../src/workflow/active-runs.ts";
 
 async function writeWorkflow(project: string, name: string, source: string): Promise<void> {
   const workflowDir = path.join(project, ".pi", "workflows", name);
@@ -101,6 +102,59 @@ export default async function workflow() {
   await assert.rejects(run.finished, /Workflow aborted/);
   assert.equal(agentCalls, 0);
   assert.equal(run.snapshot(), undefined);
+});
+
+void test("background_workflow_abort_stops_running_child_and_removes_active_record", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-background-"));
+  await writeWorkflow(
+    project,
+    "abort-running",
+    `export const metadata = { name: "abort-running", description: "Abort running workflow", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  await agent("wait", { label: "running child" });
+  return { ok: true };
+}`,
+  );
+
+  let markChildStarted: () => void = () => undefined;
+  const childStarted = new Promise<void>((resolve) => {
+    markChildStarted = resolve;
+  });
+  let childAbortSeen = false;
+  const agent: WorkflowAgent = (_prompt, options) =>
+    new Promise((_resolve, reject) => {
+      markChildStarted();
+      options.signal?.addEventListener(
+        "abort",
+        () => {
+          childAbortSeen = true;
+          reject(new Error("child aborted"));
+        },
+        { once: true },
+      );
+    });
+  const run = await startBackgroundWorkflowRun({
+    runId: "run-abort-running",
+    cwd: project,
+    workflowName: "abort-running",
+    input: {},
+    agent,
+    maxParallelAgents: 1,
+    ownerSessionId: "test-session",
+  });
+
+  await childStarted;
+  run.abort();
+
+  await assert.rejects(run.finished, /child aborted/);
+  assert.equal(childAbortSeen, true);
+  assert.deepEqual(await readActiveWorkflowRuns(project), []);
+  assert.deepEqual(JSON.parse(await readFile(path.join(run.outputsDir, "manifest.json"), "utf8")), {
+    workflowName: "abort-running",
+    status: "error",
+    error: "child aborted",
+    outputs: [],
+  });
 });
 
 void test("background_workflow_run_writes_error_manifest_when_workflow_fails", async () => {

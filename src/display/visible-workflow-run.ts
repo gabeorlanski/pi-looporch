@@ -22,6 +22,13 @@ export interface VisibleWorkflowRun {
   cleanup: () => void;
 }
 
+interface TrackedVisibleWorkflowRun {
+  run: BackgroundWorkflowRun;
+  cleanup: () => void;
+}
+
+const visibleWorkflowRuns = new WeakMap<ExtensionContext, Map<string, TrackedVisibleWorkflowRun>>();
+
 export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOptions): Promise<VisibleWorkflowRun> {
   const showRunningUi = options.ctx.mode === "tui";
   const ownerSessionId = options.ctx.sessionManager.getSessionId();
@@ -29,6 +36,7 @@ export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOp
   let run: BackgroundWorkflowRun | undefined;
   let runId: string | undefined;
   const cleanup = (): void => {
+    untrackVisibleWorkflowRun(options.ctx, runId);
     activeWorkflow?.done();
     if (showRunningUi) clearRunningWorkflowUi(options.ctx, runId);
   };
@@ -59,9 +67,33 @@ export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOp
         options.onSnapshot?.(snapshot, prepared, run);
       },
     });
-    return { prepared, run, cleanup };
+    const visible = { prepared, run, cleanup };
+    trackVisibleWorkflowRun(options.ctx, visible);
+    return visible;
   } catch (error) {
     cleanup();
     throw error;
   }
+}
+
+export async function abortVisibleWorkflowRuns(ctx: ExtensionContext): Promise<void> {
+  const runs = [...(visibleWorkflowRuns.get(ctx)?.values() ?? [])];
+  for (const { run } of runs) run.abort();
+  await Promise.allSettled(runs.map(({ run }) => run.finished));
+  for (const run of runs) run.cleanup();
+  if (runs.length === 0) clearRunningWorkflowUi(ctx);
+}
+
+function trackVisibleWorkflowRun(ctx: ExtensionContext, run: TrackedVisibleWorkflowRun): void {
+  const runs = visibleWorkflowRuns.get(ctx) ?? new Map<string, TrackedVisibleWorkflowRun>();
+  runs.set(run.run.runId, run);
+  visibleWorkflowRuns.set(ctx, runs);
+  void run.run.finished.finally(() => untrackVisibleWorkflowRun(ctx, run.run.runId)).catch(() => undefined);
+}
+
+function untrackVisibleWorkflowRun(ctx: ExtensionContext, runId: string | undefined): void {
+  if (!runId) return;
+  const runs = visibleWorkflowRuns.get(ctx);
+  runs?.delete(runId);
+  if (runs?.size === 0) visibleWorkflowRuns.delete(ctx);
 }

@@ -7,7 +7,7 @@ import type { BackgroundWorkflowRunResult } from "../src/background-runs.ts";
 import { WorkflowInputError, parseWorkflowInput } from "../src/input.ts";
 import { completeMessage, failureMessage } from "../src/display/messages.ts";
 import { openRunningWorkflowInspector, restoreRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
-import { startVisibleWorkflowRun } from "../src/display/visible-workflow-run.ts";
+import { abortVisibleWorkflowRuns, startVisibleWorkflowRun } from "../src/display/visible-workflow-run.ts";
 import { errorMessage } from "../src/errors.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import { workflowLogReviewMessage } from "../src/log-review.ts";
@@ -65,6 +65,10 @@ export default function piWorkflow(pi: ExtensionAPI) {
         handler: async (args, commandCtx) => steerWorkflowCommand(pi, commandCtx, workflow.name, args),
       });
     }
+  });
+
+  pi.on("session_shutdown", async (_event, ctx) => {
+    await abortVisibleWorkflowRuns(ctx);
   });
 }
 

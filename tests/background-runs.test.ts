@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { startBackgroundWorkflowRun } from "../src/background-runs.ts";
+import { workflowAgentSessionLogParentDirectory } from "../src/session-logs.ts";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
 
 async function writeWorkflow(project: string, name: string, source: string): Promise<void> {
@@ -131,4 +132,54 @@ export default async function workflow() {
     error: "child exploded",
     outputs: [],
   });
+});
+
+void test("background_workflow_run_persists_terminal_snapshot_when_workflow_body_fails", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-background-"));
+  await writeWorkflow(
+    project,
+    "body-fail",
+    `export const metadata = { name: "body-fail", description: "Fail in workflow body", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  phase("body");
+  throw new Error("body exploded");
+}`,
+  );
+
+  const agent: WorkflowAgent = () => Promise.resolve("unused");
+  const run = await startBackgroundWorkflowRun({
+    runId: "run-body-fail",
+    cwd: project,
+    workflowName: "body-fail",
+    input: {},
+    agent,
+    maxParallelAgents: 1,
+    ownerSessionId: "test-session",
+  });
+
+  await assert.rejects(run.finished, /body exploded/);
+
+  assert.equal(run.snapshot()?.status, "error");
+  assert.deepEqual(
+    run.snapshot()?.messages.map((message) => message.message),
+    ["workflow body-fail started", "phase body", "workflow failed: body exploded"],
+  );
+  assert.deepEqual(JSON.parse(await readFile(path.join(run.outputsDir, "manifest.json"), "utf8")), {
+    workflowName: "body-fail",
+    status: "error",
+    error: "body exploded",
+    outputs: [],
+  });
+  const summaryDir = workflowAgentSessionLogParentDirectory(project, "run-body-fail");
+  const summary = JSON.parse(await readFile(path.join(summaryDir, "workflow-summary.json"), "utf8")) as {
+    status?: unknown;
+    messages?: { message?: unknown }[];
+    error?: unknown;
+  };
+  assert.equal(summary.status, "error");
+  assert.deepEqual(
+    summary.messages?.map((message) => message.message),
+    ["workflow body-fail started", "phase body", "workflow failed: body exploded"],
+  );
+  assert.equal(summary.error, "body exploded");
 });

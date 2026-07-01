@@ -60,7 +60,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 ### Runtime and Boundaries
 
 - Inject `WorkflowAgent`; never hardcode model or pi providers into core logic.
-- Propose generated workflows as complete project-local draft directories such as `.pi/workflow-drafts/<name>/`; `propose_workflow` `draftDir` values should point at the directory, not the `workflow.js` file.
+- Propose generated workflows from the default outside-project draft root provided in the current session prompt, so workflow authoring does not dirty the worktree. When using that default, call `propose_workflow` with the workflow name and omit `draftDir`; if an explicit alternate `draftDir` is needed, it should point at the directory, not the `workflow.js` file.
 - `propose_workflow` saves directly after validating the draft directory; do not add confirmation flags or two-step save flows.
 - Require workflow metadata to include `phases: [{ title, detail? }]`; this planned runbook outline is required planning data, while runtime `phase()` calls are actual progress.
 - Require agent-generated workflow source to document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.

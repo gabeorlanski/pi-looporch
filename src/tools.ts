@@ -9,6 +9,7 @@ import { workflowDesignGuidance } from "./authoring-guide.ts";
 import { startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
 import { readWorkflowDraft } from "./workflow/drafts.ts";
 import { normalizeWorkflowName } from "./workflow/paths.ts";
+import { errorMessage } from "./errors.ts";
 
 /** Dependencies used to construct workflow tools for either an extension session or tests. */
 export interface WorkflowToolsOptions {
@@ -54,9 +55,7 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
       });
       void visible.run.finished
         .then((result) => notifyBackgroundToolCompletion(ctx, result))
-        .catch((error: unknown) =>
-          ctx.ui.notify(`Workflow ${workflowName} failed: ${error instanceof Error ? error.message : String(error)}`, "error"),
-        )
+        .catch((error: unknown) => ctx.ui.notify(`Workflow ${workflowName} failed: ${errorMessage(error)}`, "error"))
         .finally(visible.cleanup);
       return {
         content: [
@@ -129,9 +128,12 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
     promptSnippet: "propose_workflow: Save a new workflow from a complete draft directory, not a workflow.js file.",
     parameters: Type.Object({
       name: Type.String({ description: "Workflow slug to save under .pi/workflows/<slug>" }),
-      draftDir: Type.String({
-        description: "Project-relative draft workflow directory containing workflow.js plus prompts/ or other resources",
-      }),
+      draftDir: Type.Optional(
+        Type.String({
+          description:
+            "Draft workflow directory containing workflow.js plus prompts/ or other resources; accepts absolute paths or project-relative paths. Omit when using the default temp draft directory.",
+        }),
+      ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const cwd = options.cwd ?? ctx.cwd;

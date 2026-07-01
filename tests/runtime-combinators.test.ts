@@ -131,3 +131,41 @@ export default async function workflow() {
   );
   assert.deepEqual(result.snapshot.fanOuts, [{ id: 1, label: "rubric voters", total: 3, running: 0, done: 3, error: 0 }]);
 });
+
+void test("workflow_parallel_records_failures_after_finishing_remaining_items", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "parallel-failure",
+    `export const metadata = { name: "parallel-failure", description: "Parallel failure", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return parallel(["one", "bad", "two"], (item) => {
+    trace("processed", item);
+    if (item === "bad") throw new Error("bad item");
+    return item.toUpperCase();
+  }, { label: "items" });
+}`,
+  );
+  const snapshots: Awaited<ReturnType<typeof runWorkflowFromDirectory>>["snapshot"][] = [];
+  const agent: WorkflowAgent = () => Promise.resolve("unused");
+
+  await assert.rejects(
+    runWorkflowFromDirectory({
+      maxParallelAgents: 2,
+      cwd: project,
+      workflowName: "parallel-failure",
+      input: {},
+      agent,
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+    }),
+    /bad item/,
+  );
+
+  const finalSnapshot = snapshots.at(-1);
+  assert.ok(finalSnapshot);
+  assert.deepEqual(finalSnapshot.fanOuts, [{ id: 1, label: "items", total: 3, running: 0, done: 2, error: 1 }]);
+  assert.deepEqual(
+    finalSnapshot.traces.map((trace) => trace.value),
+    ["one", "bad", "two"],
+  );
+});

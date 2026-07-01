@@ -1,3 +1,5 @@
+import { defaultWorkflowDraftRoot } from "./workflow/drafts.ts";
+
 interface DesignTopic {
   name: string;
   summary: string;
@@ -12,7 +14,7 @@ const designTopics: DesignTopic[] = [
     guidance: [
       "Use an existing workflow when one fits; author a new workflow only when the request is reusable or multi-step enough to deserve a runbook.",
       "Before asking about missing purpose or contract details, inspect relevant project context and infer the workflow purpose, inputs/defaults, phases, child-agent roles, file reads, and result shape when they are reasonably clear.",
-      "Draft the workflow as a project-local directory such as .pi/workflow-drafts/<name>/, then propose it with draftDir pointing at that directory.",
+      `Draft the workflow under the default outside-project draft root ${defaultWorkflowDraftRoot()}, then call propose_workflow with the workflow name.`,
       "Keep workflow.js as orchestration code. Put reusable child-agent prompt text in prompts/*.txt and render it with renderPrompt(...).",
       "Ask this tool for narrower topics only when needed: workflow-api, draft-directory, prompt-files, child-agents, structured-outputs, fanout, verification, artifacts.",
     ],
@@ -35,13 +37,14 @@ const designTopics: DesignTopic[] = [
     name: "draft-directory",
     summary: "How to stage generated workflows with resources for saving.",
     guidance: [
-      "Create .pi/workflow-drafts/<name>/workflow.js plus workflow-owned prompts, schemas, fixtures, or examples before proposing.",
-      "Call propose_workflow with draftDir set to the directory path, not the workflow.js file path.",
+      "Create a complete draft directory with workflow.js plus workflow-owned prompts, schemas, fixtures, or examples before proposing.",
+      `Use ${defaultWorkflowDraftRoot()}/<workflow-name>/ by default so workflow authoring does not dirty the worktree.`,
+      "Call propose_workflow with the workflow name. Omit draftDir when using the default draft directory; otherwise set draftDir to the directory path, not the workflow.js file path.",
       "Drafts copy to .pi/workflows/<name>/ so workflow.js and resources land together.",
     ],
     examples: [
-      `.pi/workflow-drafts/review/\n  workflow.js\n  prompts/review.txt\n  prompts/synthesize.txt\n  schemas/finding.schema.json`,
-      `propose_workflow({ name: "review", draftDir: ".pi/workflow-drafts/review" })`,
+      `${defaultWorkflowDraftRoot()}/review/\n  workflow.js\n  prompts/review.txt\n  prompts/synthesize.txt\n  schemas/finding.schema.json`,
+      `propose_workflow({ name: "review" })`,
     ],
   },
   {

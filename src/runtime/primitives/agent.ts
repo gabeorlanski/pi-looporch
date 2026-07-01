@@ -6,6 +6,7 @@ import type {
   WorkflowAgentSnapshot,
   WorkflowToolActivitySnapshot,
 } from ".././types.ts";
+import { errorMessage } from "../../errors.ts";
 import { resolveWorkflowAgentCwd } from "../../workflow/paths.ts";
 import { writeWorkflowAgentActivity, writeWorkflowAgentOutput, writeWorkflowAgentPrompt } from "../../workflow/outputs.ts";
 import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
@@ -115,7 +116,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       await reporter?.flush();
       agent.status = "error";
       agent.endedAt = Date.now();
-      agent.error = error instanceof Error ? error.message : String(error);
+      agent.error = errorMessage(error);
       appendRunMessage(runtime, {
         phaseIndex: agent.phaseIndex,
         ...(agent.phase ? { phase: agent.phase } : {}),

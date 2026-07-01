@@ -153,6 +153,13 @@ project files, absolute paths, and `@workflow/...` paths. Write helpers create
 parent directories, overwrite existing files atomically, and return the resolved
 path.
 
+Current-session agents can call `workflow_design_guidance` for concise workflow
+authoring help and `propose_workflow` to save a generated workflow. New
+workflow drafts should be complete directories under the default outside-project
+draft root shown in the session prompt. When using that default location, call
+`propose_workflow` with the workflow name and omit `draftDir`; pass `draftDir`
+only for an explicit alternate directory.
+
 ## Settings
 
 Project settings live in `.pi/settings.json`. Global settings can live in

@@ -10,6 +10,7 @@ import { parseWorkflowSourceMetadata } from "../workflow/metadata.ts";
 import { appendRunMessage } from "./messages.ts";
 import { createAgentLaunchQueue, normalizeMaxParallelAgents } from "./queue.ts";
 import { cloneSerializable, cloneSnapshot } from "./serialization.ts";
+import { errorMessage } from "../errors.ts";
 
 export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Promise<WorkflowRunResult> {
   throwIfWorkflowAborted(options.signal);
@@ -60,8 +61,15 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     return { workflowName, workflowDir, metadata, result, snapshot: cloneSnapshot(snapshot), outputsDir: options.outputsDir, resultPath };
   } catch (error) {
     snapshot.status = "error";
+    appendRunMessage(runtime, {
+      phaseIndex: snapshot.phases.length,
+      phase: snapshot.phases.at(-1),
+      level: "error",
+      message: `workflow failed: ${errorMessage(error)}`,
+    });
     if (options.outputsDir)
       await writeWorkflowOutputManifest({ outputsDir: options.outputsDir, workflowName, status: "error", snapshot, error });
+    runtime.emit();
     throw error;
   }
 }

@@ -57,7 +57,7 @@ if an existing workflow fits:
   call run_workflow(name, input)
 else:
   call workflow_design_guidance({ topic: "overview" }) before authoring, then narrower topics only as needed
-  draft .pi/workflow-drafts/<name>/ as a complete workflow directory
+  draft a complete workflow directory under the default outside-project draft root from the current session prompt
   put reusable child-agent prompt templates in prompts/*.txt and render them with renderPrompt
   include workflow.js metadata { name, description, inputInstructions, phases }
   document workflow(input) with JSDoc:
@@ -117,7 +117,7 @@ TypeScript interfaces/types are the source of truth:
 - Let `readText`/`readJson` and `writeText`/`writeJson` use absolute paths, project-cwd-relative paths, and `@workflow/...` paths; use `renderPrompt` for prompt templates under the workflow's own `prompts/` directory.
 - Let `agent(prompt, { cwd })` launch child agents from alternate/scratch directories; resolve relative `cwd` values from the workflow project cwd.
 - Keep workflow child-agent SDK sessions isolated from ambient pi extensions by default; load only `workflow.childAgentExtensions` from merged global/project settings so parent-session extension tools/hooks cannot mutate global extension state.
-- Agent-generated workflows should be proposed as complete draft directories (`.pi/workflow-drafts/<name>/`) with `draftDir` pointing at the directory, not the `workflow.js` file.
+- Agent-generated workflows should be drafted under the default outside-project draft root from the current session prompt, so workflow authoring does not dirty the worktree. When using that default location, call `propose_workflow` with the workflow name and omit `draftDir`; use `draftDir` only for an explicit alternate directory, and point it at the directory, not the `workflow.js` file.
 - Agent-generated workflow source must include required `metadata.phases` as the planned runbook outline and document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
 - Optimize workflow authoring for power-user/agent-authored executable runbooks: top-level constants, inline schemas, prompt-builder helpers, and local paths are fine when they improve observability and ease of tweaking.
 - Generated workflow saves are direct: `propose_workflow` validates a complete draft directory and copies it to `.pi/workflows/<name>/` in one call.

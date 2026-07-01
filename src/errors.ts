@@ -4,5 +4,6 @@ export function errorMessage(error: unknown): string {
   if (typeof error === "string") return error;
   if (typeof error === "number" || typeof error === "boolean" || typeof error === "bigint") return String(error);
   if (typeof error === "symbol") return error.description ?? "symbol";
+  if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") return error.message;
   return JSON.stringify(error);
 }

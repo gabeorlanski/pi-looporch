@@ -44,8 +44,7 @@ function validateGeneratedWorkflowDocstring(source: string): void {
 }
 
 async function saveDraft(cwd: string, draft: GeneratedWorkflowDraft): Promise<void> {
-  const projectRoot = path.resolve(cwd);
-  const workflowRoot = path.join(projectRoot, ".pi", "workflows");
+  const workflowRoot = path.join(path.resolve(cwd), ".pi", "workflows");
   const workflowDir = path.join(workflowRoot, draft.name);
   const suffix = `${String(process.pid)}-${String(Date.now())}`;
   const stagingDir = path.join(workflowRoot, `.${draft.name}.tmp-${suffix}`);
@@ -55,7 +54,7 @@ async function saveDraft(cwd: string, draft: GeneratedWorkflowDraft): Promise<vo
     rm(backupDir, { recursive: true, force: true }),
     mkdir(workflowRoot, { recursive: true }),
   ]);
-  await cp(validateDraftSourceDirectory(projectRoot, draft.sourceDirectory, workflowRoot), stagingDir, { recursive: true });
+  await cp(validateDraftSourceDirectory(draft.sourceDirectory, workflowRoot), stagingDir, { recursive: true });
   await replaceWorkflowDirectory(workflowDir, stagingDir, backupDir);
 }
 
@@ -80,9 +79,8 @@ async function renameIfExists(from: string, to: string): Promise<boolean> {
   }
 }
 
-function validateDraftSourceDirectory(projectRoot: string, sourceDirectory: string, workflowRoot: string): string {
+function validateDraftSourceDirectory(sourceDirectory: string, workflowRoot: string): string {
   const resolved = path.resolve(sourceDirectory);
-  if (!isInsideOrEqual(projectRoot, resolved)) throw new Error("Workflow draft source directory must stay inside the project directory");
   if (isInsideOrEqual(workflowRoot, resolved) || isInsideOrEqual(resolved, workflowRoot)) {
     throw new Error("Workflow draft source directory must not be inside, equal to, or an ancestor of .pi/workflows");
   }

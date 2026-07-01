@@ -46,6 +46,7 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
   const resultPath = path.join(project, "outputs", "final.json");
   const runDir = await writeWorkflowSessionSummary({ cwd: project, parentId: "parent-1", snapshot, resultPath, sessionsRoot });
   const summary = JSON.parse(await readFile(path.join(runDir, "workflow-summary.json"), "utf8")) as {
+    status: string;
     phases: unknown;
     traces: unknown;
     messages: unknown;
@@ -54,6 +55,7 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
   };
 
   assert.equal(runDir, workflowAgentSessionLogParentDirectory(project, "parent-1", sessionsRoot));
+  assert.equal(summary.status, "done");
   assert.deepEqual(summary.phases, [{ index: 1, title: "scan" }]);
   assert.deepEqual(summary.traces, [
     { label: "selected files", phaseIndex: 1, phase: "scan", value: { count: 1, files: ["src/runtime/run.ts"] } },

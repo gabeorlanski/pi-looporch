@@ -5,7 +5,10 @@ import { discoverWorkflows } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
 import type { BackgroundWorkflowRunResult } from "../src/background-runs.ts";
 import { WorkflowInputError, parseWorkflowInput } from "../src/input.ts";
-import { completeMessage, failureMessage } from "../src/display/messages.ts";
+import { workflowCompletionMessage, workflowCompletionReviewPrompt } from "../src/display/workflow-completion.ts";
+import { failureMessage } from "../src/display/messages.ts";
+import { renderWorkflowStatus, renderWorkflowStatusJson, renderWorkflowStatusList } from "../src/display/workflow-status.ts";
+import { startWorkflowMonitorWidget, stopWorkflowMonitorWidget } from "../src/display/workflow-monitor-widget.ts";
 import { openRunningWorkflowInspector, restoreRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
 import { abortVisibleWorkflowRuns, startVisibleWorkflowRun } from "../src/display/visible-workflow-run.ts";
 import { errorMessage } from "../src/errors.ts";
@@ -20,8 +23,10 @@ import {
   type WorkflowSettings,
   type WorkflowSettingsPatch,
 } from "../src/workflow/settings.ts";
+import { readSelectedWorkflowStatus, readWorkflowStatusList, type WorkflowStatusQuery } from "../src/workflow/status.ts";
 
 const MESSAGE_TYPE = "pi-workflow-message";
+const WORKFLOW_STATUS_USAGE = "Usage: /workflow-status [--json] [--all] [latest|<run-id>|<workflow>|<outputsDir>]";
 
 /** Registers pi-workflow commands, tools, and TUI hooks with a Pi extension host. */
 export default function piWorkflow(pi: ExtensionAPI) {
@@ -44,6 +49,11 @@ export default function piWorkflow(pi: ExtensionAPI) {
     handler: async (args, ctx) => reviewWorkflowCommand(pi, ctx, args),
   });
 
+  pi.registerCommand("workflow-status", {
+    description: "Show active workflow status for this project",
+    handler: async (args, ctx) => workflowStatusCommand(pi, ctx, args),
+  });
+
   pi.registerCommand("view-workflow", {
     description: "Open the running workflow inspector",
     handler: async (_args, ctx) => viewWorkflowCommand(ctx),
@@ -56,6 +66,7 @@ export default function piWorkflow(pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     await restoreRunningWorkflowUi(ctx);
+    startWorkflowMonitorWidget(ctx);
     for (const workflow of await discoverWorkflows(ctx.cwd)) {
       const command = `workflow:${workflow.name}`;
       if (aliases.has(command)) continue;
@@ -68,6 +79,7 @@ export default function piWorkflow(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
+    stopWorkflowMonitorWidget(ctx);
     await abortVisibleWorkflowRuns(ctx);
   });
 }
@@ -177,12 +189,9 @@ async function settleBackgroundWorkflowRun(
 }
 
 function completeBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, result: BackgroundWorkflowRunResult): void {
-  const outputsMessage = result.resultPath
-    ? `Workflow result: ${result.resultPath}`
-    : `Workflow outputs: ${result.outputsDir ?? "not saved"}`;
   pi.sendMessage({
     customType: MESSAGE_TYPE,
-    content: `${completeMessage(result.workflowName)}\n\n${outputsMessage}\n\nWorkflow session logs: ${result.sessionLogDir}`,
+    content: workflowCompletionMessage(result),
     display: true,
     details: {
       workflowName: result.workflowName,
@@ -191,6 +200,7 @@ function completeBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandConte
       sessionLogDir: result.sessionLogDir,
     },
   });
+  pi.sendUserMessage(workflowCompletionReviewPrompt(result), ctx.isIdle() ? undefined : { deliverAs: "followUp" });
 }
 
 function failBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, workflowName: string, error: unknown): void {
@@ -235,6 +245,60 @@ function sendWhenReady(pi: ExtensionAPI, ctx: ExtensionCommandContext, message: 
 async function viewWorkflowCommand(ctx: ExtensionCommandContext): Promise<void> {
   const opened = await openRunningWorkflowInspector(ctx);
   if (!opened) ctx.ui.notify("No running workflows to view.", "warning");
+}
+
+async function workflowStatusCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
+  try {
+    const parsed = parseWorkflowStatusArgs(args);
+    const query: WorkflowStatusQuery = {
+      scope: "project",
+      ownerSessionId: ctx.sessionManager.getSessionId(),
+      ref: parsed.ref,
+      includeCompleted: parsed.includeCompleted,
+      now: Date.now(),
+    };
+    let content: string;
+    let details: unknown;
+    if (parsed.all) {
+      const statuses = await readWorkflowStatusList(ctx.cwd, query);
+      content = parsed.format === "json" ? `${JSON.stringify(statuses, null, 2)}\n` : renderWorkflowStatusList(statuses);
+      details = { kind: "workflow-status-list", statuses };
+    } else {
+      const status = await readSelectedWorkflowStatus(ctx.cwd, query);
+      content = parsed.format === "json" ? renderWorkflowStatusJson(status) : renderWorkflowStatus(status);
+      details = status;
+    }
+    pi.sendMessage({
+      customType: MESSAGE_TYPE,
+      content,
+      display: true,
+      details,
+    });
+  } catch (error) {
+    ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+  }
+}
+
+interface WorkflowStatusCommandArgs {
+  ref: string;
+  includeCompleted: boolean;
+  all: boolean;
+  format: "summary" | "json";
+}
+
+function parseWorkflowStatusArgs(args: string): WorkflowStatusCommandArgs {
+  let ref: string | undefined;
+  const parsed: Omit<WorkflowStatusCommandArgs, "ref"> = { includeCompleted: false, all: false, format: "summary" };
+  for (const token of args.trim().split(/\s+/).filter(Boolean)) {
+    if (token === "--json") parsed.format = "json";
+    else if (token === "--all") {
+      parsed.all = true;
+      parsed.includeCompleted = true;
+    } else if (token.startsWith("--")) throw new Error(WORKFLOW_STATUS_USAGE);
+    else if (!ref) ref = token;
+    else throw new Error(WORKFLOW_STATUS_USAGE);
+  }
+  return { ...parsed, ref: ref ?? "latest" };
 }
 
 async function workflowSettingsCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {

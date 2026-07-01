@@ -43,3 +43,7 @@
 - Bound parallelism across both direct concurrent agent calls and fan-out helpers — caps concurrency at every spawn path — prevents rate-limit storms, resource exhaustion, and runaway cost.
 <!-- rule:18 -->
 - Test harness code with deterministic fake agents and never call real providers or live sessions in tests — determinism over network flakiness — asserts isolation, allowlists, settings merge, abort, and cleanup reliably and fast.
+<!-- rule:19 -->
+- Keep running-workflow inspector reattachment scoped by parent Pi session id, but keep `workflow_status`, `/workflow-status`, and the passive monitor widget project-scoped by default — separates ownership from observation — one session cannot adopt another session's run while users and agents can still monitor project-wide work.
+<!-- rule:20 -->
+- Surface workflow completion results with bounded result/report previews plus full output paths, then use visible follow-up user messages for command-launched review handoffs — users should not need a second prompt to see or ask for the result — visible handoffs keep the agent accountable without hiding result context.

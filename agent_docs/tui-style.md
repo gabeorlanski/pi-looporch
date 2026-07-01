@@ -43,3 +43,5 @@
 - Test color-off and plain output paths separately from themed output — the two paths diverge and regress independently — dedicated assertions guarantee state stays legible when color is disabled or the sink is non-interactive.
 <!-- rule:18 -->
 - Avoid introducing a new UI framework merely to format a few strings — heavy dependencies add build weight and lock-in — plain width-aware string helpers cover simple output without the maintenance cost of a full rendering stack.
+<!-- rule:19 -->
+- Keep result content out of compact live widgets, but show bounded final result/report previews in completion messages — live progress stays scannable while completed workflows still surface the answer without forcing a second user prompt.

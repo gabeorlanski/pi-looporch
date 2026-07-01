@@ -106,11 +106,13 @@ export default async function workflow(input) {
   assert.match(details.outputsDir, /pi-workflow-.*echo/);
   assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /Workflow echo started in the background/);
   await waitForCondition(() => updates.some((update) => update.includes("workflow echo") && update.includes("#1 helper")));
-  await waitForCondition(() => notifications.some((message) => message.includes("Workflow echo complete")));
-  const completionNotice = notifications.find((message) => message.includes("Workflow echo complete")) ?? "";
-  assert.match(completionNotice, /Result: .*final\.json/);
-  assert.match(completionNotice, /Workflow outputs: /);
-  assert.match(completionNotice, /Session logs: /);
+  await waitForCondition(() => notifications.some((message) => message.includes("Workflow 'echo' complete")));
+  const completionNotice = notifications.find((message) => message.includes("Workflow 'echo' complete")) ?? "";
+  assert.match(completionNotice, /Result:\n\n```json/);
+  assert.match(completionNotice, /helper:say hi/);
+  assert.match(completionNotice, /- Workflow result: .*final\.json/);
+  assert.match(completionNotice, /- Workflow outputs: /);
+  assert.match(completionNotice, /- Workflow session logs: /);
   assert.deepEqual(JSON.parse(await readFile(path.join(details.outputsDir, "outputs", "final.json"), "utf8")), {
     input: { message: "hello" },
     agent: "helper:say hi",

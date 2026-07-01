@@ -61,8 +61,10 @@ export interface ExtensionHarness {
   statusUpdates: (string | undefined)[];
   widgetUpdates: (string[] | undefined)[];
   customUpdates: string[][];
+  widgetUpdatesFor: (key: string) => (string[] | undefined)[];
   widgetInstallCount: () => number;
   widgetPlacement: () => string | undefined;
+  widgetPlacementFor: (key: string) => string | undefined;
   customOpenCount: () => number;
   closeCustom: () => void;
   sessionStart: (reason?: "startup" | "reload") => Promise<void>;
@@ -78,6 +80,7 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
   const notifications: { message: string; type?: "info" | "warning" | "error" }[] = [];
   const statusUpdates: (string | undefined)[] = [];
   const widgetUpdates: (string[] | undefined)[] = [];
+  const widgetUpdatesByKey = new Map<string, (string[] | undefined)[]>();
   const customUpdates: string[][] = [];
   let activeWidget: TestWidgetComponent | undefined;
   let activeCustom: TestWidgetComponent | undefined;
@@ -85,6 +88,7 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
   let widgetInstallCount = 0;
   let customOpenCount = 0;
   let widgetPlacement: string | undefined;
+  const widgetPlacements = new Map<string, string | undefined>();
   let terminalInputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
   const sessionStartHandlers: TestSessionStartHandler[] = [];
   const sessionShutdownHandlers: TestSessionShutdownHandler[] = [];
@@ -169,7 +173,13 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
         });
       },
       setWidget(key: string, content: unknown, widgetOptions?: { placement?: string }): void {
-        if (key !== "pi-workflow-running") return;
+        widgetPlacements.set(key, widgetOptions?.placement);
+        const keyUpdates = widgetUpdatesByKey.get(key) ?? [];
+        widgetUpdatesByKey.set(key, keyUpdates);
+        if (key !== "pi-workflow-running") {
+          keyUpdates.push(content as string[] | undefined);
+          return;
+        }
         widgetPlacement = widgetOptions?.placement;
         if (isTestWidgetFactory(content)) {
           widgetInstallCount++;
@@ -182,11 +192,14 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
             },
             plainTheme,
           );
-          widgetUpdates.push(activeWidget.render(72));
+          const rendered = activeWidget.render(72);
+          widgetUpdates.push(rendered);
+          keyUpdates.push(rendered);
           return;
         }
         activeWidget = undefined;
         widgetUpdates.push(content as string[] | undefined);
+        keyUpdates.push(content as string[] | undefined);
       },
     },
   } as unknown as ExtensionCommandContext;
@@ -200,8 +213,10 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
     statusUpdates,
     widgetUpdates,
     customUpdates,
+    widgetUpdatesFor: (key) => widgetUpdatesByKey.get(key) ?? [],
     widgetInstallCount: () => widgetInstallCount,
     widgetPlacement: () => widgetPlacement,
+    widgetPlacementFor: (key) => widgetPlacements.get(key),
     customOpenCount: () => customOpenCount,
     closeCustom: () => closeActiveCustom?.(),
     async sessionStart(reason = "reload") {

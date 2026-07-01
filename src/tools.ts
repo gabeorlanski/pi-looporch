@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import { defineTool, getAgentDir, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { BackgroundWorkflowRunResult } from "./background-runs.ts";
+import { workflowCompletionNotification } from "./display/workflow-completion.ts";
 import { workflowFinalOutputPath } from "./workflow/outputs.ts";
 import type { WorkflowAgent } from "./runtime/types.ts";
 import { progressDisplay } from "./display/progress.ts";
@@ -10,6 +11,8 @@ import { startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
 import { readWorkflowDraft } from "./workflow/drafts.ts";
 import { normalizeWorkflowName } from "./workflow/paths.ts";
 import { errorMessage } from "./errors.ts";
+import { renderWorkflowStatus, renderWorkflowStatusJson } from "./display/workflow-status.ts";
+import { readSelectedWorkflowStatus, type WorkflowStatusQuery } from "./workflow/status.ts";
 
 /** Dependencies used to construct workflow tools for either an extension session or tests. */
 export interface WorkflowToolsOptions {
@@ -20,7 +23,12 @@ export interface WorkflowToolsOptions {
 
 /** Builds the public tool surface for running, authoring guidance, and proposing workflows. */
 export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefinition[] {
-  return [createRunWorkflowTool(options), createWorkflowDesignGuidanceTool(), createProposeWorkflowTool(options)];
+  return [
+    createRunWorkflowTool(options),
+    createWorkflowStatusTool(options),
+    createWorkflowDesignGuidanceTool(),
+    createProposeWorkflowTool(options),
+  ];
 }
 
 function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
@@ -91,12 +99,42 @@ function runningWorkflowToolDetails(
 }
 
 function notifyBackgroundToolCompletion(ctx: ExtensionContext, result: BackgroundWorkflowRunResult): void {
-  const locations = [
-    result.resultPath ? `Result: ${result.resultPath}` : undefined,
-    result.outputsDir ? `Workflow outputs: ${result.outputsDir}` : undefined,
-    result.sessionLogDir ? `Session logs: ${result.sessionLogDir}` : undefined,
-  ].filter((location): location is string => location !== undefined);
-  ctx.ui.notify(`Workflow ${result.workflowName} complete. ${locations.join("\n")}`, "info");
+  ctx.ui.notify(workflowCompletionNotification(result), "info");
+}
+
+function createWorkflowStatusTool(options: WorkflowToolsOptions): ToolDefinition {
+  return defineTool({
+    name: "workflow_status",
+    label: "Workflow Status",
+    description: "Summarize active pi workflows in this project.",
+    promptSnippet: "workflow_status: Summarize active pi workflows in this project.",
+    parameters: Type.Object({
+      scope: Type.Optional(Type.Union([Type.Literal("project"), Type.Literal("current-session")])),
+      ref: Type.Optional(Type.String()),
+      includeCompleted: Type.Optional(Type.Boolean()),
+      format: Type.Optional(Type.Union([Type.Literal("summary"), Type.Literal("json")])),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const cwd = options.cwd ?? ctx.cwd;
+      const query: WorkflowStatusQuery = {
+        scope: params.scope ?? "project",
+        ownerSessionId: ctx.sessionManager.getSessionId(),
+        ref: params.ref ?? "latest",
+        includeCompleted: params.includeCompleted ?? false,
+        now: Date.now(),
+      };
+      const status = await readSelectedWorkflowStatus(cwd, query);
+      return {
+        content: [
+          {
+            type: "text",
+            text: params.format === "json" ? renderWorkflowStatusJson(status) : renderWorkflowStatus(status),
+          },
+        ],
+        details: status,
+      };
+    },
+  });
 }
 
 function createWorkflowDesignGuidanceTool(): ToolDefinition {

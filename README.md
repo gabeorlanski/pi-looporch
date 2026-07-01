@@ -27,6 +27,7 @@ pi -e ./extensions/workflow.ts
 /workflow:<name> [input]
 /workflow <natural-language request>
 /view-workflow
+/workflow-status
 /workflow-review latest
 ```
 
@@ -42,6 +43,10 @@ JSON, `key=value`, `--key value`, and comma-separated lists run directly.
 Freeform workflow requests stay visible in the current chat for the agent to
 resolve before calling `run_workflow`.
 
+When a workflow finishes, pi-workflow posts the final result or report, keeps
+the output paths visible, and asks the current agent to review and summarize the
+result for you.
+
 ## TUI
 
 Running workflows show a compact widget below the editor. Press `Down` on an
@@ -51,6 +56,11 @@ empty prompt to select it, `Enter` to inspect, and `Esc` or `Up` to return.
   ↓ select (on an empty prompt) to inspect
   ◐ review  reviewing src/auth.ts and tests/auth.test.ts        2/5 agents done · 1m12s · ↓18.4k tokens
 ```
+
+A passive project monitor also appears below the editor when any workflow is
+active in the current project, including workflows launched from another Pi
+session. Use `/workflow-status [--json] [--all] [latest|<ref>]` or the
+`workflow_status` tool for compact status without knowing the output directory.
 
 Inspector view:
 
@@ -84,6 +94,7 @@ code runs in a sandbox with globals such as `agent`, `parallel`, `pipeline`,
 
 Agents can call `workflow_design_guidance` for focused authoring help and
 `propose_workflow` to save complete generated workflow draft directories.
+Agents can call `workflow_status` to check active project workflow progress.
 
 ## Settings
 

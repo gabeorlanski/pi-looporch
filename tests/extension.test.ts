@@ -25,7 +25,6 @@ export default async function workflow(input) {
 
   await harness.command("workflow", 'echo message=hello count=10 debug=true files=src/index.ts,tests/index.test.ts note="hello world"');
 
-  assert.equal(harness.sentUserMessages.length, 0);
   assert.ok(harness.statusUpdates.includes("Waiting for 1 dynamic workflow to finish"));
   assert.equal(harness.widgetInstallCount(), 1);
   assert.equal(harness.widgetPlacement(), "belowEditor");
@@ -34,12 +33,17 @@ export default async function workflow(input) {
       (update) => update?.some((line) => line.includes("workflow echo")) && update.some((line) => line.includes("0/0 agents done")),
     ),
   );
-  await waitForCondition(() => harness.sentMessages.length === 1 && harness.statusUpdates.at(-1) === undefined);
-  assert.match(
-    harness.sentMessages[0].message.content,
-    /Workflow 'echo' complete\.\n\nWorkflow result: .*final\.json\n\nWorkflow session logs: /,
+  await waitForCondition(
+    () => harness.sentMessages.length === 1 && harness.sentUserMessages.length === 1 && harness.statusUpdates.at(-1) === undefined,
   );
-  assert.doesNotMatch(harness.sentMessages[0].message.content, /hello world/);
+  assert.match(harness.sentMessages[0].message.content, /Workflow 'echo' complete\.\n\nResult:\n\n```json/);
+  assert.match(harness.sentMessages[0].message.content, /hello world/);
+  assert.match(harness.sentMessages[0].message.content, /Outputs:\n- Workflow result: .*final\.json/);
+  const reviewPrompt = harness.sentUserMessages[0].message;
+  assert.equal(typeof reviewPrompt, "string");
+  assert.match(reviewPrompt as string, /Review and summarize the workflow result for the user/);
+  assert.match(reviewPrompt as string, /hello world/);
+  assert.equal(harness.sentUserMessages[0].options, undefined);
   const details = harness.sentMessages[0].message.details as { resultPath?: string; workflowName?: string };
   assert.equal(details.workflowName, "echo");
   assert.ok(details.resultPath);
@@ -78,6 +82,27 @@ export default async function workflow() {
   assert.ok(harness.notifications.every((notification) => !notification.message.includes("Workflow 'complete' failed")));
 });
 
+void test("existing_workflow_completion_surfaces_report_results", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  await writeProjectWorkflow(
+    project,
+    "report",
+    `export const metadata = { name: "report", description: "Report workflow", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return { report: "# Report\\n\\nEverything passed.", metrics: { ok: true } };
+}`,
+  );
+  const harness = createExtensionHarness({ cwd: project });
+
+  await harness.command("workflow", "report");
+  await waitForCondition(() => harness.sentMessages.length === 1 && harness.sentUserMessages.length === 1);
+
+  assert.match(harness.sentMessages[0].message.content, /Report:\n\n# Report\n\nEverything passed\./);
+  assert.ok(harness.sentMessages[0].message.content.includes('Additional data:\n\n```json\n{\n  "metrics": {\n    "ok": true\n  }\n}'));
+  assert.match(harness.sentUserMessages[0].message as string, /# Report\n\nEverything passed\./);
+  assert.ok((harness.sentUserMessages[0].message as string).includes('"metrics": {\n    "ok": true\n  }'));
+});
+
 void test("registered_run_workflow_tool_shows_running_tui_widget", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeProjectWorkflow(
@@ -104,8 +129,109 @@ export default async function workflow(input) {
       (update) => update?.some((line) => line.includes("workflow tool-echo")) && update.some((line) => line.includes("0/0 agents done")),
     ),
   );
-  await waitForCondition(() => harness.notifications.some((notification) => notification.message.includes("Workflow tool-echo complete")));
+  await waitForCondition(() =>
+    harness.notifications.some(
+      (notification) =>
+        notification.message.includes("Workflow 'tool-echo' complete") && notification.message.includes('"message": "hello"'),
+    ),
+  );
   await waitForCondition(() => harness.statusUpdates.at(-1) === undefined);
+});
+
+void test("workflow_status_tool_reads_project_wide_active_runs", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const olderOutputsDir = path.join(project, "outputs", "older-status-run");
+  const outputsDir = path.join(project, "outputs", "status-run");
+  await registerActiveWorkflowRun(project, {
+    runId: "run-older-status",
+    workflowName: "older-status",
+    outputsDir: olderOutputsDir,
+    startedAt: Date.now() - 180_000,
+    ownerSessionId: "other-session",
+  });
+  await writeWorkflowOutputManifest({
+    outputsDir: olderOutputsDir,
+    workflowName: "older-status",
+    status: "running",
+    snapshot: monitorWorkflowSnapshot("older-status"),
+  });
+  await writeWorkflowSnapshot(olderOutputsDir, monitorWorkflowSnapshot("older-status"));
+  await registerActiveWorkflowRun(project, {
+    runId: "run-status",
+    workflowName: "status-check",
+    outputsDir,
+    startedAt: Date.now() - 90_000,
+    ownerSessionId: "other-session",
+  });
+  await writeWorkflowOutputManifest({
+    outputsDir,
+    workflowName: "status-check",
+    status: "running",
+    snapshot: monitorWorkflowSnapshot("status-check"),
+  });
+  await writeWorkflowSnapshot(outputsDir, monitorWorkflowSnapshot("status-check"));
+  const harness = createExtensionHarness({ cwd: project, sessionId: "current-session" });
+  const tool = harness.tools.get("workflow_status");
+  assert.ok(tool);
+
+  const result = await tool.execute("call-1", {}, undefined, undefined, harness.ctx);
+
+  const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+  assert.match(text, /status-check running · phase: Review broken tests · 1\/2 agents done/);
+  assert.match(text, /broken-test reviews: 1\/2 done, 1 running, 0 errors/);
+  assert.match(text, /#2 review broken tests clirs 05_onboard/);
+  assert.equal((result.details as { ownerSessionId?: string }).ownerSessionId, "other-session");
+  assert.equal((result.details as { workflowName?: string }).workflowName, "status-check");
+
+  const currentSession = await tool.execute("call-2", { scope: "current-session" }, undefined, undefined, harness.ctx);
+
+  assert.equal(
+    currentSession.content[0]?.type === "text" ? currentSession.content[0].text : "",
+    "No active workflows in this current session.",
+  );
+  await removeActiveWorkflowRun(project, "run-status");
+  await removeActiveWorkflowRun(project, "run-older-status");
+});
+
+void test("workflow_status_tool_degrades_when_snapshot_is_unavailable", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const outputsDir = path.join(project, "outputs", "missing-snapshot-run");
+  await registerActiveWorkflowRun(project, {
+    runId: "run-missing-snapshot",
+    workflowName: "missing-snapshot",
+    outputsDir,
+    startedAt: Date.now(),
+    ownerSessionId: "test-session",
+  });
+  await writeWorkflowOutputManifest({
+    outputsDir,
+    workflowName: "missing-snapshot",
+    status: "running",
+  });
+  const harness = createExtensionHarness({ cwd: project });
+  const tool = harness.tools.get("workflow_status");
+  assert.ok(tool);
+
+  const result = await tool.execute("call-1", {}, undefined, undefined, harness.ctx);
+
+  const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+  assert.match(text, /missing-snapshot running · phase: snapshot unavailable/);
+  assert.match(text, /Snapshot unavailable\./);
+  assert.equal((result.details as { snapshotAvailable?: boolean }).snapshotAvailable, false);
+  assert.match((result.details as { errors: string[] }).errors[0] ?? "", /ENOENT|no such file or directory/);
+  await removeActiveWorkflowRun(project, "run-missing-snapshot");
+});
+
+void test("workflow_status_command_rejects_multiple_refs", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const harness = createExtensionHarness({ cwd: project });
+
+  await harness.command("workflow-status", "latest other-ref");
+
+  assert.deepEqual(harness.notifications.at(-1), {
+    message: "Usage: /workflow-status [--json] [--all] [latest|<run-id>|<workflow>|<outputsDir>]",
+    type: "error",
+  });
 });
 
 void test("session_shutdown_aborts_visible_workflow_and_cleans_active_registry", async () => {
@@ -260,6 +386,67 @@ void test("session_start_does_not_restore_workflow_owned_by_another_session", as
   await harness.command("view-workflow", "");
   assert.deepEqual(harness.notifications.at(-1), { message: "No running workflows to view.", type: "warning" });
   await removeActiveWorkflowRun(project, "run-other-session");
+});
+
+void test("session_start_shows_project_wide_monitor_widget_for_other_session_workflows", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const outputsDir = path.join(project, "outputs", "project-monitor-run");
+  await registerActiveWorkflowRun(project, {
+    runId: "run-project-monitor",
+    workflowName: "project-monitor",
+    outputsDir,
+    startedAt: Date.now() - 120_000,
+    ownerSessionId: "other-session",
+  });
+  await writeWorkflowOutputManifest({
+    outputsDir,
+    workflowName: "project-monitor",
+    status: "running",
+    snapshot: monitorWorkflowSnapshot("project-monitor"),
+  });
+  await writeWorkflowSnapshot(outputsDir, monitorWorkflowSnapshot("project-monitor"));
+  const harness = createExtensionHarness({ cwd: project, sessionId: "current-session" });
+
+  await harness.sessionStart("reload");
+
+  await waitForCondition(() =>
+    harness
+      .widgetUpdatesFor("workflow-monitor")
+      .some((update) => update?.some((line) => line.includes("project-monitor · other session · Review broken tests"))),
+  );
+  assert.equal(harness.widgetPlacementFor("workflow-monitor"), "belowEditor");
+  assert.equal(harness.widgetInstallCount(), 0);
+  await harness.sessionShutdown();
+  await removeActiveWorkflowRun(project, "run-project-monitor");
+});
+
+void test("session_start_project_monitor_widget_lists_all_active_workflows", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const names = ["project-monitor-a", "project-monitor-b", "project-monitor-c", "project-monitor-d", "project-monitor-e"];
+  await Promise.all(
+    names.map((name, index) =>
+      writeMonitorRun(project, {
+        runId: `run-${name}`,
+        workflowName: name,
+        ownerSessionId: index === 0 ? "current-session" : "other-session",
+        startedAt: Date.now() - index * 1000,
+      }),
+    ),
+  );
+  const harness = createExtensionHarness({ cwd: project, sessionId: "current-session" });
+
+  await harness.sessionStart("reload");
+
+  await waitForCondition(() =>
+    harness
+      .widgetUpdatesFor("workflow-monitor")
+      .some(
+        (update) =>
+          update?.some((line) => line.includes("5 workflows active")) && names.every((name) => update.some((line) => line.includes(name))),
+      ),
+  );
+  await harness.sessionShutdown();
+  await Promise.all(names.map((name) => removeActiveWorkflowRun(project, `run-${name}`)));
 });
 
 void test("view_workflow_command_does_not_use_same_cwd_workflow_from_another_session", async () => {
@@ -425,4 +612,68 @@ function runningWorkflowSnapshot(workflowName = "viewable"): WorkflowSnapshot {
     messages: [],
     status: "running",
   };
+}
+
+function monitorWorkflowSnapshot(workflowName: string): WorkflowSnapshot {
+  const now = Date.now();
+  return {
+    workflowName,
+    description: "Monitor workflow",
+    plannedPhases: [{ title: "Collect" }, { title: "Review broken tests" }],
+    phases: ["Collect", "Review broken tests"],
+    traces: [],
+    agents: [
+      {
+        id: 1,
+        label: "collect failing tests",
+        phaseIndex: 0,
+        phase: "Collect",
+        status: "done",
+        startedAt: now - 60_000,
+        endedAt: now - 30_000,
+        inputTokenCount: 1000,
+        outputTokenCount: 200,
+        toolCallCount: 2,
+        stepCount: 4,
+      },
+      {
+        id: 2,
+        label: "review broken tests clirs 05_onboard",
+        phaseIndex: 1,
+        phase: "Review broken tests",
+        model: "default",
+        reasoning: "high",
+        status: "running",
+        startedAt: now - 20_000,
+        inputTokenCount: 16_000,
+        outputTokenCount: 2300,
+        toolCallCount: 4,
+        stepCount: 8,
+      },
+    ],
+    fanOuts: [{ id: 1, label: "broken-test reviews", total: 2, done: 1, running: 1, error: 0 }],
+    messages: [],
+    status: "running",
+  };
+}
+
+async function writeMonitorRun(
+  project: string,
+  options: { runId: string; workflowName: string; ownerSessionId: string; startedAt: number },
+): Promise<void> {
+  const outputsDir = path.join(project, "outputs", options.runId);
+  await registerActiveWorkflowRun(project, {
+    runId: options.runId,
+    workflowName: options.workflowName,
+    outputsDir,
+    startedAt: options.startedAt,
+    ownerSessionId: options.ownerSessionId,
+  });
+  await writeWorkflowOutputManifest({
+    outputsDir,
+    workflowName: options.workflowName,
+    status: "running",
+    snapshot: monitorWorkflowSnapshot(options.workflowName),
+  });
+  await writeWorkflowSnapshot(outputsDir, monitorWorkflowSnapshot(options.workflowName));
 }

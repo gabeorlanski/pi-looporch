@@ -144,12 +144,14 @@ argument and uses these globals:
 
 ```text
 agent, parallel, pipeline, coerce, mapreduce, verifier, phase, log, trace,
-cwd, budget, readText, readJson, renderPrompt
+cwd, budget, readText, readJson, writeText, writeJson, renderPrompt
 ```
 
 Use `renderPrompt("review.txt", values)` for files under the workflow's
-`prompts/` directory. Use `readText` and `readJson` for project files, absolute
-paths, and `@workflow/...` paths.
+`prompts/` directory. Use `readText`/`readJson` and `writeText`/`writeJson` for
+project files, absolute paths, and `@workflow/...` paths. Write helpers create
+parent directories, overwrite existing files atomically, and return the resolved
+path.
 
 ## Settings
 

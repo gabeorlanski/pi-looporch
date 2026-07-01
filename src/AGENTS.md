@@ -31,7 +31,7 @@ npm run check
 - Shared prompt context is allowed, but format it as a compact contract (`Inputs`, `Purpose`, `Definitions`, `Rules`, `Task`, `Output`) instead of an unstructured global preamble dump; omit irrelevant globals for that stage.
 - Put reusable generated-workflow child-agent prompt templates in workflow-local `prompts/*.txt` files, use `{{name}}` placeholders, and render them with `renderPrompt`; reserve inline prompts for tiny one-off glue.
 - Keep helpers purposeful; inline short functions that only obscure flow.
-- Preserve workflow sandbox constraints around ambient authority: workflows cannot import modules or use Node globals, `renderPrompt` must resolve only through the workflow's own `prompts/` directory, and `readText`/`readJson` may read absolute paths, project-cwd-relative paths, or `@workflow/...` paths.
+- Preserve workflow sandbox constraints around ambient authority: workflows cannot import modules or use Node globals, `renderPrompt` must resolve only through the workflow's own `prompts/` directory, and `readText`/`readJson`/`writeText`/`writeJson` may use absolute paths, project-cwd-relative paths, or `@workflow/...` paths.
 - Keep workflow child-agent SDK sessions isolated from ambient pi extensions by default; load only `workflow.childAgentExtensions` from merged global/project settings so parent-session extension tools/hooks cannot mutate global extension state.
 - Keep `agent(prompt, { cwd })` as a launch option for alternate child-agent working directories; resolve relative values from the workflow project cwd.
 - Encourage workflow authors to add `log(message)` for visible milestones and `trace(label, value?)` for structured handoff/debug data.
@@ -44,6 +44,7 @@ npm run check
 
 - `runtime/types.ts`: `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, `WorkflowRunResult`.
 - `runtime/`: runtime internals. `run.ts` owns workflow execution wiring, `context.ts` defines the shared primitive protocol, `globals.ts` binds primitives, and `primitives/` owns agent/phase/log/trace/files/parallel/pipeline/coerce/mapreduce/verifier behavior.
+- `workflow/files.ts`: shared read/write helpers and atomic file-writing utilities used by workflow primitives and output persistence.
 - `workflow/`: workflow pathing, metadata, sandbox, output, draft, and settings helpers.
 - `request.ts`: `GeneratedWorkflowDraft` validation and draft saving.
 - `discovery.ts`: `WorkflowReference`.

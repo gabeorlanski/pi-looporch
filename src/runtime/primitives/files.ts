@@ -1,19 +1,21 @@
-import { readFileSync } from "node:fs";
 import path from "node:path";
-import { resolveWorkflowReadPath } from "../../workflow/paths.ts";
+import { readWorkflowJson, readWorkflowText, writeWorkflowJson, writeWorkflowText } from "../../workflow/files.ts";
 import type { WorkflowPrimitive } from "../context.ts";
 import { renderWorkflowPrompt } from "../prompts.ts";
 
 export const filePrimitive: WorkflowPrimitive<{
   readText: (filePath: string) => string;
   readJson: (filePath: string) => unknown;
+  writeText: (filePath: string, content: string) => string;
+  writeJson: (filePath: string, value: unknown) => string;
   renderPrompt: (templatePath: string, values: unknown) => string;
 }> = {
   name: "files",
   globals: ({ runtime, workflowDir }) => ({
-    readText: (filePath: string) => readFileSync(resolveWorkflowReadPath(runtime.options.cwd, workflowDir, filePath), "utf8"),
-    readJson: (filePath: string) =>
-      JSON.parse(readFileSync(resolveWorkflowReadPath(runtime.options.cwd, workflowDir, filePath), "utf8")) as unknown,
+    readText: (filePath: string) => readWorkflowText(runtime.options.cwd, workflowDir, filePath),
+    readJson: (filePath: string) => readWorkflowJson(runtime.options.cwd, workflowDir, filePath),
+    writeText: (filePath: string, content: string) => writeWorkflowText(runtime.options.cwd, workflowDir, filePath, content),
+    writeJson: (filePath: string, value: unknown) => writeWorkflowJson(runtime.options.cwd, workflowDir, filePath, value),
     renderPrompt: (templatePath: string, values: unknown) => renderWorkflowPrompt(workflowDir, templatePath, values),
   }),
 };

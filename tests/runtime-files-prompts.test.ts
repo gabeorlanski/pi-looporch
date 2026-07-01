@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -57,6 +57,70 @@ export default async function workflow({ topic }) {
   });
 
   assert.equal(result.result, "External template prompt.");
+});
+
+void test("workflow_writes_text_and_json_files", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  const outside = await mkdtemp(path.join(tmpdir(), "pi-workflow-writable-"));
+  const absolutePath = path.join(outside, "absolute.txt");
+  await writeWorkflow(
+    project,
+    "write-files",
+    `export const metadata = { name: "write-files", description: "Write files", inputInstructions: "Use provided paths.", phases: [{ title: "Run" }] };
+export default async function workflow({ absolutePath }) {
+  const textPath = writeText("artifacts/report.txt", "hello");
+  const jsonPath = writeJson("@workflow/generated/result.json", { ok: true, nested: { count: 2 } });
+  const absoluteWrittenPath = writeText(absolutePath, "absolute");
+  return {
+    textPath,
+    jsonPath,
+    absoluteWrittenPath,
+    text: readText("artifacts/report.txt"),
+    json: readJson("@workflow/generated/result.json"),
+    absoluteText: readText(absolutePath),
+  };
+}`,
+  );
+  const agent: WorkflowAgent = () => Promise.resolve("unused");
+
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "write-files",
+    input: { absolutePath },
+    agent,
+  });
+  const textPath = path.join(project, "artifacts", "report.txt");
+  const jsonPath = path.join(project, ".pi", "workflows", "write-files", "generated", "result.json");
+
+  assert.deepEqual(result.result, {
+    textPath,
+    jsonPath,
+    absoluteWrittenPath: absolutePath,
+    text: "hello",
+    json: { ok: true, nested: { count: 2 } },
+    absoluteText: "absolute",
+  });
+  assert.equal(await readFile(textPath, "utf8"), "hello");
+  assert.equal(await readFile(jsonPath, "utf8"), '{\n  "ok": true,\n  "nested": {\n    "count": 2\n  }\n}\n');
+});
+
+void test("workflow_write_text_requires_string_content", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "bad-write",
+    `export const metadata = { name: "bad-write", description: "Bad write", inputInstructions: "No input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return writeText("out.txt", { bad: true });
+}`,
+  );
+  const agent: WorkflowAgent = () => Promise.resolve("unused");
+
+  await assert.rejects(
+    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "bad-write", input: {}, agent }),
+    /writeText content must be a string/,
+  );
 });
 
 void test("workflow_does_not_read_legacy_sibling_prompt_template", async () => {

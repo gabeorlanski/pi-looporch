@@ -25,7 +25,7 @@ npm run pack:dry      # inspect published package contents
 
 ## Repository goal
 
-`pi-workflow` is a small pi extension that lets projects run, review, and generate code-first workflows. Workflows live under `.pi/workflows/<name>/workflow.js` and use simple orchestration primitives such as `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `trace`, `cwd`, `budget`, `readText`, `readJson`, and `renderPrompt`.
+`pi-workflow` is a small pi extension that lets projects run, review, and generate code-first workflows. Workflows live under `.pi/workflows/<name>/workflow.js` and use simple orchestration primitives such as `agent`, `parallel`, `pipeline`, `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `trace`, `cwd`, `budget`, `readText`, `readJson`, `writeText`, `writeJson`, and `renderPrompt`.
 
 ## Documentation standard
 
@@ -114,7 +114,7 @@ TypeScript interfaces/types are the source of truth:
 - Keep command/UI parsing at boundaries; keep core runtime strict.
 - Keep prompt copy in raw `.txt` files under `src/prompts/`.
 - Keep workflow authoring guidance in TypeScript and serve it on demand through `workflow_design_guidance`; do not eagerly inject the full guide into routing prompts.
-- Let `readText`/`readJson` read absolute paths, project-cwd-relative paths, and `@workflow/...` paths; use `renderPrompt` for prompt templates under the workflow's own `prompts/` directory.
+- Let `readText`/`readJson` and `writeText`/`writeJson` use absolute paths, project-cwd-relative paths, and `@workflow/...` paths; use `renderPrompt` for prompt templates under the workflow's own `prompts/` directory.
 - Let `agent(prompt, { cwd })` launch child agents from alternate/scratch directories; resolve relative `cwd` values from the workflow project cwd.
 - Keep workflow child-agent SDK sessions isolated from ambient pi extensions by default; load only `workflow.childAgentExtensions` from merged global/project settings so parent-session extension tools/hooks cannot mutate global extension state.
 - Agent-generated workflows should be proposed as complete draft directories (`.pi/workflow-drafts/<name>/`) with `draftDir` pointing at the directory, not the `workflow.js` file.

@@ -25,7 +25,7 @@ const designTopics: DesignTopic[] = [
       "Document the default function with JSDoc covering purpose, input fields/defaults, phases, child agents, file reads, and result shape.",
       "Runtime globals are listed in the session prompt with short descriptions and signatures; call narrower guidance topics for examples only when needed.",
       "Receive workflow input through workflow({ field, optional = default }) parameters.",
-      "Workflows cannot import modules or use ambient Node globals. Use readText/readJson/renderPrompt for workflow-owned files.",
+      "Workflows cannot import modules or use ambient Node globals. Use readText/readJson/writeText/writeJson/renderPrompt for workflow-owned files and artifacts.",
     ],
     examples: [
       `export const metadata = {\n  name: "review",\n  description: "Review selected files",\n  inputInstructions: "Resolve files from explicit path mentions; use remaining prose as focus.",\n  phases: [{ title: "review" }, { title: "synthesis" }],\n};`,
@@ -115,7 +115,7 @@ const designTopics: DesignTopic[] = [
     guidance: [
       "Route large generated content to files; prompts should name exact output paths.",
       "Final results should include artifactPaths plus concise status/summary, not full file contents.",
-      "Use @workflow/... with readText/readJson for workflow-owned prompts, schemas, fixtures, and small deterministic inputs.",
+      "Use @workflow/... with readText/readJson for workflow-owned prompts, schemas, fixtures, and small deterministic inputs; use writeText/writeJson for artifacts and manifests that later stages should read by path.",
       "Avoid bulk-reading project source just to paste it into a prompt; pass paths instead.",
     ],
   },

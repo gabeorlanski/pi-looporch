@@ -1,61 +1,41 @@
-# Documentation Style Guide
+# Documentation Style
 
-## Purpose
+> How to write concise, current, technical documentation that helps readers act.
 
-Use this guide for `README.md`, `docs/`, `agent_docs/`, `AGENTS.md`, workflow guidance, and extension-facing copy. Documentation should be concise, technical, current, and useful.
+**When to check**: When writing or updating a README, design doc, agent-facing guidance, or API/JSDoc comment.
 
-## Sources
+## Rules
 
-- Developer docs style: <https://developers.google.com/style/highlights>, <https://developers.google.com/style/api-reference-comments>.
-- Documentation structure: <https://diataxis.fr/>, <https://www.writethedocs.org/guide/>.
-- Pi prose rules: <https://github.com/earendil-works/pi/blob/main/AGENTS.md>.
+<!-- rule:1 -->
 
-## Structure
-
-- Start with the user or maintainer task the doc supports.
-- Use short sections with task-oriented headings.
-- Put commands and contracts in fenced code blocks.
-- Keep examples complete enough to run or adapt.
-- Link to source files, upstream docs, or durable specs when a rule depends on an external contract.
-- Keep `agent_docs/INDEX.md` as the short entry point. Put longer guidance in topic files.
-
-## Style
-
-- Write direct technical prose.
-- Prefer active voice and concrete nouns.
-- Avoid cheerleading, filler, unexplained acronyms, and marketing copy.
-- Explain tradeoffs when they affect implementation choices.
-- Use exact names for commands, files, APIs, settings, env vars, and types.
-- Use absolute dates for time-sensitive claims.
-
-## Code And API Docs
-
-- Document contracts, boundary behavior, side effects, errors, and cleanup.
-- Do not comment one-expression helpers or obvious assignments.
-- Use JSDoc for exported APIs, generated workflow `workflow()` functions, and non-obvious contracts; `npm run docs:check` enforces the current public API module scope.
-- Keep prompt templates self-contained: mission, source paths, invariants, commands/search strategy, evidence requirements, pass/fail gates, and output contract.
-- For generated workflows, document the default function with purpose, input fields/defaults, phases, child agents, file reads, and result shape.
-
-## Synchronization Rules
-
-- Update user docs when commands, tools, settings, storage layout, sandbox rules, workflow primitives, or visible behavior changes; staged behavior-surface changes must include a staged README/docs/agent_docs/AGENTS update.
-- Update `agent_docs/` when a durable coding convention or project rule changes.
-- Mirror durable guidance into relevant `AGENTS.md` files when agents need the rule before editing that area.
-- Do not record one-off preferences, temporary workarounds, or stale implementation notes as rules.
-- Keep docs close to the behavior: README for users, `docs/` for design, `agent_docs/` for coding guidance, `AGENTS.md` for local editing instructions.
-
-## Examples
-
-- Prefer examples that show the recommended path, not every possible path.
-- Keep examples small, but include required imports, input shape, and expected output when relevant.
-- Mark dangerous or environment-dependent commands clearly.
-- Do not paste large generated outputs into docs. Summarize and link to the artifact shape or source.
-
-## Anti-Patterns
-
-- Docs that repeat code without adding contract or usage information.
-- Chronological notes in durable guide files.
-- Hidden behavior changes without README/docs updates.
-- API comments that only restate the function name.
-- Stale compatibility notes after old paths have been removed.
-- Uncited claims about upstream Pi behavior or external standards.
+- Open each document or section with the reader task it supports — readers arrive with a goal — leading with the task lets them confirm relevance in seconds instead of parsing background prose first.
+<!-- rule:2 -->
+- Split content into short sections under task-oriented headings — scannable structure beats a wall of text — readers navigate by scanning headings, so verb-led headings let them jump straight to the part they need.
+<!-- rule:3 -->
+- Write direct technical prose in active voice with concrete nouns — clarity comes from directness — active voice names the actor and cuts words, so readers grasp who does what without re-reading.
+<!-- rule:4 -->
+- Use the exact names of commands, APIs, settings, environment variables, and types — precision is non-negotiable in reference docs — an approximate or paraphrased name is unusable and sends readers hunting through source to recover the real one.
+<!-- rule:5 -->
+- Put commands, signatures, and contracts in fenced code blocks — formatting signals what is literal — code blocks distinguish copy-paste-exact text from prose and preserve whitespace that meaning depends on.
+<!-- rule:6 -->
+- Keep examples complete enough to run or adapt, including required imports, input shape, and expected output — partial examples fail on first use — a runnable example is verifiable and lets readers confirm they wired it up correctly.
+<!-- rule:7 -->
+- Show the recommended path rather than every possible option — docs teach the right way — an exhaustive option dump obscures the intended usage and invites readers down dead ends.
+<!-- rule:8 -->
+- Use absolute dates for any time-sensitive claim — relative time rots — "as of 2026-01" stays meaningful years later while "recently" or "currently" silently becomes false.
+<!-- rule:9 -->
+- Document contracts, boundary behavior, side effects, errors, and cleanup — that is the information code cannot self-describe — callers need to know what a function guarantees, mutates, and throws before they can use it safely.
+<!-- rule:10 -->
+- Avoid comments that merely restate a name or narrate obvious code — such lines add noise, not information — they waste reader attention, drift out of date, and train readers to ignore comments entirely.
+<!-- rule:11 -->
+- Update docs in the same change as any behavior, command, setting, or interface change — docs and code must ship together — a doc that lags behavior is worse than none because readers trust and act on it.
+<!-- rule:12 -->
+- Remove stale compatibility and migration notes once the old path is gone — dead guidance misleads — notes about removed behavior cost reading time and can steer readers toward paths that no longer exist.
+<!-- rule:13 -->
+- Cite the source file, upstream doc, or durable spec whenever a claim depends on an external contract — claims need provenance — a citation lets readers verify the statement and re-check it when the external contract changes.
+<!-- rule:14 -->
+- Avoid marketing filler, cheerleading, and unexplained acronyms — technical readers want substance — superlatives and jargon add length without meaning and erode trust in the rest of the document.
+<!-- rule:15 -->
+- Explain tradeoffs when they affect an implementation choice — decisions need context — stating why one approach was chosen over another helps future maintainers avoid re-litigating or wrongly reversing it.
+<!-- rule:16 -->
+- Keep durable guidance free of chronological changelog notes and one-off preferences — reference docs describe current state — dated narration and temporary workarounds belong in version control, not in a guide read as ground truth.

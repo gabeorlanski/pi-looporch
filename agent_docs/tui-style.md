@@ -1,64 +1,45 @@
-# TUI Style Guide
+# Terminal UI Style
 
-## Purpose
+> Rules for rendering predictable terminal output across varying widths, non-TTY sinks, color-off environments, and concurrent agent activity.
 
-Use this guide when changing terminal UI, display renderers, progress views, overlays, key handling, or terminal-facing docs. Keep output predictable under narrow widths, non-TTY output, screen readers, logs, tmux, and parallel agent activity.
+**When to check**: When changing terminal rendering, progress views, overlays, key handling, or color/width behavior.
 
-## Sources
+## Rules
 
-- Pi TUI contracts: <https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/tui.md>, <https://github.com/earendil-works/pi/blob/main/packages/tui/README.md>, <https://github.com/earendil-works/pi/blob/main/packages/tui/src/tui.ts>.
-- CLI and terminal behavior: <https://clig.dev/>, <https://nodejs.org/api/tty.html>, <https://no-color.org/>.
-- Accessibility: <https://www.w3.org/TR/WCAG22/>.
+<!-- rule:1 -->
 
-## Renderer Architecture
-
-- Keep display modules pure: normalized state plus width plus theme in, strings out.
-- Keep terminal capability detection at the boundary: TTY, width, color support, plain mode, CI, and script output are not core renderer concerns.
-- Prefer compact progress views over verbose live logs. Put transcripts and debug data in files, then show the path; explicit on-demand inspectors may show exact prompt/tool/output details when that is their documented purpose.
-- Make every visible row meaningful without color. Use text, counters, stable labels, and glyphs before relying on foreground color.
-- Keep render output deterministic. Inject or isolate clocks for durations.
-
-## Pi TUI Contracts
-
-- Every rendered line must fit the supplied `width`.
-- Use `visibleWidth`, `truncateToWidth`, `wrapTextWithAnsi`, or equivalent width-aware helpers. Never align, pad, slice, or truncate visible terminal text with raw `string.length`.
-- Reapply styles on every rendered line. Pi TUI resets SGR and OSC 8 state at line boundaries.
-- Implement `invalidate()` for components that cache render state, even when the current body is empty.
-- Components with embedded input children must propagate focus according to the Pi TUI contract.
-- Do not reuse overlay component instances after close. Recreate overlays for each show/back action.
-- Use overlay size, margin, anchor, and `visible` options instead of hand-positioning against assumed terminal sizes.
-
-## Terminal Capability Rules
-
-- Support narrow/default/wide widths explicitly.
-- Do not assume Unicode width is one column. ANSI escapes, full-width characters, combining marks, OSC links, and image escapes break naive layout.
-- Disable color and animation in non-TTY, `NO_COLOR`, `NODE_DISABLE_COLORS`, `TERM=dumb`, and explicit plain-output modes.
-- Avoid adding workflow keybindings unless the user explicitly asks for an interactive control surface.
-- Prefer passive status and persisted logs over modal UI.
-
-## Progress And Logging
-
-- Default progress should be dense: one status line, phase sections, active children, and compact counters.
-- Do not interleave parallel child-agent logs into the main progress pane. Show running state in the TUI and persist details in session logs.
-- Log terminal-debug details to files while the TUI owns stdout/stderr.
-- Prefer stable counters over animated noise: steps, tools, input tokens, output tokens, elapsed time, phase, and current agent label.
-- Keep result content out of compact widgets and completion messages. Large content belongs in transcripts, JSONL, artifact files, or explicit on-demand inspectors that the user opens for details.
-
-## Testing Checklist
-
-- Test pure renderer output at narrow, default, and wide widths.
-- Assert `visibleWidth(line) <= width` for every rendered line.
-- Test no-color/plain output separately from themed output.
-- Test color is never the only state marker.
-- Test input behavior through component handlers only when the component owns interaction.
-- Snapshot only stable frames or pure renderer output.
-
-## Anti-Patterns
-
-- ANSI styling before layout decisions.
-- Color-only status like "red means failed".
-- Decorative boxes that collapse at narrow widths.
-- Hardcoded terminal widths.
-- Full-screen animations or spinners in piped/CI output.
-- Verbose internal logging to stdout while an interactive TUI is running.
-- Adding a new TUI framework just to format a few display strings.
+- Keep renderers pure functions of state, width, and theme that return strings — isolates layout logic from side effects — pure renderers are trivially testable, snapshot-able, and reusable across contexts without a live terminal.
+<!-- rule:2 -->
+- Detect terminal capabilities only at the boundary and pass results inward — keeps core rendering free of environment probing — centralizing TTY, width, and color checks prevents scattered conditionals and lets renderers stay deterministic.
+<!-- rule:3 -->
+- Measure text with a width-aware helper, never with string length — code points are not display columns — ANSI escapes, full-width CJK characters, combining marks, and hyperlink sequences make naive length counts misalign, overflow, or truncate mid-glyph.
+<!-- rule:4 -->
+- Ensure every rendered line fits the supplied width before emitting it — overflow corrupts layout in wrapped and multiplexed terminals — a single too-long line breaks column alignment and pushes content off-screen or into unintended wraps.
+<!-- rule:5 -->
+- Reapply styles on every line rather than assuming they carry over — many renderers reset color and link state at line boundaries — relying on bleed-through produces uncolored or mis-styled lines when output is chunked, scrolled, or partially redrawn.
+<!-- rule:6 -->
+- Respect NO_COLOR, non-TTY output, and dumb terminals by disabling color and animation — these signal that escape codes are unwanted or unsupported — emitting them anyway litters logs, pipes, and CI output with unreadable control sequences.
+<!-- rule:7 -->
+- Never use color as the only carrier of state — color is invisible to colorblind users, screen readers, and monochrome sinks — pairing every status with text, glyphs, or labels keeps meaning intact when color is stripped or unseen.
+<!-- rule:8 -->
+- Prefer compact progress views over verbose live logs on the interactive surface — dense status is scannable and stable — streaming full logs into the view causes flicker, scrollback churn, and buries the current state.
+<!-- rule:9 -->
+- Write transcripts and debug detail to files and show their paths instead of the content — keeps the live view uncluttered — persisted artifacts are searchable, diffable, and survive after the session ends, unlike ephemeral terminal output.
+<!-- rule:10 -->
+- Inject clocks and other nondeterministic inputs so render output is reproducible — durations and timestamps otherwise vary per run — deterministic output makes snapshot tests stable and lets you diff frames meaningfully.
+<!-- rule:11 -->
+- Avoid adding keybindings unless an interactive control surface was explicitly requested — unexpected key capture surprises users and conflicts with terminal or multiplexer shortcuts — passive output composes cleanly with pipes, logs, and parallel processes.
+<!-- rule:12 -->
+- Keep concurrent agent or child-process logs out of the main progress pane — interleaved streams are unreadable and nondeterministic — showing only summarized running state while persisting per-source detail keeps the view coherent under parallelism.
+<!-- rule:13 -->
+- Prefer stable counters and labels over animated spinners in non-interactive output — animation frames become garbage when piped or captured — steady numeric progress conveys the same information without escape-sequence noise in logs and CI.
+<!-- rule:14 -->
+- Make layout decisions before applying styling — styling first entangles measurement with presentation — computing widths on plain text and adding color last keeps alignment correct and rendering logic separable.
+<!-- rule:15 -->
+- Support narrow, default, and wide widths explicitly rather than hardcoding a size — real terminals span a wide range and resize live — designs that assume a fixed width collapse boxes, wrap awkwardly, or clip content on other displays.
+<!-- rule:16 -->
+- Test renderer output at narrow, default, and wide widths, asserting each line fits — width bugs surface only at the extremes — covering the boundaries catches truncation and overflow that a single default-width test misses.
+<!-- rule:17 -->
+- Test color-off and plain output paths separately from themed output — the two paths diverge and regress independently — dedicated assertions guarantee state stays legible when color is disabled or the sink is non-interactive.
+<!-- rule:18 -->
+- Avoid introducing a new UI framework merely to format a few strings — heavy dependencies add build weight and lock-in — plain width-aware string helpers cover simple output without the maintenance cost of a full rendering stack.

@@ -60,7 +60,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 ### Runtime and Boundaries
 
 - Inject `WorkflowAgent`; never hardcode model or pi providers into core logic.
-- Propose generated workflows from the default outside-project draft root provided in the current session prompt, so workflow authoring does not dirty the worktree. When using that default, call `propose_workflow` with the workflow name and omit `draftDir`; if an explicit alternate `draftDir` is needed, it should point at the directory, not the `workflow.js` file.
+- Propose generated workflows as complete project-local draft directories such as `.pi/workflow-drafts/<name>/`; `propose_workflow` `draftDir` values should point at the directory, not the `workflow.js` file.
 - `propose_workflow` saves directly after validating the draft directory; do not add confirmation flags or two-step save flows.
 - Require workflow metadata to include `phases: [{ title, detail? }]`; this planned runbook outline is required planning data, while runtime `phase()` calls are actual progress.
 - Require agent-generated workflow source to document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
@@ -86,7 +86,6 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Workflow parallelism is bounded by project `.pi/settings.json` `workflow.maxParallelAgents`; enforce it globally for child-agent launches, and make `parallel` queue excess fan-out workers instead of launching unbounded work.
 - Workflow child-agent SDK sessions should disable ambient pi extensions and load only `workflow.childAgentExtensions` from merged global/project settings; configured extension state must stay child-session-local and never mutate parent/global extension state.
 - Workflows started by named commands and by the current-session agent through `run_workflow` should share the same TUI running-workflow widget, `/view-workflow` inspector entrypoint, reload reattachment, and cleanup behavior, scoped to the parent Pi session id rather than cwd alone.
-- Active workflow reattachment is process-scoped. `session_shutdown` should abort live visible workflow runs, settled runs must await active-record cleanup, and stale active records from dead processes must be removed instead of restored.
 - Workflow completion messages should include output/session-log paths, not result content or hidden parent-agent handoffs. Let the user or a later explicit step decide what to read.
 - `/workflow-review` reviews actual workflow session logs for token-cost reduction; keep it focused on recorded token spend, repeated tool activity, common commands across agents, and actionable ways to reduce future workflow cost.
 - Workflow results, including strings, stay out of hidden parent-session follow-up prompts. Completion messages should link output files/session logs rather than paste result content into chat.

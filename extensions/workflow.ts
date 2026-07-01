@@ -1,18 +1,23 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import path from "node:path";
 import { naturalLanguageRequestMessage, steerableInputResolutionMessage } from "../src/prompt-templates.ts";
 import { discoverWorkflows } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
 import type { BackgroundWorkflowRunResult } from "../src/background-runs.ts";
 import { WorkflowInputError, parseWorkflowInput } from "../src/input.ts";
 import { completeMessage, failureMessage } from "../src/display/messages.ts";
-import { openRunningWorkflowInspector, restoreRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
+import { disposeRunningWorkflowUi, openRunningWorkflowInspector, restoreRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
 import { startVisibleWorkflowRun } from "../src/display/visible-workflow-run.ts";
 import { errorMessage } from "../src/errors.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import { workflowLogReviewMessage } from "../src/log-review.ts";
+import { workflowAgentSessionLogParentDirectory } from "../src/session-logs.ts";
+import { readActiveWorkflowRuns } from "../src/workflow/active-runs.ts";
+import { readActiveWorkflowTerminalResults } from "../src/workflow/active-run-snapshots.ts";
+import { PROJECT_CONFIG_DIR } from "../src/workflow/config-dir.ts";
 import { normalizeWorkflowName } from "../src/workflow/paths.ts";
-import { readWorkflowInputContract } from "../src/workflow/start.ts";
+import { resolveWorkflowInputContract } from "../src/workflow/start.ts";
 import {
   readWorkflowSettings,
   writeGlobalWorkflowSettings,
@@ -23,19 +28,41 @@ import {
 
 const MESSAGE_TYPE = "pi-workflow-message";
 
+interface WorkflowRunOwner {
+  pi: ExtensionAPI;
+  ctx: ExtensionContext;
+}
+
+interface WorkflowCompletionDelivery {
+  kind: "complete";
+  workflowName: string;
+  outputsDir?: string;
+  resultPath?: string;
+  sessionLogDir: string;
+}
+
+interface WorkflowFailureDelivery {
+  kind: "failure";
+  workflowName: string;
+  error: unknown;
+}
+
+type WorkflowTerminalDelivery = WorkflowCompletionDelivery | WorkflowFailureDelivery;
+
+const workflowRunOwners = new Map<string, WorkflowRunOwner>();
+const pendingWorkflowRunDeliveries = new Map<string, WorkflowTerminalDelivery>();
+const deliveredWorkflowRunKeys = new Set<string>();
+
 /** Registers pi-workflow commands, tools, and TUI hooks with a Pi extension host. */
 export default function piWorkflow(pi: ExtensionAPI) {
-  const aliases = new Set<string>();
-
   for (const tool of createWorkflowTools({
-    agentForContext: (ctx) => createPiWorkflowAgent({ cwd: ctx.cwd }),
+    agentForContext: (ctx) => createPiWorkflowAgent({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted() }),
   })) {
     pi.registerTool(tool);
   }
 
   pi.registerCommand("workflow", {
     description: "Run or create a project workflow in the current session",
-    getArgumentCompletions: (prefix) => workflowCompletions(process.cwd(), prefix),
     handler: async (args, ctx) => steerWorkflowCommand(pi, ctx, undefined, args),
   });
 
@@ -55,16 +82,22 @@ export default function piWorkflow(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
+    if (!ctx.isProjectTrusted()) return;
+    await deliverReloadedTerminalWorkflowRuns(pi, ctx);
+    await refreshWorkflowRunOwners(pi, ctx);
     await restoreRunningWorkflowUi(ctx);
-    for (const workflow of await discoverWorkflows(ctx.cwd)) {
+    for (const workflow of await discoverWorkflows(ctx.cwd, true)) {
       const command = `workflow:${workflow.name}`;
-      if (aliases.has(command)) continue;
-      aliases.add(command);
       pi.registerCommand(command, {
         description: workflow.metadata.description,
         handler: async (args, commandCtx) => steerWorkflowCommand(pi, commandCtx, workflow.name, args),
       });
     }
+  });
+
+  pi.on("session_shutdown", (_event, ctx) => {
+    invalidateWorkflowRunOwners(ctx);
+    disposeRunningWorkflowUi(ctx);
   });
 }
 
@@ -79,7 +112,9 @@ async function steerWorkflowCommand(
     return;
   }
 
-  const workflows = await discoverWorkflows(ctx.cwd);
+  if (!requireTrustedProject(ctx, "using project workflows")) return;
+
+  const workflows = await discoverWorkflows(ctx.cwd, true);
   const names = workflows.map((workflow) => workflow.name);
   const trimmed = args.trim();
   if (!trimmed) {
@@ -103,14 +138,15 @@ async function runExistingWorkflowCommand(
   workflowName: string,
   rawInput: string,
 ): Promise<void> {
-  const workflow = (await discoverWorkflows(ctx.cwd)).find((candidate) => candidate.name === workflowName);
-  if (!workflow) {
-    ctx.ui.notify(`Workflow '${workflowName}' not found.`, "warning");
-    return;
-  }
+  if (!requireTrustedProject(ctx, `running workflow '${workflowName}'`)) return;
+
   const abortControls = createWorkflowAbortControls(ctx);
   try {
-    const inputContract = await readWorkflowInputContract(workflow);
+    const { workflow, inputContract } = await resolveWorkflowInputContract({
+      cwd: ctx.cwd,
+      workflowName,
+      projectTrusted: true,
+    });
     const parsedInput = parseWorkflowInput(rawInput);
     if (parsedInput.action === "resolve") {
       abortControls.dispose();
@@ -127,7 +163,7 @@ async function runExistingWorkflowCommand(
       );
       return;
     }
-    const agent = createPiWorkflowAgent({ cwd: ctx.cwd });
+    const agent = createPiWorkflowAgent({ cwd: ctx.cwd, projectTrusted: true });
     ctx.ui.notify(`Running workflow '${workflowName}' in the background`, "info");
     const visible = await startVisibleWorkflowRun({
       ctx,
@@ -135,16 +171,22 @@ async function runExistingWorkflowCommand(
       workflowName,
       input: parsedInput.input,
       agentDir: getAgentDir(),
+      projectTrusted: true,
       agent,
       signal: abortControls.signal,
       abortWorkflow: abortControls.abort,
     });
-    void settleBackgroundWorkflowRun(pi, ctx, workflowName, visible.run.finished, () => {
+    const ownerKey = registerWorkflowRunOwner(pi, ctx, visible.prepared.runId);
+    void settleBackgroundWorkflowRun(ownerKey, workflowName, visible.run.finished, () => {
       visible.cleanup();
       abortControls.dispose();
     });
   } catch (error) {
     abortControls.dispose();
+    if (error instanceof Error && error.message === `Workflow '${workflowName}' not found.`) {
+      ctx.ui.notify(error.message, "warning");
+      return;
+    }
     const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
     pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName } });
@@ -152,27 +194,22 @@ async function runExistingWorkflowCommand(
 }
 
 async function settleBackgroundWorkflowRun(
-  pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
+  ownerKey: string,
   workflowName: string,
   finished: Promise<BackgroundWorkflowRunResult>,
   cleanup: () => void,
 ): Promise<void> {
   try {
     const result = await finished;
-    try {
-      completeBackgroundWorkflow(pi, ctx, result);
-    } catch (error) {
-      ctx.ui.notify(`Workflow '${result.workflowName}' completed, but completion handling failed: ${errorMessage(error)}`, "error");
-    }
+    deliverWorkflowRunTerminal(ownerKey, completionDeliveryFromResult(result));
   } catch (error) {
-    failBackgroundWorkflow(pi, ctx, workflowName, error);
+    deliverWorkflowRunTerminal(ownerKey, { kind: "failure", workflowName, error });
   } finally {
     cleanup();
   }
 }
 
-function completeBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, result: BackgroundWorkflowRunResult): void {
+function completeBackgroundWorkflow(pi: ExtensionAPI, result: WorkflowCompletionDelivery): void {
   const outputsMessage = result.resultPath
     ? `Workflow result: ${result.resultPath}`
     : `Workflow outputs: ${result.outputsDir ?? "not saved"}`;
@@ -189,10 +226,103 @@ function completeBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandConte
   });
 }
 
-function failBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, workflowName: string, error: unknown): void {
+function failBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionContext, workflowName: string, error: unknown): void {
   const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
   ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
   pi.sendMessage({ customType: MESSAGE_TYPE, content: message, display: true, details: { workflowName } });
+}
+
+function registerWorkflowRunOwner(pi: ExtensionAPI, ctx: ExtensionContext, runId: string): string {
+  const key = workflowRunOwnerKey(ctx.cwd, ctx.sessionManager.getSessionId(), runId);
+  workflowRunOwners.set(key, { pi, ctx });
+  const pending = pendingWorkflowRunDeliveries.get(key);
+  if (pending) deliverWorkflowRunTerminal(key, pending);
+  return key;
+}
+
+async function refreshWorkflowRunOwners(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+  flushPendingWorkflowRunDeliveries(pi, ctx);
+  for (const record of await readActiveWorkflowRuns(ctx.cwd, ctx.sessionManager.getSessionId())) {
+    registerWorkflowRunOwner(pi, ctx, record.runId);
+  }
+}
+
+function flushPendingWorkflowRunDeliveries(pi: ExtensionAPI, ctx: ExtensionContext): void {
+  const keyPrefix = workflowRunOwnerKeyPrefix(ctx.cwd, ctx.sessionManager.getSessionId());
+  for (const key of pendingWorkflowRunDeliveries.keys()) {
+    if (!key.startsWith(keyPrefix)) continue;
+    workflowRunOwners.set(key, { pi, ctx });
+    const pending = pendingWorkflowRunDeliveries.get(key);
+    if (pending) deliverWorkflowRunTerminal(key, pending);
+  }
+}
+
+function invalidateWorkflowRunOwners(ctx: ExtensionContext): void {
+  for (const [key, owner] of workflowRunOwners.entries()) {
+    if (owner.ctx === ctx) workflowRunOwners.delete(key);
+  }
+}
+
+async function deliverReloadedTerminalWorkflowRuns(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+  const terminals = await readActiveWorkflowTerminalResults(ctx.cwd, ctx.sessionManager.getSessionId());
+  for (const terminal of terminals) {
+    const ownerKey = registerWorkflowRunOwner(pi, ctx, terminal.runId);
+    const sessionLogDir = workflowAgentSessionLogParentDirectory(ctx.cwd, terminal.runId);
+    deliverWorkflowRunTerminal(
+      ownerKey,
+      terminal.status === "done"
+        ? {
+            kind: "complete",
+            workflowName: terminal.workflowName,
+            outputsDir: terminal.outputsDir,
+            resultPath: terminal.resultPath,
+            sessionLogDir,
+          }
+        : { kind: "failure", workflowName: terminal.workflowName, error: terminal.error ?? "Workflow failed" },
+    );
+  }
+}
+
+function deliverWorkflowRunTerminal(ownerKey: string, delivery: WorkflowTerminalDelivery): void {
+  if (deliveredWorkflowRunKeys.has(ownerKey)) return;
+  const owner = workflowRunOwners.get(ownerKey);
+  if (!owner) {
+    pendingWorkflowRunDeliveries.set(ownerKey, delivery);
+    return;
+  }
+  deliveredWorkflowRunKeys.add(ownerKey);
+  pendingWorkflowRunDeliveries.delete(ownerKey);
+  workflowRunOwners.delete(ownerKey);
+  try {
+    if (delivery.kind === "complete") completeBackgroundWorkflow(owner.pi, delivery);
+    else failBackgroundWorkflow(owner.pi, owner.ctx, delivery.workflowName, delivery.error);
+  } catch (error) {
+    owner.ctx.ui.notify(terminalDeliveryFailureMessage(delivery, error), "error");
+  }
+}
+
+function terminalDeliveryFailureMessage(delivery: WorkflowTerminalDelivery, error: unknown): string {
+  if (delivery.kind === "complete")
+    return `Workflow '${delivery.workflowName}' completed, but completion handling failed: ${errorMessage(error)}`;
+  return `Workflow '${delivery.workflowName}' failed, but failure handling failed: ${errorMessage(error)}`;
+}
+
+function completionDeliveryFromResult(result: BackgroundWorkflowRunResult): WorkflowCompletionDelivery {
+  return {
+    kind: "complete",
+    workflowName: result.workflowName,
+    outputsDir: result.outputsDir,
+    resultPath: result.resultPath,
+    sessionLogDir: result.sessionLogDir,
+  };
+}
+
+function workflowRunOwnerKey(cwd: string, sessionId: string, runId: string): string {
+  return `${workflowRunOwnerKeyPrefix(cwd, sessionId)}${runId}`;
+}
+
+function workflowRunOwnerKeyPrefix(cwd: string, sessionId: string): string {
+  return `${path.resolve(cwd)}\0${sessionId}\0`;
 }
 
 function createWorkflowAbortControls(ctx: ExtensionCommandContext): { signal: AbortSignal; abort: () => void; dispose: () => void } {
@@ -233,6 +363,12 @@ async function viewWorkflowCommand(ctx: ExtensionCommandContext): Promise<void> 
   if (!opened) ctx.ui.notify("No running workflows to view.", "warning");
 }
 
+function requireTrustedProject(ctx: ExtensionCommandContext, action: string): boolean {
+  if (ctx.isProjectTrusted()) return true;
+  ctx.ui.notify(`Trust this project before ${action}.`, "warning");
+  return false;
+}
+
 async function workflowSettingsCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
   const trimmed = args.trim();
   if (trimmed) {
@@ -241,6 +377,7 @@ async function workflowSettingsCommand(pi: ExtensionAPI, ctx: ExtensionCommandCo
       if (scope === "global") {
         await writeGlobalWorkflowSettings(getAgentDir(), settings);
       } else {
+        if (!requireTrustedProject(ctx, "writing project workflow settings")) return;
         await writeProjectWorkflowSettings(ctx.cwd, settings);
       }
       ctx.ui.notify(workflowSettingsSavedMessage(scope, settings), "info");
@@ -249,10 +386,11 @@ async function workflowSettingsCommand(pi: ExtensionAPI, ctx: ExtensionCommandCo
     }
     return;
   }
-  const settings = await readWorkflowSettings(ctx.cwd, getAgentDir());
+  const projectTrusted = ctx.isProjectTrusted();
+  const settings = await readWorkflowSettings(ctx.cwd, getAgentDir(), projectTrusted);
   pi.sendMessage({
     customType: MESSAGE_TYPE,
-    content: workflowSettingsMessage(getAgentDir(), settings),
+    content: workflowSettingsMessage(getAgentDir(), settings, projectTrusted),
     display: true,
     details: { kind: "workflow-settings", settings },
   });
@@ -282,12 +420,12 @@ function parseExtensionList(value: string): string[] {
 }
 
 function workflowSettingsSavedMessage(scope: "global" | "project", settings: WorkflowSettingsPatch): string {
-  const target = scope === "global" ? "global settings.json" : ".pi/settings.json";
+  const target = scope === "global" ? "global settings.json" : `${PROJECT_CONFIG_DIR}/settings.json`;
   const setting = workflowSettingCommands.find((candidate) => candidate.value(settings) !== undefined);
   return setting ? setting.savedMessage(settings, target) : `Workflow settings saved in ${target}`;
 }
 
-function workflowSettingsMessage(agentDir: string, settings: WorkflowSettings): string {
+function workflowSettingsMessage(agentDir: string, settings: WorkflowSettings, projectTrusted: boolean): string {
   const globalSettings = `${agentDir}/settings.json`;
   return [
     "# Workflow Settings",
@@ -295,9 +433,11 @@ function workflowSettingsMessage(agentDir: string, settings: WorkflowSettings): 
     `- Max parallel agents: ${String(settings.maxParallelAgents)}`,
     `- Child agent extensions: ${formatExtensionList(settings.childAgentExtensions)}`,
     "",
-    "Settings are merged from project settings over global settings.",
+    projectTrusted
+      ? "Settings are merged from project settings over global settings."
+      : "Project settings are ignored until this project is trusted; showing global/default settings only.",
     "",
-    "- Project: .pi/settings.json",
+    `- Project: ${PROJECT_CONFIG_DIR}/settings.json`,
     `- Global: ${globalSettings}`,
     "",
     "Commands:",
@@ -347,6 +487,7 @@ function workflowSettingsUsage(): string {
 
 async function reviewWorkflowCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
   try {
+    if (!requireTrustedProject(ctx, "reviewing workflow session logs")) return;
     ctx.ui.notify("Reviewing workflow session logs for token-cost reduction", "info");
     const content = await workflowLogReviewMessage({ cwd: ctx.cwd, target: args.trim() });
     pi.sendMessage({ customType: MESSAGE_TYPE, content, display: true, details: { kind: "workflow-log-review" } });
@@ -358,9 +499,4 @@ async function reviewWorkflowCommand(pi: ExtensionAPI, ctx: ExtensionCommandCont
 function splitFirstWord(text: string): [string, string] {
   const match = /^(\S+)(?:\s+([\s\S]*))?$/.exec(text);
   return [match?.[1] ?? "", match?.[2] ?? ""];
-}
-
-async function workflowCompletions(cwd: string, prefix: string): Promise<{ value: string; label: string }[] | null> {
-  const matches = (await discoverWorkflows(cwd)).map((workflow) => workflow.name).filter((name) => name.startsWith(prefix));
-  return matches.length ? matches.map((name) => ({ value: name, label: name })) : null;
 }

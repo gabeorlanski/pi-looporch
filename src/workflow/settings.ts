@@ -1,5 +1,8 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { PROJECT_CONFIG_DIR } from "./config-dir.ts";
 
 export interface WorkflowSettings {
   workflowDirs: string[];
@@ -22,12 +25,12 @@ function globalSettingsPath(agentDir: string): string {
 }
 
 function projectSettingsPath(cwd: string): string {
-  return path.join(cwd, ".pi", "settings.json");
+  return path.join(cwd, PROJECT_CONFIG_DIR, "settings.json");
 }
 
-export async function readWorkflowSettings(cwd: string, agentDir: string): Promise<WorkflowSettings> {
+export async function readWorkflowSettings(cwd: string, agentDir: string, projectTrusted: boolean): Promise<WorkflowSettings> {
   const globalWorkflow = await readWorkflowSettingsObject(globalSettingsPath(agentDir));
-  const projectWorkflow = await readWorkflowSettingsObject(projectSettingsPath(cwd));
+  const projectWorkflow = projectTrusted ? await readWorkflowSettingsObject(projectSettingsPath(cwd)) : {};
   return normalizeWorkflowSettings({ ...globalWorkflow, ...projectWorkflow });
 }
 
@@ -36,11 +39,13 @@ export async function readProjectWorkflowSettings(cwd: string): Promise<Workflow
 }
 
 export async function writeGlobalWorkflowSettings(agentDir: string, settings: WorkflowSettingsPatch): Promise<void> {
-  await writeWorkflowSettingsFile(globalSettingsPath(agentDir), settings);
+  const settingsPath = globalSettingsPath(agentDir);
+  await withFileMutationQueue(settingsPath, () => writeWorkflowSettingsFile(settingsPath, settings));
 }
 
 export async function writeProjectWorkflowSettings(cwd: string, settings: WorkflowSettingsPatch): Promise<void> {
-  await writeWorkflowSettingsFile(projectSettingsPath(cwd), settings);
+  const settingsPath = projectSettingsPath(cwd);
+  await withFileMutationQueue(settingsPath, () => writeWorkflowSettingsFile(settingsPath, settings));
 }
 
 function normalizeMaxParallelAgents(value: unknown): number {
@@ -111,7 +116,18 @@ async function writeWorkflowSettingsFile(settingsPath: string, settings: Workflo
   const workflow = isRecord(rawSettings.workflow) ? rawSettings.workflow : {};
   rawSettings.workflow = { ...workflow, ...patch };
   await mkdir(path.dirname(settingsPath), { recursive: true });
-  await writeFile(settingsPath, `${JSON.stringify(rawSettings, null, 2)}\n`, "utf8");
+  await writeFileAtomic(settingsPath, `${JSON.stringify(rawSettings, null, 2)}\n`);
+}
+
+async function writeFileAtomic(filePath: string, content: string): Promise<void> {
+  const temporaryPath = `${filePath}.${String(process.pid)}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, content, "utf8");
+    await rename(temporaryPath, filePath);
+  } catch (error) {
+    await rm(temporaryPath, { force: true });
+    throw error;
+  }
 }
 
 function normalizeWorkflowSettingsPatch(settings: WorkflowSettingsPatch): WorkflowSettingsPatch {

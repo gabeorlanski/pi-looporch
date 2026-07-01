@@ -70,10 +70,14 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
       }
       throw error;
     })
-    .finally(() => {
+    .finally(async () => {
       removeParentAbortListener();
-      void snapshotWrite;
-      void removeActiveWorkflowRun(options.cwd, options.runId);
+      await snapshotWrite.catch((error: unknown) => {
+        logBackgroundCleanupFailure(options.runId, "write final workflow snapshot", error);
+      });
+      await removeActiveWorkflowRun(options.cwd, options.runId).catch((error: unknown) => {
+        logBackgroundCleanupFailure(options.runId, "remove active workflow record", error);
+      });
     });
   return {
     runId: options.runId,
@@ -87,9 +91,14 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
 
 function enqueueSnapshotWrite(previous: Promise<void>, outputsDir: string, snapshot: WorkflowSnapshot): Promise<void> {
   return previous
-    .catch(() => undefined)
-    .then(() => writeWorkflowSnapshot(outputsDir, snapshot))
-    .catch(() => undefined);
+    .catch((error: unknown) => {
+      logBackgroundCleanupFailure(snapshot.workflowName, "write workflow snapshot", error);
+    })
+    .then(() => writeWorkflowSnapshot(outputsDir, snapshot));
+}
+
+function logBackgroundCleanupFailure(runId: string, action: string, error: unknown): void {
+  console.info(`Workflow run ${runId} cleanup failed to ${action}: ${error instanceof Error ? error.message : String(error)}`);
 }
 
 function linkAbortSignal(signal: AbortSignal | undefined, abortWorkflow: () => void): () => void {

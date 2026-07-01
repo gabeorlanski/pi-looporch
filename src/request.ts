@@ -1,6 +1,8 @@
-import { cp, mkdir, rename, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { cp, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { extractWorkflowInputContract } from "./input.ts";
+import { PROJECT_CONFIG_DIR } from "./workflow/config-dir.ts";
 import type { WorkflowMetadata } from "./runtime/types.ts";
 import { parseWorkflowSourceMetadata } from "./workflow/metadata.ts";
 
@@ -19,7 +21,7 @@ export interface SaveWorkflowDraftOptions {
   draft: GeneratedWorkflowDraft;
 }
 
-/** Validates and atomically saves a generated workflow draft under .pi/workflows. */
+/** Validates and atomically saves a generated workflow draft under the project workflow directory. */
 export async function saveWorkflowDraft(options: SaveWorkflowDraftOptions): Promise<GeneratedWorkflowDraft> {
   const draft = validatedWorkflowDraft(options.draft);
   await saveDraft(options.cwd, draft);
@@ -45,18 +47,18 @@ function validateGeneratedWorkflowDocstring(source: string): void {
 
 async function saveDraft(cwd: string, draft: GeneratedWorkflowDraft): Promise<void> {
   const projectRoot = path.resolve(cwd);
-  const workflowRoot = path.join(projectRoot, ".pi", "workflows");
+  const workflowRoot = path.join(projectRoot, PROJECT_CONFIG_DIR, "workflows");
   const workflowDir = path.join(workflowRoot, draft.name);
-  const suffix = `${String(process.pid)}-${String(Date.now())}`;
-  const stagingDir = path.join(workflowRoot, `.${draft.name}.tmp-${suffix}`);
-  const backupDir = path.join(workflowRoot, `.${draft.name}.old-${suffix}`);
-  await Promise.all([
-    rm(stagingDir, { recursive: true, force: true }),
-    rm(backupDir, { recursive: true, force: true }),
-    mkdir(workflowRoot, { recursive: true }),
-  ]);
-  await cp(validateDraftSourceDirectory(projectRoot, draft.sourceDirectory, workflowRoot), stagingDir, { recursive: true });
-  await replaceWorkflowDirectory(workflowDir, stagingDir, backupDir);
+  await mkdir(workflowRoot, { recursive: true });
+  const stagingParent = await mkdtemp(path.join(workflowRoot, `.${draft.name}.tmp-`));
+  const stagingDir = path.join(stagingParent, draft.name);
+  const backupDir = path.join(workflowRoot, `.${draft.name}.old-${randomUUID()}`);
+  try {
+    await cp(validateDraftSourceDirectory(projectRoot, draft.sourceDirectory, workflowRoot), stagingDir, { recursive: true });
+    await replaceWorkflowDirectory(workflowDir, stagingDir, backupDir);
+  } finally {
+    await Promise.all([rm(stagingParent, { recursive: true, force: true }), rm(backupDir, { recursive: true, force: true })]);
+  }
 }
 
 async function replaceWorkflowDirectory(workflowDir: string, stagingDir: string, backupDir: string): Promise<void> {
@@ -84,7 +86,7 @@ function validateDraftSourceDirectory(projectRoot: string, sourceDirectory: stri
   const resolved = path.resolve(sourceDirectory);
   if (!isInsideOrEqual(projectRoot, resolved)) throw new Error("Workflow draft source directory must stay inside the project directory");
   if (isInsideOrEqual(workflowRoot, resolved) || isInsideOrEqual(resolved, workflowRoot)) {
-    throw new Error("Workflow draft source directory must not be inside, equal to, or an ancestor of .pi/workflows");
+    throw new Error(`Workflow draft source directory must not be inside, equal to, or an ancestor of ${PROJECT_CONFIG_DIR}/workflows`);
   }
   return resolved;
 }

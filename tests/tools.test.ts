@@ -6,6 +6,8 @@ import { test } from "node:test";
 import { createWorkflowTools } from "../src/tools.ts";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
 
+const trustedToolContext = { isProjectTrusted: () => true } as never;
+
 const generatedWorkflowDocstring = `/**
  * Purpose: generated test workflow.
  * Args: expects a prompt-like input object from the user.
@@ -87,6 +89,7 @@ export default async function workflow(input) {
       getSessionId: () => "tool-session",
     },
     ui: { notify: (message: string) => notifications.push(message) },
+    isProjectTrusted: () => true,
   } as never;
   const result = await tool.execute(
     "call-1",
@@ -134,7 +137,7 @@ export default async function workflow({ prompt }) {
     { name: "summarize", draftDir: path.relative(project, draftDir) },
     undefined,
     undefined,
-    {} as never,
+    trustedToolContext,
   );
 
   assert.deepEqual(result.details, { workflowName: "summarize", saved: true });
@@ -158,7 +161,7 @@ export default async function workflow({ prompt }) {
   const tool = createWorkflowTools({ cwd: project }).find((candidate) => candidate.name === "propose_workflow");
   assert.ok(tool);
 
-  await tool.execute("call-1", { name: "summarize", draftDir: path.relative(project, draftDir) }, undefined, undefined, {} as never);
+  await tool.execute("call-1", { name: "summarize", draftDir: path.relative(project, draftDir) }, undefined, undefined, trustedToolContext);
 
   assert.equal((await readFile(path.join(workflowDir, "workflow.js"), "utf8")).trim(), source);
   assert.equal(await readFile(path.join(workflowDir, "prompts", "summary.txt"), "utf8"), "Summarize {{prompt}}");
@@ -177,7 +180,7 @@ export default async function workflow({ prompt }) {
   assert.ok(tool);
 
   await assert.rejects(
-    tool.execute("call-1", { name: "summarize", draftDir: path.relative(project, draftDir) }, undefined, undefined, {} as never),
+    tool.execute("call-1", { name: "summarize", draftDir: path.relative(project, draftDir) }, undefined, undefined, trustedToolContext),
     /must not be inside, equal to, or an ancestor of \.pi\/workflows/,
   );
 });
@@ -194,7 +197,7 @@ export default async function workflow({ prompt }) {
   assert.ok(tool);
 
   await assert.rejects(
-    tool.execute("call-1", { name: "summarize", draftDir: "." }, undefined, undefined, {} as never),
+    tool.execute("call-1", { name: "summarize", draftDir: "." }, undefined, undefined, trustedToolContext),
     /must not be inside, equal to, or an ancestor of \.pi\/workflows/,
   );
 });
@@ -212,7 +215,7 @@ export default async function workflow({ prompt }) {
   assert.ok(tool);
 
   await assert.rejects(
-    tool.execute("call-2", { name: "summarize", draftDir: path.relative(project, draftDir) }, undefined, undefined, {} as never),
+    tool.execute("call-2", { name: "summarize", draftDir: path.relative(project, draftDir) }, undefined, undefined, trustedToolContext),
     /must start with a JSDoc docstring/,
   );
 });

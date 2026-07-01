@@ -31,7 +31,7 @@ export default async function workflow() {
 }`,
   );
 
-  const workflows = await discoverWorkflows(project);
+  const workflows = await discoverWorkflows(project, true);
 
   assert.deepEqual(
     workflows.map((workflow) => workflow.name),
@@ -52,12 +52,26 @@ export default async function workflow() {
 }`,
   );
 
-  const workflows = await discoverWorkflows(project);
+  const workflows = await discoverWorkflows(project, true);
 
   assert.deepEqual(
     workflows.map((workflow) => workflow.name),
     ["valid"],
   );
+});
+
+void test("discover_workflows_returns_no_project_workflows_when_project_is_untrusted", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-discovery-"));
+  await writeWorkflow(
+    project,
+    "valid",
+    `export const metadata = { name: "valid", description: "Valid workflow", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return "ok";
+}`,
+  );
+
+  assert.deepEqual(await discoverWorkflows(project, false), []);
 });
 
 void test("discover_workflows_uses_configured_workflow_dirs_from_canonical_settings", async () => {
@@ -75,7 +89,7 @@ export default async function workflow() {
     "utf8",
   );
 
-  const workflows = await discoverWorkflows(project);
+  const workflows = await discoverWorkflows(project, true);
 
   assert.deepEqual(
     workflows.map((workflow) => workflow.name),

@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { PROJECT_CONFIG_DIR } from "./config-dir.ts";
 
 export function normalizeWorkflowName(workflowName: string): string {
   const normalized = workflowName.trim();
@@ -8,7 +9,7 @@ export function normalizeWorkflowName(workflowName: string): string {
 }
 
 export function resolveWorkflowDirectory(cwd: string, workflowName: string, workflowRoots: string[] | undefined): string {
-  for (const root of workflowRoots?.length ? workflowRoots : [path.resolve(cwd, ".pi", "workflows")]) {
+  for (const root of workflowRoots?.length ? workflowRoots : [path.resolve(cwd, PROJECT_CONFIG_DIR, "workflows")]) {
     const direct = path.resolve(root);
     const child = path.join(direct, workflowName);
     if (existsSync(path.join(child, "workflow.js"))) return child;

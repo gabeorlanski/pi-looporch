@@ -14,6 +14,10 @@ interface TestSessionStartEvent {
 }
 
 type TestSessionStartHandler = (event: TestSessionStartEvent, ctx: ExtensionCommandContext) => Promise<void> | void;
+type TestSessionShutdownHandler = (
+  event: { type: "session_shutdown"; reason: "reload" },
+  ctx: ExtensionCommandContext,
+) => Promise<void> | void;
 
 export interface SentMessage {
   customType: string;
@@ -43,6 +47,7 @@ export interface ExtensionHarnessOptions {
   idle?: boolean;
   editorText?: string;
   sendMessage?: (message: SentMessage, options?: unknown) => void;
+  projectTrusted?: boolean;
 }
 
 export interface ExtensionHarness {
@@ -60,6 +65,7 @@ export interface ExtensionHarness {
   customOpenCount: () => number;
   closeCustom: () => void;
   sessionStart: (reason?: "startup" | "reload") => Promise<void>;
+  sessionShutdown: () => Promise<void>;
   command: (name: string, args: string) => Promise<void>;
 }
 
@@ -80,6 +86,7 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
   let widgetPlacement: string | undefined;
   let terminalInputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
   const sessionStartHandlers: TestSessionStartHandler[] = [];
+  const sessionShutdownHandlers: TestSessionShutdownHandler[] = [];
   const sessionId = options.sessionId ?? "test-session";
   const pi = {
     registerTool(tool: ToolDefinition): void {
@@ -90,6 +97,7 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
     },
     on(event: string, handler: unknown): void {
       if (event === "session_start") sessionStartHandlers.push(handler as TestSessionStartHandler);
+      if (event === "session_shutdown") sessionShutdownHandlers.push(handler as TestSessionShutdownHandler);
     },
     sendMessage(message: SentMessage, sendOptions?: unknown): void {
       if (options.sendMessage) {
@@ -115,6 +123,7 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
       void options.cwd;
     },
     isIdle: () => options.idle ?? true,
+    isProjectTrusted: () => options.projectTrusted ?? true,
     ui: {
       notify(message: string, type?: "info" | "warning" | "error"): void {
         notifications.push({ message, type });
@@ -197,6 +206,11 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
     closeCustom: () => closeActiveCustom?.(),
     async sessionStart(reason = "reload") {
       await Promise.all(sessionStartHandlers.map((handler) => Promise.resolve(handler({ type: "session_start", reason }, ctx))));
+    },
+    async sessionShutdown() {
+      await Promise.all(
+        sessionShutdownHandlers.map((handler) => Promise.resolve(handler({ type: "session_shutdown", reason: "reload" }, ctx))),
+      );
     },
     async command(name, args) {
       const command = commands.get(name);

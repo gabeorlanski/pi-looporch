@@ -4,7 +4,10 @@ import path from "node:path";
 import type { WorkflowMetadata } from "./runtime/types.ts";
 import { parseWorkflowSourceMetadata } from "./workflow/metadata.ts";
 import { normalizeWorkflowName } from "./workflow/paths.ts";
+import { PROJECT_CONFIG_DIR } from "./workflow/config-dir.ts";
+import { withWorkflowPublishLock } from "./workflow/publish-lock.ts";
 import { readProjectWorkflowSettings } from "./workflow/settings.ts";
+import { errorMessage } from "./errors.ts";
 
 export interface WorkflowReference {
   name: string;
@@ -13,16 +16,21 @@ export interface WorkflowReference {
   metadata: WorkflowMetadata;
 }
 
-export async function workflowRootsForProject(cwd: string): Promise<string[]> {
+export async function workflowRootsForProject(cwd: string, projectTrusted: boolean): Promise<string[]> {
   const projectRoot = path.resolve(cwd);
-  const localRoot = path.join(projectRoot, ".pi", "workflows");
+  const localRoot = path.join(projectRoot, PROJECT_CONFIG_DIR, "workflows");
+  if (!projectTrusted) return [];
   const settings = await readProjectWorkflowSettings(projectRoot);
   const configuredRoots = settings.workflowDirs.map((workflowDir) => path.resolve(projectRoot, workflowDir));
   return [...new Set([localRoot, ...configuredRoots])];
 }
 
-export async function discoverWorkflows(cwd: string): Promise<WorkflowReference[]> {
-  const roots = await workflowRootsForProject(cwd);
+export async function discoverWorkflows(cwd: string, projectTrusted: boolean): Promise<WorkflowReference[]> {
+  return await withWorkflowPublishLock(cwd, () => discoverWorkflowsUnlocked(cwd, projectTrusted));
+}
+
+export async function discoverWorkflowsUnlocked(cwd: string, projectTrusted: boolean): Promise<WorkflowReference[]> {
+  const roots = await workflowRootsForProject(cwd, projectTrusted);
   const byName = new Map<string, WorkflowReference>();
   for (const root of roots) {
     for (const workflow of await discoverWorkflowsInRoot(root)) {
@@ -61,7 +69,8 @@ async function readWorkflowReference(dir: string, name: string): Promise<Workflo
 async function readWorkflowReferenceIfValid(dir: string, name: string): Promise<WorkflowReference | undefined> {
   try {
     return await readWorkflowReference(dir, name);
-  } catch {
+  } catch (error) {
+    console.info(`Skipped invalid workflow ${path.join(dir, "workflow.js")}: ${errorMessage(error)}`);
     return undefined;
   }
 }

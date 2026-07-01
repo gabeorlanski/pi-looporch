@@ -24,7 +24,7 @@ pi -e ./extensions/workflow.ts
 
 ## Run A Workflow
 
-Saved workflows live under `.pi/workflows/<name>/workflow.js`.
+Saved workflows live under the pi project config directory, normally `.pi/workflows/<name>/workflow.js`. Project workflows and project workflow settings are honored only after pi trusts the project.
 
 ```text
 /workflow <name> [input]
@@ -53,7 +53,7 @@ behavior, or artifacts.
 While a workflow runs from a named command or from the current-session agent's
 `run_workflow` tool call, pi shows a compact widget below the editor. The widget
 reattaches within the same parent Pi session after extension reloads from
-transient per-run files under `.pi/workflow-runs/active/` and the run's latest
+transient per-run files under the project config directory, normally `.pi/workflow-runs/active/`, and the run's latest
 `snapshot.json`. Runs from other sessions in the same project directory are not
 shown as this session's active workflow. Run `/view-workflow` to open the
 inspector directly, or press `Down` on an empty prompt to select the widget,
@@ -153,8 +153,9 @@ paths, and `@workflow/...` paths.
 
 ## Settings
 
-Project settings live in `.pi/settings.json`. Global settings can live in
-`~/.pi/agent/settings.json`; project settings win.
+Project settings live in the pi project config directory, normally `.pi/settings.json`. Global settings can live in
+`~/.pi/agent/settings.json`; project settings win after the project is trusted.
+Configured `workflowDirs` are intentionally project-local settings; global settings do not add workflow roots.
 
 ```json
 {

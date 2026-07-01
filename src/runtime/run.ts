@@ -4,6 +4,7 @@ import type { RunWorkflowOptions, WorkflowPhaseMetadata, WorkflowRunResult, Work
 import { normalizeWorkflowName, resolveWorkflowDirectory } from "../workflow/paths.ts";
 import { compileWorkflow } from "../workflow/sandbox.ts";
 import { writeWorkflowFinalOutput, writeWorkflowOutputManifest } from "../workflow/outputs.ts";
+import { withWorkflowPublishLock } from "../workflow/publish-lock.ts";
 import type { ActiveWorkflowRuntime } from "./context.ts";
 import { workflowGlobals } from "./globals.ts";
 import { parseWorkflowSourceMetadata } from "../workflow/metadata.ts";
@@ -15,9 +16,15 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
   throwIfWorkflowAborted(options.signal);
   const workflowName = normalizeWorkflowName(options.workflowName);
   const maxParallelAgents = normalizeMaxParallelAgents(options.maxParallelAgents);
-  const workflowDir = resolveWorkflowDirectory(options.cwd, workflowName, options.workflowRoots);
-  const entryFile = path.join(workflowDir, "workflow.js");
-  const source = await readFile(entryFile, "utf8");
+  const { workflowDir, entryFile, source } = await withWorkflowPublishLock(options.cwd, async () => {
+    const resolvedWorkflowDir = resolveWorkflowDirectory(options.cwd, workflowName, options.workflowRoots);
+    const resolvedEntryFile = path.join(resolvedWorkflowDir, "workflow.js");
+    return {
+      workflowDir: resolvedWorkflowDir,
+      entryFile: resolvedEntryFile,
+      source: await readFile(resolvedEntryFile, "utf8"),
+    };
+  });
   const metadata = parseWorkflowSourceMetadata(source, workflowName, entryFile);
 
   const plannedPhases = cloneSerializable(metadata.phases) as WorkflowPhaseMetadata[];

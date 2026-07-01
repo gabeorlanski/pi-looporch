@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { clearRunningWorkflowUi, updateRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
 import type { WorkflowSnapshot } from "../src/runtime/types.ts";
-import { registerActiveWorkflowRun, removeActiveWorkflowRun } from "../src/workflow/active-runs.ts";
+import { readActiveWorkflowRuns, registerActiveWorkflowRun, removeActiveWorkflowRun } from "../src/workflow/active-runs.ts";
 import { writeWorkflowOutputManifest, writeWorkflowSnapshot } from "../src/workflow/outputs.ts";
 import { createExtensionHarness, waitForCondition, writeProjectWorkflow } from "./extension-harness.ts";
 
@@ -176,6 +176,53 @@ void test("session_start_does_not_restore_workflow_owned_by_another_session", as
   await removeActiveWorkflowRun(project, "run-other-session");
 });
 
+void test("session_start_delivers_terminal_workflow_record_after_reload", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const outputsDir = path.join(project, "outputs", "terminal-run");
+  const resultPath = path.join(outputsDir, "outputs", "final.json");
+  await registerActiveWorkflowRun(project, {
+    runId: "run-terminal",
+    workflowName: "terminal",
+    outputsDir,
+    startedAt: Date.now(),
+    ownerSessionId: "test-session",
+  });
+  await writeWorkflowOutputManifest({
+    outputsDir,
+    workflowName: "terminal",
+    status: "done",
+    resultPath,
+  });
+  const harness = createExtensionHarness({ cwd: project });
+
+  await harness.sessionStart("reload");
+
+  assert.equal(harness.sentMessages.length, 1);
+  assert.match(harness.sentMessages[0].message.content, /Workflow 'terminal' complete\./);
+  assert.match(harness.sentMessages[0].message.content, /Workflow result: .*final\.json/);
+  assert.match(harness.sentMessages[0].message.content, /Workflow session logs: /);
+  assert.deepEqual(await readActiveWorkflowRuns(project, "test-session"), []);
+});
+
+void test("session_shutdown_disposes_workflow_ui_and_late_clear_is_noop", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const harness = createExtensionHarness({ cwd: project });
+
+  updateRunningWorkflowUi(harness.ctx, {
+    runId: "run-shutdown",
+    snapshot: runningWorkflowSnapshot("shutdown"),
+    abortWorkflow: () => undefined,
+  });
+  await harness.sessionShutdown();
+  const statusCountAfterShutdown = harness.statusUpdates.length;
+  const widgetCountAfterShutdown = harness.widgetUpdates.length;
+
+  clearRunningWorkflowUi(harness.ctx, "run-shutdown");
+
+  assert.equal(harness.statusUpdates.length, statusCountAfterShutdown);
+  assert.equal(harness.widgetUpdates.length, widgetCountAfterShutdown);
+});
+
 void test("view_workflow_command_does_not_use_same_cwd_workflow_from_another_session", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const ownerHarness = createExtensionHarness({ cwd: project, sessionId: "owner-session" });
@@ -187,10 +234,22 @@ void test("view_workflow_command_does_not_use_same_cwd_workflow_from_another_ses
     abortWorkflow: () => undefined,
   });
 
-  await viewerHarness.command("view-workflow", "");
+  await assertNoRunningWorkflowToView(viewerHarness);
+  clearRunningWorkflowUi(ownerHarness.ctx, "run-owner");
+});
 
-  assert.equal(viewerHarness.customOpenCount(), 0);
-  assert.deepEqual(viewerHarness.notifications.at(-1), { message: "No running workflows to view.", type: "warning" });
+void test("view_workflow_command_does_not_use_workflow_from_another_terminal_with_same_session", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const ownerHarness = createExtensionHarness({ cwd: project, sessionId: "shared-session" });
+  const viewerHarness = createExtensionHarness({ cwd: project, sessionId: "shared-session" });
+
+  updateRunningWorkflowUi(ownerHarness.ctx, {
+    runId: "run-owner",
+    snapshot: runningWorkflowSnapshot("owner-workflow"),
+    abortWorkflow: () => undefined,
+  });
+
+  await assertNoRunningWorkflowToView(viewerHarness);
   clearRunningWorkflowUi(ownerHarness.ctx, "run-owner");
 });
 
@@ -202,6 +261,24 @@ void test("view_workflow_command_warns_when_no_workflow_is_running", async () =>
 
   assert.deepEqual(harness.notifications.at(-1), { message: "No running workflows to view.", type: "warning" });
   assert.equal(harness.customOpenCount(), 0);
+});
+
+void test("workflow_command_requires_project_trust_before_reading_project_workflows", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  await writeProjectWorkflow(
+    project,
+    "echo",
+    `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow(input) {
+  return input;
+}`,
+  );
+  const harness = createExtensionHarness({ cwd: project, projectTrusted: false });
+
+  await harness.command("workflow", "echo message=hello");
+
+  assert.equal(harness.sentMessages.length, 0);
+  assert.deepEqual(harness.notifications.at(-1), { message: "Trust this project before using project workflows.", type: "warning" });
 });
 
 void test("workflow_settings_command_writes_project_settings", async () => {
@@ -236,6 +313,30 @@ void test("workflow_settings_command_shows_readable_current_settings", async () 
   assert.match(harness.sentMessages[0].message.content, /Max parallel agents: 4/);
   assert.match(harness.sentMessages[0].message.content, /Project: \.pi\/settings\.json/);
   assert.match(harness.sentMessages[0].message.content, /\/workflow-settings maxParallelAgents=8/);
+});
+
+void test("workflow_settings_command_explains_untrusted_project_settings_are_ignored", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  await mkdir(path.join(project, ".pi"), { recursive: true });
+  await writeFile(path.join(project, ".pi", "settings.json"), '{"workflow":{"maxParallelAgents":8}}\n', "utf8");
+  const harness = createExtensionHarness({ cwd: project, projectTrusted: false });
+
+  await harness.command("workflow-settings", "");
+
+  assert.equal(harness.sentMessages.length, 1);
+  assert.match(harness.sentMessages[0].message.content, /Project settings are ignored until this project is trusted/);
+  assert.match(harness.sentMessages[0].message.content, /Max parallel agents: 4/);
+  assert.doesNotMatch(harness.sentMessages[0].message.content, /Max parallel agents: 8/);
+});
+
+void test("workflow_review_checks_trust_before_progress_notification", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const harness = createExtensionHarness({ cwd: project, projectTrusted: false });
+
+  await harness.command("workflow-review", "latest");
+
+  assert.deepEqual(harness.notifications, [{ message: "Trust this project before reviewing workflow session logs.", type: "warning" }]);
+  assert.equal(harness.sentMessages.length, 0);
 });
 
 void test("existing_workflow_freeform_input_is_steered_in_current_session", async () => {
@@ -318,4 +419,14 @@ function runningWorkflowSnapshot(workflowName = "viewable"): WorkflowSnapshot {
     messages: [],
     status: "running",
   };
+}
+
+async function assertNoRunningWorkflowToView(harness: ReturnType<typeof createExtensionHarness>): Promise<void> {
+  const command = harness.command("view-workflow", "");
+  await waitForCondition(() => harness.customUpdates.length > 0 || harness.notifications.length > 0);
+  if (harness.customOpenCount() > 0) harness.closeCustom();
+  await command;
+
+  assert.equal(harness.customOpenCount(), 0);
+  assert.deepEqual(harness.notifications.at(-1), { message: "No running workflows to view.", type: "warning" });
 }

@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { startBackgroundWorkflowRun, type BackgroundWorkflowRun } from "../background-runs.ts";
-import { discoverWorkflows, type WorkflowReference, workflowRootsForProject } from "../discovery.ts";
+import { discoverWorkflowsUnlocked, type WorkflowReference, workflowRootsForProject } from "../discovery.ts";
 import { extractWorkflowInputContract, validateWorkflowInput, type WorkflowInputContract } from "../input.ts";
 import type { WorkflowAgent, WorkflowSnapshot } from "../runtime/types.ts";
 import { normalizeWorkflowName } from "./paths.ts";
+import { withWorkflowPublishLock } from "./publish-lock.ts";
 import { createWorkflowRunId } from "./run-id.ts";
 import { readWorkflowSettings } from "./settings.ts";
 
@@ -22,9 +23,13 @@ export interface StartedWorkflowRun extends PreparedWorkflowRun {
   run: BackgroundWorkflowRun;
 }
 
-export async function resolveWorkflowReference(cwd: string, workflowName: string): Promise<WorkflowReference> {
+export async function resolveWorkflowReference(cwd: string, workflowName: string, projectTrusted: boolean): Promise<WorkflowReference> {
+  return await withWorkflowPublishLock(cwd, () => resolveWorkflowReferenceUnlocked(cwd, workflowName, projectTrusted));
+}
+
+async function resolveWorkflowReferenceUnlocked(cwd: string, workflowName: string, projectTrusted: boolean): Promise<WorkflowReference> {
   const normalizedName = normalizeWorkflowName(workflowName);
-  const workflow = (await discoverWorkflows(cwd)).find((candidate) => candidate.name === normalizedName);
+  const workflow = (await discoverWorkflowsUnlocked(cwd, projectTrusted)).find((candidate) => candidate.name === normalizedName);
   if (!workflow) throw new Error(`Workflow '${normalizedName}' not found.`);
   return workflow;
 }
@@ -33,26 +38,41 @@ export async function readWorkflowInputContract(workflow: WorkflowReference): Pr
   return extractWorkflowInputContract(await readFile(workflow.entryFile, "utf8"));
 }
 
+/** Resolves a workflow and reads its input contract while holding the workflow publish lock. */
+export async function resolveWorkflowInputContract(options: {
+  cwd: string;
+  workflowName: string;
+  projectTrusted: boolean;
+}): Promise<{ workflow: WorkflowReference; inputContract: WorkflowInputContract }> {
+  return await withWorkflowPublishLock(options.cwd, async () => {
+    const workflow = await resolveWorkflowReferenceUnlocked(options.cwd, options.workflowName, options.projectTrusted);
+    return { workflow, inputContract: await readWorkflowInputContract(workflow) };
+  });
+}
+
 export async function prepareWorkflowRun(options: {
   cwd: string;
   workflowName: string;
   input: unknown;
   agentDir: string;
+  projectTrusted: boolean;
 }): Promise<PreparedWorkflowRun> {
-  const workflow = await resolveWorkflowReference(options.cwd, options.workflowName);
-  const input = validateWorkflowInput(options.input, workflow.name, await readWorkflowInputContract(workflow));
-  const runId = createWorkflowRunId(workflow.name);
-  const workflowSettings = await readWorkflowSettings(options.cwd, options.agentDir);
-  return {
-    runId,
-    cwd: options.cwd,
-    workflowName: workflow.name,
-    workflow,
-    input,
-    workflowRoots: await workflowRootsForProject(options.cwd),
-    maxParallelAgents: workflowSettings.maxParallelAgents,
-    initialSnapshot: initialWorkflowSnapshot(workflow, input),
-  };
+  const workflowSettings = await readWorkflowSettings(options.cwd, options.agentDir, options.projectTrusted);
+  return await withWorkflowPublishLock(options.cwd, async () => {
+    const workflow = await resolveWorkflowReferenceUnlocked(options.cwd, options.workflowName, options.projectTrusted);
+    const input = validateWorkflowInput(options.input, workflow.name, await readWorkflowInputContract(workflow));
+    const runId = createWorkflowRunId(workflow.name);
+    return {
+      runId,
+      cwd: options.cwd,
+      workflowName: workflow.name,
+      workflow,
+      input,
+      workflowRoots: await workflowRootsForProject(options.cwd, options.projectTrusted),
+      maxParallelAgents: workflowSettings.maxParallelAgents,
+      initialSnapshot: initialWorkflowSnapshot(workflow, input),
+    };
+  });
 }
 
 export async function startPreparedWorkflowRun(options: {
@@ -85,6 +105,7 @@ export async function startWorkflowRun(options: {
   agentDir: string;
   agent: WorkflowAgent;
   ownerSessionId: string;
+  projectTrusted: boolean;
   signal?: AbortSignal;
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
 }): Promise<StartedWorkflowRun> {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { errorMessage } from "../errors.ts";
@@ -144,8 +144,13 @@ async function writeJsonFileAtomic(filePath: string, value: unknown): Promise<vo
 
 async function writeFileAtomic(filePath: string, content: string): Promise<void> {
   const temporaryPath = `${filePath}.${String(process.pid)}.${randomUUID()}.tmp`;
-  await writeFile(temporaryPath, content, "utf8");
-  await rename(temporaryPath, filePath);
+  try {
+    await writeFile(temporaryPath, content, "utf8");
+    await rename(temporaryPath, filePath);
+  } catch (error) {
+    await rm(temporaryPath, { force: true });
+    throw error;
+  }
 }
 
 function slugText(value: string, maxLength: number): string {

@@ -8,7 +8,9 @@ import { saveWorkflowDraft } from "./request.ts";
 import { workflowDesignGuidance } from "./authoring-guide.ts";
 import { startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
 import { readWorkflowDraft } from "./workflow/drafts.ts";
+import { PROJECT_CONFIG_DIR } from "./workflow/config-dir.ts";
 import { normalizeWorkflowName } from "./workflow/paths.ts";
+import { withWorkflowPublishLock } from "./workflow/publish-lock.ts";
 
 /** Dependencies used to construct workflow tools for either an extension session or tests. */
 export interface WorkflowToolsOptions {
@@ -34,6 +36,7 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const cwd = options.cwd ?? ctx.cwd;
+      if (!ctx.isProjectTrusted()) throw new Error("Trust this project before running project workflows.");
       const workflowName = normalizeWorkflowName(params.name);
       const agent = options.agent ?? options.agentForContext?.(ctx);
       if (!agent) throw new Error("run_workflow requires a workflow agent");
@@ -41,6 +44,7 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
         ctx,
         cwd,
         workflowName,
+        projectTrusted: true,
         input: params.input ?? {},
         agentDir: getAgentDir(),
         agent,
@@ -128,23 +132,26 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
     description: "Save a new workflow from a complete draft directory.",
     promptSnippet: "propose_workflow: Save a new workflow from a complete draft directory, not a workflow.js file.",
     parameters: Type.Object({
-      name: Type.String({ description: "Workflow slug to save under .pi/workflows/<slug>" }),
+      name: Type.String({ description: `Workflow slug to save under ${PROJECT_CONFIG_DIR}/workflows/<slug>` }),
       draftDir: Type.String({
         description: "Project-relative draft workflow directory containing workflow.js plus prompts/ or other resources",
       }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const cwd = options.cwd ?? ctx.cwd;
+      if (!ctx.isProjectTrusted()) throw new Error("Trust this project before saving project workflows.");
       const name = normalizeWorkflowName(params.name);
-      const draft = await readWorkflowDraft({
-        cwd,
-        name,
-        draftDir: params.draftDir,
-        toolName: "propose_workflow",
+      await withWorkflowPublishLock(cwd, async () => {
+        const draft = await readWorkflowDraft({
+          cwd,
+          name,
+          draftDir: params.draftDir,
+          toolName: "propose_workflow",
+        });
+        await saveWorkflowDraft({ cwd, draft });
       });
-      await saveWorkflowDraft({ cwd, draft });
       return {
-        content: [{ type: "text", text: `Saved workflow '${name}' to .pi/workflows/${name}/.` }],
+        content: [{ type: "text", text: `Saved workflow '${name}' to ${PROJECT_CONFIG_DIR}/workflows/${name}/.` }],
         details: { workflowName: name, saved: true },
       };
     },

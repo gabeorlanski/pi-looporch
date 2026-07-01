@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -23,6 +23,22 @@ void test("workflow_child_resource_loader_disables_ambient_extensions", async ()
   await resourceLoader.reload();
 
   assert.equal(resourceLoader.getExtensions().extensions.length, 0);
+});
+
+void test("workflow_child_settings_manager_ignores_project_settings_when_untrusted", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-settings-"));
+  const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-settings-home-"));
+  await mkdir(path.join(project, ".pi"), { recursive: true });
+  await writeFile(
+    path.join(project, ".pi", "settings.json"),
+    '{"theme":"project-theme","extensions":["./project-extension.ts"]}\n',
+    "utf8",
+  );
+
+  const settingsManager = SettingsManager.create(project, agentDir, { projectTrusted: false });
+
+  assert.deepEqual(settingsManager.getProjectSettings(), {});
+  assert.deepEqual(settingsManager.getExtensionPaths(), []);
 });
 
 void test("workflow_child_extension_paths_resolve_project_relative_entries", () => {

@@ -20,6 +20,7 @@ import { readWorkflowSettings } from "./workflow/settings.ts";
 
 export interface PiWorkflowAgentOptions {
   cwd: string;
+  projectTrusted: boolean;
   tools?: ToolDefinition[];
   session?: Partial<CreateAgentSessionOptions>;
 }
@@ -47,8 +48,9 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
     const model = agentOptions.model ? resolveModel(modelRegistry, agentOptions.model) : undefined;
     const projectCwd = path.resolve(options.cwd);
     const effectiveCwd = resolveWorkflowAgentCwd(options.cwd, agentOptions.cwd) ?? projectCwd;
-    const workflowSettings = await readWorkflowSettings(projectCwd, agentDir);
-    const settingsManager = options.session?.settingsManager ?? SettingsManager.create(effectiveCwd, agentDir);
+    const workflowSettings = await readWorkflowSettings(projectCwd, agentDir, options.projectTrusted);
+    const settingsManager =
+      options.session?.settingsManager ?? SettingsManager.create(effectiveCwd, agentDir, { projectTrusted: options.projectTrusted });
     const resourceLoader =
       options.session?.resourceLoader ??
       createWorkflowAgentResourceLoader(

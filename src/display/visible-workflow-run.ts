@@ -10,6 +10,7 @@ export interface StartVisibleWorkflowRunOptions {
   workflowName: string;
   input: unknown;
   agentDir: string;
+  projectTrusted: boolean;
   agent: WorkflowAgent;
   signal?: AbortSignal;
   abortWorkflow?: () => void;
@@ -38,6 +39,7 @@ export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOp
       workflowName: options.workflowName,
       input: options.input,
       agentDir: options.agentDir,
+      projectTrusted: options.projectTrusted,
     });
     runId = prepared.runId;
     const abortWorkflow = options.abortWorkflow ?? (() => run?.abort());

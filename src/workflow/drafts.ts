@@ -1,6 +1,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import type { GeneratedWorkflowDraft } from "../request.ts";
+import { PROJECT_CONFIG_DIR } from "./config-dir.ts";
 import { parseWorkflowSourceMetadata } from "./metadata.ts";
 
 export interface WorkflowDraftReadOptions {
@@ -62,9 +63,9 @@ function resolveDraftWorkflowDirectory(cwd: string, draftDir: string, toolName: 
   if (projectRelative.startsWith("..") || path.isAbsolute(projectRelative)) {
     throw new Error(`${toolName} draftDir must stay inside the project directory`);
   }
-  const publishedRoot = path.join(projectRoot, ".pi", "workflows");
+  const publishedRoot = path.join(projectRoot, PROJECT_CONFIG_DIR, "workflows");
   if (isInsideOrEqual(publishedRoot, resolved) || isInsideOrEqual(resolved, publishedRoot)) {
-    throw new Error(`${toolName} draftDir must not be inside, equal to, or an ancestor of .pi/workflows`);
+    throw new Error(`${toolName} draftDir must not be inside, equal to, or an ancestor of ${PROJECT_CONFIG_DIR}/workflows`);
   }
   return resolved;
 }

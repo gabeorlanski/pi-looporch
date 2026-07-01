@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { PROJECT_CONFIG_DIR } from "./config-dir.ts";
 
 export interface ActiveWorkflowRunRecord {
   runId: string;
@@ -30,8 +31,13 @@ export async function registerActiveWorkflowRun(cwd: string, record: ActiveWorkf
   const filePath = activeWorkflowRunPath(cwd, record.runId);
   await mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.${String(process.pid)}.${randomUUID()}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(record, null, 2)}\n`, "utf8");
-  await rename(temporaryPath, filePath);
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+    await rename(temporaryPath, filePath);
+  } catch (error) {
+    await rm(temporaryPath, { force: true });
+    throw error;
+  }
 }
 
 export async function removeActiveWorkflowRun(cwd: string, runId: string): Promise<void> {
@@ -39,7 +45,7 @@ export async function removeActiveWorkflowRun(cwd: string, runId: string): Promi
 }
 
 function activeWorkflowRunsDir(cwd: string): string {
-  return path.join(cwd, ".pi", "workflow-runs", "active");
+  return path.join(cwd, PROJECT_CONFIG_DIR, "workflow-runs", "active");
 }
 
 function activeWorkflowRunPath(cwd: string, runId: string): string {

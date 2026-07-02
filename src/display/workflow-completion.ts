@@ -24,7 +24,7 @@ export function workflowCompletionMessage(info: WorkflowCompletionInfo): string 
 
 export function workflowCompletionReviewPrompt(info: WorkflowCompletionInfo): string {
   return [
-    `Workflow '${info.workflowName}' completed.`,
+    `Automated workflow completion handoff: workflow '${info.workflowName}' completed.`,
     "",
     "Review and summarize the workflow result for the user. If the result is a report, surface the report directly and add only the brief orientation needed to make it useful. If it is structured data, summarize the key outcomes, decisions, errors, and next actions. Read the output paths only if the preview is insufficient.",
     "",

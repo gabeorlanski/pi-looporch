@@ -33,17 +33,17 @@ export default async function workflow(input) {
       (update) => update?.some((line) => line.includes("workflow echo")) && update.some((line) => line.includes("0/0 agents done")),
     ),
   );
-  await waitForCondition(
-    () => harness.sentMessages.length === 1 && harness.sentUserMessages.length === 1 && harness.statusUpdates.at(-1) === undefined,
-  );
+  await waitForCondition(() => harness.sentMessages.length === 2 && harness.statusUpdates.at(-1) === undefined);
+  assert.deepEqual(harness.sentUserMessages, []);
   assert.match(harness.sentMessages[0].message.content, /Workflow 'echo' complete\.\n\nResult:\n\n```json/);
   assert.match(harness.sentMessages[0].message.content, /hello world/);
   assert.match(harness.sentMessages[0].message.content, /Outputs:\n- Workflow result: .*final\.json/);
-  const reviewPrompt = harness.sentUserMessages[0].message;
-  assert.equal(typeof reviewPrompt, "string");
-  assert.match(reviewPrompt as string, /Review and summarize the workflow result for the user/);
-  assert.match(reviewPrompt as string, /hello world/);
-  assert.equal(harness.sentUserMessages[0].options, undefined);
+  assert.deepEqual(harness.sentMessages[1].options, { triggerTurn: true });
+  assert.equal(harness.sentMessages[1].message.display, true);
+  assert.equal((harness.sentMessages[1].message.details as { kind?: string }).kind, "workflow-completion-handoff");
+  assert.match(harness.sentMessages[1].message.content, /Automated workflow completion handoff: workflow 'echo' completed/);
+  assert.match(harness.sentMessages[1].message.content, /Review and summarize the workflow result for the user/);
+  assert.match(harness.sentMessages[1].message.content, /hello world/);
   const details = harness.sentMessages[0].message.details as { resultPath?: string; workflowName?: string };
   assert.equal(details.workflowName, "echo");
   assert.ok(details.resultPath);
@@ -95,12 +95,34 @@ export default async function workflow() {
   const harness = createExtensionHarness({ cwd: project });
 
   await harness.command("workflow", "report");
-  await waitForCondition(() => harness.sentMessages.length === 1 && harness.sentUserMessages.length === 1);
+  await waitForCondition(() => harness.sentMessages.length === 2);
+  assert.deepEqual(harness.sentUserMessages, []);
 
   assert.match(harness.sentMessages[0].message.content, /Report:\n\n# Report\n\nEverything passed\./);
   assert.ok(harness.sentMessages[0].message.content.includes('Additional data:\n\n```json\n{\n  "metrics": {\n    "ok": true\n  }\n}'));
-  assert.match(harness.sentUserMessages[0].message as string, /# Report\n\nEverything passed\./);
-  assert.ok((harness.sentUserMessages[0].message as string).includes('"metrics": {\n    "ok": true\n  }'));
+  assert.match(harness.sentMessages[1].message.content, /# Report\n\nEverything passed\./);
+  assert.ok(harness.sentMessages[1].message.content.includes('"metrics": {\n    "ok": true\n  }'));
+});
+
+void test("existing_workflow_completion_handoff_triggers_follow_up_turn_when_session_is_busy", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  await writeProjectWorkflow(
+    project,
+    "busy-complete",
+    `export const metadata = { name: "busy-complete", description: "Complete workflow", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return { ok: true };
+}`,
+  );
+  const harness = createExtensionHarness({ cwd: project, idle: false });
+
+  await harness.command("workflow", "busy-complete");
+  await waitForCondition(() => harness.sentMessages.length === 2);
+
+  assert.deepEqual(harness.sentMessages[1].options, { triggerTurn: true, deliverAs: "followUp" });
+  assert.deepEqual(harness.sentUserMessages, []);
+  assert.equal((harness.sentMessages[1].message.details as { kind?: string }).kind, "workflow-completion-handoff");
+  assert.match(harness.sentMessages[1].message.content, /Automated workflow completion handoff/);
 });
 
 void test("registered_run_workflow_tool_shows_running_tui_widget", async () => {

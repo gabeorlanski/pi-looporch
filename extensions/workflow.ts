@@ -181,18 +181,30 @@ async function settleBackgroundWorkflowRun(
 }
 
 function completeBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, result: BackgroundWorkflowRunResult): void {
+  const details = {
+    workflowName: result.workflowName,
+    outputsDir: result.outputsDir,
+    resultPath: result.resultPath,
+    sessionLogDir: result.sessionLogDir,
+  };
   pi.sendMessage({
     customType: WORKFLOW_MESSAGE_TYPE,
     content: workflowCompletionMessage(result),
     display: true,
-    details: {
-      workflowName: result.workflowName,
-      outputsDir: result.outputsDir,
-      resultPath: result.resultPath,
-      sessionLogDir: result.sessionLogDir,
-    },
+    details,
   });
-  pi.sendUserMessage(workflowCompletionReviewPrompt(result), ctx.isIdle() ? undefined : { deliverAs: "followUp" });
+  pi.sendMessage(
+    {
+      customType: WORKFLOW_MESSAGE_TYPE,
+      content: workflowCompletionReviewPrompt(result),
+      display: true,
+      details: {
+        kind: "workflow-completion-handoff",
+        ...details,
+      },
+    },
+    ctx.isIdle() ? { triggerTurn: true } : { triggerTurn: true, deliverAs: "followUp" },
+  );
 }
 
 function failBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, workflowName: string, error: unknown): void {

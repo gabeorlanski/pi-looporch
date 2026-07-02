@@ -24,7 +24,6 @@ interface RunningWorkflowUiState {
   activeRunId: string;
   armed: boolean;
   overlayOpen: boolean;
-  statusLine?: string;
   tui?: TUI;
   unsubscribeInput?: () => void;
   animationTimer?: ReturnType<typeof setInterval>;
@@ -91,7 +90,6 @@ export function updateRunningWorkflowUi(ctx: ExtensionContext, update: RunningWo
     }
     existing.activeRunId = update.runId;
   }
-  updateRunningWorkflowStatus(ctx, state);
   requestRender(state);
 }
 
@@ -107,10 +105,7 @@ export function clearRunningWorkflowUi(ctx: ExtensionContext, runId?: string): v
   const state = runningWorkflowUiStates.get(ctx) ?? runningWorkflowUiStatesByScope.get(scope);
   if (state && runId) removeWorkflowRun(state, runId);
   if (dynamicWorkflowCount(ctx) > 0) {
-    if (state) {
-      updateRunningWorkflowStatus(ctx, state);
-      requestRender(state);
-    }
+    if (state) requestRender(state);
     return;
   }
   if (state?.animationTimer) clearInterval(state.animationTimer);
@@ -268,18 +263,4 @@ function requestRender(state: RunningWorkflowUiState): void {
 
 function dynamicWorkflowCount(ctx: ExtensionContext): number {
   return dynamicWorkflowCounts.get(ctx) ?? 0;
-}
-
-function dynamicWorkflowStatusLine(count: number): string {
-  return `Waiting for ${String(count)} dynamic workflow${count === 1 ? "" : "s"} to finish`;
-}
-
-function updateRunningWorkflowStatus(ctx: ExtensionContext, state: RunningWorkflowUiState): void {
-  const count = dynamicWorkflowCount(ctx);
-  const workflow = activeRun(state).model.workflow();
-  const fallback = `${workflow.name}: ${workflow.status.toUpperCase()} · ${String(workflow.agentsDone)}/${String(workflow.agentsTotal)} agents · ${String(workflow.tokensTotal)} tokens`;
-  const statusLine = count > 0 ? dynamicWorkflowStatusLine(count) : fallback;
-  if (statusLine === state.statusLine) return;
-  state.statusLine = statusLine;
-  ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, statusLine);
 }

@@ -58,7 +58,6 @@ export interface ExtensionHarness {
   sentMessages: { message: SentMessage; options: unknown }[];
   sentUserMessages: { message: unknown; options: unknown }[];
   notifications: { message: string; type?: "info" | "warning" | "error" }[];
-  statusUpdates: (string | undefined)[];
   widgetUpdates: (string[] | undefined)[];
   customUpdates: string[][];
   widgetUpdatesFor: (key: string) => (string[] | undefined)[];
@@ -79,7 +78,6 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
   const sentMessages: { message: SentMessage; options: unknown }[] = [];
   const sentUserMessages: { message: unknown; options: unknown }[] = [];
   const notifications: { message: string; type?: "info" | "warning" | "error" }[] = [];
-  const statusUpdates: (string | undefined)[] = [];
   const widgetUpdates: (string[] | undefined)[] = [];
   const widgetUpdatesByKey = new Map<string, (string[] | undefined)[]>();
   const customUpdates: string[][] = [];
@@ -126,8 +124,8 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
     notify(message: string, type?: "info" | "warning" | "error"): void {
       notifications.push({ message, type });
     },
-    setStatus(key: string, text: string | undefined): void {
-      if (key === "workflow") statusUpdates.push(text);
+    setStatus(): void {
+      return undefined;
     },
     onTerminalInput(handler: (data: string) => { consume?: boolean } | undefined): () => void {
       terminalInputHandler = handler;
@@ -241,7 +239,6 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
     sentMessages,
     sentUserMessages,
     notifications,
-    statusUpdates,
     widgetUpdates,
     customUpdates,
     widgetUpdatesFor: (key) => widgetUpdatesByKey.get(key) ?? [],

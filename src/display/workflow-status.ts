@@ -60,7 +60,7 @@ export function renderWorkflowStatusList(statuses: WorkflowRunStatus[]): string 
 }
 
 export function workflowMonitorWidgetLines(statuses: WorkflowRunStatus[], ownerSessionId: string): string[] {
-  const active = statuses.filter((status) => status.status === "running");
+  const active = statuses.filter((status) => status.status === "running" && status.ownerSessionId !== ownerSessionId);
   if (active.length === 0) return [];
   if (active.length === 1) return singleWorkflowWidgetLines(active[0], ownerSessionId);
   return [

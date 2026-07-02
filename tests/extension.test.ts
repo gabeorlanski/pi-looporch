@@ -25,7 +25,6 @@ export default async function workflow(input) {
 
   await harness.command("workflow", 'echo message=hello count=10 debug=true files=src/index.ts,tests/index.test.ts note="hello world"');
 
-  assert.ok(harness.statusUpdates.includes("Waiting for 1 dynamic workflow to finish"));
   assert.equal(harness.widgetInstallCount(), 1);
   assert.equal(harness.widgetPlacement(), "belowEditor");
   await waitForCondition(() =>
@@ -33,7 +32,7 @@ export default async function workflow(input) {
       (update) => update?.some((line) => line.includes("workflow echo")) && update.some((line) => line.includes("0/0 agents done")),
     ),
   );
-  await waitForCondition(() => harness.sentMessages.length === 2 && harness.statusUpdates.at(-1) === undefined);
+  await waitForCondition(() => harness.sentMessages.length === 2);
   assert.deepEqual(harness.sentUserMessages, []);
   assert.match(harness.sentMessages[0].message.content, /Workflow 'echo' complete\.\n\nResult:\n\n```json/);
   assert.match(harness.sentMessages[0].message.content, /hello world/);
@@ -143,7 +142,6 @@ export default async function workflow(input) {
   const result = await tool.execute("call-1", { name: "tool-echo", input: { message: "hello" } }, undefined, undefined, harness.ctx);
 
   assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /Workflow tool-echo started in the background/);
-  assert.ok(harness.statusUpdates.includes("Waiting for 1 dynamic workflow to finish"));
   assert.equal(harness.widgetInstallCount(), 1);
   assert.equal(harness.widgetPlacement(), "belowEditor");
   assert.ok(
@@ -157,7 +155,6 @@ export default async function workflow(input) {
         notification.message.includes("Workflow 'tool-echo' complete") && notification.message.includes('"message": "hello"'),
     ),
   );
-  await waitForCondition(() => harness.statusUpdates.at(-1) === undefined);
 });
 
 void test("workflow_status_tool_reads_project_wide_active_runs", async () => {
@@ -297,7 +294,6 @@ export default async function workflow() {
   await assert.rejects(visible.run.finished, /child aborted/);
   assert.equal(childAbortSeen, true);
   assert.deepEqual(await readActiveWorkflowRuns(project), []);
-  assert.equal(harness.statusUpdates.at(-1), undefined);
 });
 
 void test("view_workflow_command_opens_running_workflow_inspector", async () => {
@@ -442,7 +438,7 @@ void test("session_start_shows_project_wide_monitor_widget_for_other_session_wor
   await removeActiveWorkflowRun(project, "run-project-monitor");
 });
 
-void test("session_start_project_monitor_widget_lists_all_active_workflows", async () => {
+void test("session_start_project_monitor_widget_lists_other_session_active_workflows", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const names = ["project-monitor-a", "project-monitor-b", "project-monitor-c", "project-monitor-d", "project-monitor-e"];
   await Promise.all(
@@ -464,7 +460,9 @@ void test("session_start_project_monitor_widget_lists_all_active_workflows", asy
       .widgetUpdatesFor("workflow-monitor")
       .some(
         (update) =>
-          update?.some((line) => line.includes("5 workflows active")) && names.every((name) => update.some((line) => line.includes(name))),
+          update?.some((line) => line.includes("4 workflows active")) &&
+          !update.some((line) => line.includes(names[0])) &&
+          names.slice(1).every((name) => update.some((line) => line.includes(name))),
       ),
   );
   await harness.sessionShutdown();
@@ -477,7 +475,7 @@ void test("workflow_monitor_timer_stops_before_using_replaced_session_context", 
   await writeMonitorRun(project, {
     runId: "run-replaced-session",
     workflowName: "replaced-session",
-    ownerSessionId: "current-session",
+    ownerSessionId: "other-session",
     startedAt: Date.now(),
   });
   const harness = createExtensionHarness({ cwd: project, sessionId: "current-session" });
@@ -538,7 +536,7 @@ export default async function workflow() {
   const harness = createExtensionHarness({ cwd: project });
 
   await harness.command("workflow", "fail");
-  await waitForCondition(() => harness.sentMessages.length === 1 && harness.statusUpdates.at(-1) === undefined);
+  await waitForCondition(() => harness.sentMessages.length === 1);
 
   assert.deepEqual(harness.notifications.at(-1), { message: "Workflow 'fail' failed: workflow exploded", type: "error" });
   assert.equal(harness.sentMessages[0].message.content, "Workflow 'fail' failed: workflow exploded");

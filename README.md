@@ -57,10 +57,10 @@ empty prompt to select it, `Enter` to inspect, and `Esc` or `Up` to return.
   ◐ review  reviewing src/auth.ts and tests/auth.test.ts        2/5 agents done · 1m12s · ↓18.4k tokens
 ```
 
-A passive project monitor also appears below the editor when any workflow is
-active in the current project, including workflows launched from another Pi
-session. Use `/workflow-status [--json] [--all] [latest|<ref>]` or the
-`workflow_status` tool for compact status without knowing the output directory.
+A passive project monitor also appears below the editor for workflows active in
+other Pi sessions for the same project. Use `/workflow-status [--json] [--all]
+[latest|<ref>]` or the `workflow_status` tool for compact status without knowing
+the output directory.
 
 Inspector view:
 

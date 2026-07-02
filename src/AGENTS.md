@@ -37,7 +37,7 @@ npm run check
 - Keep `agent(prompt, { cwd })` as a launch option for alternate child-agent working directories; resolve relative values from the workflow project cwd.
 - Encourage workflow authors to add `log(message)` for visible milestones and `trace(label, value?)` for structured handoff/debug data.
 - Treat structured JSON as a control surface: keep schemas bounded and compact, return manifest/status/IDs/paths, and put large reasoning/evidence/artifacts in files or JSONL.
-- Keep workflow results in output files and session logs, and surface a bounded result/report preview in completion messages. Command-launched workflows should use a visible automated follow-up handoff when asking the current agent to review or summarize the result.
+- Keep workflow results in output files and session logs, and surface a bounded result/report preview in command-launched completion handoffs. These handoffs should be visible automated user messages that trigger the current agent to review or summarize the result.
 - Keep abort and shutdown handling in the workflow lifecycle layer. Live visible runs abort on `session_shutdown`, settled runs await active-record cleanup, and stale active records from dead processes must not rehydrate.
 - Never estimate token counts; only report provider/session usage or zero/unknown when actual usage is unavailable.
 - Update tests and docs when exported behavior or workflow primitives change.

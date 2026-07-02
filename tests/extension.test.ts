@@ -8,7 +8,7 @@ import { startVisibleWorkflowRun } from "../src/display/visible-workflow-run.ts"
 import type { WorkflowAgent, WorkflowSnapshot } from "../src/runtime/types.ts";
 import { readActiveWorkflowRuns, registerActiveWorkflowRun, removeActiveWorkflowRun } from "../src/workflow/active-runs.ts";
 import { writeWorkflowOutputManifest, writeWorkflowSnapshot } from "../src/workflow/outputs.ts";
-import { createExtensionHarness, waitForCondition, writeProjectWorkflow } from "./extension-harness.ts";
+import { createExtensionHarness, type ExtensionHarness, waitForCondition, writeProjectWorkflow } from "./extension-harness.ts";
 
 void test("existing_workflow_command_runs_directly_with_progress_updates", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
@@ -32,78 +32,32 @@ export default async function workflow(input) {
       (update) => update?.some((line) => line.includes("workflow echo")) && update.some((line) => line.includes("0/0 agents done")),
     ),
   );
-  await waitForCondition(() => harness.sentMessages.length === 2);
-  assert.deepEqual(harness.sentUserMessages, []);
-  assert.match(harness.sentMessages[0].message.content, /Workflow 'echo' complete\.\n\nResult:\n\n```json/);
-  assert.match(harness.sentMessages[0].message.content, /hello world/);
-  assert.match(harness.sentMessages[0].message.content, /Outputs:\n- Workflow result: .*final\.json/);
-  assert.deepEqual(harness.sentMessages[1].options, { triggerTurn: true });
-  assert.equal(harness.sentMessages[1].message.display, true);
-  assert.equal((harness.sentMessages[1].message.details as { kind?: string }).kind, "workflow-completion-handoff");
-  assert.match(harness.sentMessages[1].message.content, /Automated workflow completion handoff: workflow 'echo' completed/);
-  assert.match(harness.sentMessages[1].message.content, /Review and summarize the workflow result for the user/);
-  assert.match(harness.sentMessages[1].message.content, /hello world/);
-  const details = harness.sentMessages[0].message.details as { resultPath?: string; workflowName?: string };
-  assert.equal(details.workflowName, "echo");
-  assert.ok(details.resultPath);
-  assert.deepEqual(JSON.parse(await readFile(details.resultPath, "utf8")), {
-    message: "hello",
-    count: 10,
-    debug: true,
-    files: ["src/index.ts", "tests/index.test.ts"],
-    note: "hello world",
-  });
 });
 
-void test("existing_workflow_command_does_not_report_success_notification_failure_as_workflow_failure", async () => {
+void test("existing_workflow_completion_sends_automated_user_message", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeProjectWorkflow(
     project,
-    "complete",
-    `export const metadata = { name: "complete", description: "Complete workflow", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return { ok: true };
-}`,
-  );
-  const harness = createExtensionHarness({
-    cwd: project,
-    sendMessage() {
-      throw new Error("send failed");
-    },
-  });
-
-  await harness.command("workflow", "complete");
-  await waitForCondition(() =>
-    harness.notifications.some((notification) => notification.message.includes("completed, but completion handling failed")),
-  );
-
-  assert.ok(harness.notifications.some((notification) => notification.message.includes("send failed") && notification.type === "error"));
-  assert.ok(harness.notifications.every((notification) => !notification.message.includes("Workflow 'complete' failed")));
-});
-
-void test("existing_workflow_completion_surfaces_report_results", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
-  await writeProjectWorkflow(
-    project,
-    "report",
-    `export const metadata = { name: "report", description: "Report workflow", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return { report: "# Report\\n\\nEverything passed.", metrics: { ok: true } };
+    "echo",
+    `export const metadata = { name: "echo", description: "Echo input", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow(input) {
+  return input;
 }`,
   );
   const harness = createExtensionHarness({ cwd: project });
 
-  await harness.command("workflow", "report");
-  await waitForCondition(() => harness.sentMessages.length === 2);
-  assert.deepEqual(harness.sentUserMessages, []);
+  await harness.command("workflow", "echo message=hello");
+  const handoff = await waitForOnlyUserTextMessage(harness);
 
-  assert.match(harness.sentMessages[0].message.content, /Report:\n\n# Report\n\nEverything passed\./);
-  assert.ok(harness.sentMessages[0].message.content.includes('Additional data:\n\n```json\n{\n  "metrics": {\n    "ok": true\n  }\n}'));
-  assert.match(harness.sentMessages[1].message.content, /# Report\n\nEverything passed\./);
-  assert.ok(harness.sentMessages[1].message.content.includes('"metrics": {\n    "ok": true\n  }'));
+  assert.deepEqual(handoff.options, undefined);
+  assert.match(handoff.text, /Automated workflow completion handoff: workflow 'echo' completed/);
+  assert.ok(handoff.text.includes('Result:\n\n```json\n{\n  "message": "hello"\n}'));
+  assert.match(handoff.text, /Paths:\n- Workflow result: .*final\.json/);
+  assert.ok(harness.notifications.some((entry) => entry.message === "Workflow 'echo' complete." && entry.type === "info"));
+  assert.deepEqual(JSON.parse(await readFile(workflowResultPathFrom(handoff.text), "utf8")), { message: "hello" });
 });
 
-void test("existing_workflow_completion_handoff_triggers_follow_up_turn_when_session_is_busy", async () => {
+void test("existing_workflow_completion_queues_user_message_as_followup_when_busy", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeProjectWorkflow(
     project,
@@ -116,12 +70,10 @@ export default async function workflow() {
   const harness = createExtensionHarness({ cwd: project, idle: false });
 
   await harness.command("workflow", "busy-complete");
-  await waitForCondition(() => harness.sentMessages.length === 2);
+  const handoff = await waitForOnlyUserTextMessage(harness);
 
-  assert.deepEqual(harness.sentMessages[1].options, { triggerTurn: true, deliverAs: "followUp" });
-  assert.deepEqual(harness.sentUserMessages, []);
-  assert.equal((harness.sentMessages[1].message.details as { kind?: string }).kind, "workflow-completion-handoff");
-  assert.match(harness.sentMessages[1].message.content, /Automated workflow completion handoff/);
+  assert.deepEqual(handoff.options, { deliverAs: "followUp" });
+  assert.match(handoff.text, /Automated workflow completion handoff/);
 });
 
 void test("registered_run_workflow_tool_shows_running_tui_widget", async () => {
@@ -613,19 +565,18 @@ export default async function workflow({ message }) {
 
   await harness.command("workflow", "echo hello from natural language");
 
-  assert.deepEqual(harness.sentUserMessages, []);
-  assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0].options, { triggerTurn: true, deliverAs: "followUp" });
-  assert.equal(harness.sentMessages[0].message.display, true);
-  assert.deepEqual(harness.sentMessages[0].message.details, { kind: "workflow-agent-prompt" });
-  assert.match(harness.sentMessages[0].message.content, /Resolve input for workflow 'echo'/);
-  assert.match(harness.sentMessages[0].message.content, /call run_workflow/);
-  assert.match(harness.sentMessages[0].message.content, /MUST try to resolve clear ambiguities/);
-  assert.match(harness.sentMessages[0].message.content, /Ask a concise clarification question only when required input remains unknowable/);
-  assert.match(harness.sentMessages[0].message.content, /Treat bare text as the message field/);
-  assert.match(harness.sentMessages[0].message.content, /input\.message/);
-  assert.doesNotMatch(harness.sentMessages[0].message.content, /workflow\.js, for secondary context only/);
-  assert.doesNotMatch(harness.sentMessages[0].message.content, /return \{ message \};/);
+  const promptMessage = await waitForOnlyUserTextMessage(harness);
+
+  assert.deepEqual(promptMessage.options, { deliverAs: "followUp" });
+  const prompt = promptMessage.text;
+  assert.match(prompt, /Resolve input for workflow 'echo'/);
+  assert.match(prompt, /call run_workflow/);
+  assert.match(prompt, /MUST try to resolve clear ambiguities/);
+  assert.match(prompt, /Ask a concise clarification question only when required input remains unknowable/);
+  assert.match(prompt, /Treat bare text as the message field/);
+  assert.match(prompt, /input\.message/);
+  assert.doesNotMatch(prompt, /workflow\.js, for secondary context only/);
+  assert.doesNotMatch(prompt, /return \{ message \};/);
 });
 
 void test("existing_workflow_command_reports_missing_required_input_without_running", async () => {
@@ -658,6 +609,20 @@ export default async function workflow({ repo, problem, mode = "fast" }) {
   assert.match(harness.sentMessages[0].message.content, /problem=<value>/);
   assert.equal(harness.notifications.at(-1)?.type, "warning");
 });
+
+async function waitForOnlyUserTextMessage(harness: ExtensionHarness): Promise<{ text: string; options: unknown }> {
+  await waitForCondition(() => harness.sentUserMessages.length === 1);
+  assert.deepEqual(harness.sentMessages, []);
+  const sent = harness.sentUserMessages[0];
+  if (typeof sent.message !== "string") throw new TypeError("expected one text user message");
+  return { text: sent.message, options: sent.options };
+}
+
+function workflowResultPathFrom(text: string): string {
+  const resultPath = /Workflow result: (.*final\.json)/.exec(text)?.[1];
+  assert.ok(resultPath);
+  return resultPath;
+}
 
 function runningWorkflowSnapshot(workflowName = "viewable"): WorkflowSnapshot {
   return {

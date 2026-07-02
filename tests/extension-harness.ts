@@ -49,6 +49,7 @@ export interface ExtensionHarnessOptions {
   idle?: boolean;
   editorText?: string;
   sendMessage?: (message: SentMessage, options?: unknown) => void;
+  sendUserMessage?: (message: unknown, options?: unknown) => void;
 }
 
 export interface ExtensionHarness {
@@ -116,6 +117,10 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
       sentMessages.push({ message, options: sendOptions });
     },
     sendUserMessage(message: unknown, sendOptions?: unknown): void {
+      if (options.sendUserMessage) {
+        options.sendUserMessage(message, sendOptions);
+        return;
+      }
       sentUserMessages.push({ message, options: sendOptions });
     },
   } as unknown as ExtensionAPI;

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { extractWorkflowInputContract, parseWorkflowInput, validateWorkflowInput } from "../src/input.ts";
+import { parseWorkflowInput } from "../src/input.ts";
+import { extractWorkflowInputContract, validateWorkflowInput } from "../src/workflow/input-contract.ts";
 
 void test("workflow_input_uses_structured_json_directly", () => {
   const parsed = parseWorkflowInput('{"repo":"owner/name","problem":"bugs"}');

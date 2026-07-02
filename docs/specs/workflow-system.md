@@ -2,13 +2,13 @@
 
 ## Status
 
-Draft specification interview in progress.
+Living behavior specification for the current workflow extension.
 
 ## Context
 
-`pi-looporch` currently provides project-local agent loops under `.pi/loops/<loop-name>/`, with optional executable `loop.js` files and slash-command entry points such as `/loop <loop-name>`.
+`pi-workflow` provides project-local workflows under `.pi/workflows/<workflow-name>/workflow.js`, plus optional configured workflow roots.
 
-The desired direction is to cut over from loops to first-class workflows: a better workflow system than the current `py-dynamicworkflows` approach.
+The extension has cut over from loops to first-class workflows.
 
 The current `pi-dynamic-workflows` project provides useful starting primitives such as `agent`, `parallel`, `pipeline`, `phase`, `log`, `cwd`, and `budget`, but the overall experience still feels too constrained and opaque.
 
@@ -180,7 +180,7 @@ Workflow session logs have a separate cost-review command:
 
 This command reviews the actual `workflow-summary.json`, child `events.jsonl`, and child session transcripts for token-cost reduction. It defaults to the latest project workflow run, reports actual token spend by agent, repeated tool activity, common bash commands across agents, and concrete ways to reduce future workflow cost. It should not inspect saved workflow source as its primary job.
 
-Workflow runtime settings are configured with `/workflow-settings`. With no args, it posts a readable settings message with active values, storage locations, and direct edit commands. With args, `/workflow-settings maxParallelAgents=<n>` or `/workflow-settings childAgentExtensions=<extension>[,<extension>...]` writes the project `.pi/settings.json` value directly; prefix `--global` to write global `~/.pi/agent/settings.json` instead. Relative child-agent extension paths resolve from the workflow project root.
+Workflow runtime settings are configured with `/workflow-settings`. With no args, it posts a readable settings message with active values, storage locations, and direct edit commands. With args, `/workflow-settings maxParallelAgents=<n>`, `/workflow-settings workflowDirs=<path>[,<path>...]`, or `/workflow-settings childAgentExtensions=<extension>[,<extension>...]` writes the project `.pi/settings.json` value directly; prefix `--global` to write global `~/.pi/agent/settings.json` instead. Relative workflow roots and child-agent extension paths resolve from the workflow project root.
 
 Workflow run status has a lightweight command:
 

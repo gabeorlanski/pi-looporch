@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { BackgroundWorkflowRun } from "../background-runs.ts";
+import type { BackgroundWorkflowRun } from "../workflow/background-runs.ts";
 import type { WorkflowAgent, WorkflowSnapshot } from "../runtime/types.ts";
 import { prepareWorkflowRun, startPreparedWorkflowRun, type PreparedWorkflowRun } from "../workflow/start.ts";
 import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "./running-workflow-ui.ts";

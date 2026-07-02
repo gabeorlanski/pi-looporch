@@ -515,6 +515,17 @@ void test("workflow_settings_command_writes_project_settings", async () => {
   assert.deepEqual(JSON.parse(await readFile(path.join(project, ".pi", "settings.json"), "utf8")), {
     workflow: { maxParallelAgents: 8, childAgentExtensions: ["pi-subagents", "./extensions/todo.ts"] },
   });
+
+  await harness.command("workflow-settings", "workflowDirs=../shared-workflows,.pi/team-workflows");
+
+  assert.match(harness.notifications.at(-1)?.message ?? "", /Workflow directories set/);
+  assert.deepEqual(JSON.parse(await readFile(path.join(project, ".pi", "settings.json"), "utf8")), {
+    workflow: {
+      maxParallelAgents: 8,
+      childAgentExtensions: ["pi-subagents", "./extensions/todo.ts"],
+      workflowDirs: ["../shared-workflows", ".pi/team-workflows"],
+    },
+  });
 });
 
 void test("workflow_settings_command_shows_readable_current_settings", async () => {
@@ -527,9 +538,11 @@ void test("workflow_settings_command_shows_readable_current_settings", async () 
   assert.equal(harness.sentMessages[0].message.display, true);
   assert.deepEqual((harness.sentMessages[0].message.details as { kind?: string }).kind, "workflow-settings");
   assert.match(harness.sentMessages[0].message.content, /# Workflow Settings/);
+  assert.match(harness.sentMessages[0].message.content, /Workflow directories: none/);
   assert.match(harness.sentMessages[0].message.content, /Max parallel agents: 4/);
   assert.match(harness.sentMessages[0].message.content, /Project: \.pi\/settings\.json/);
   assert.match(harness.sentMessages[0].message.content, /\/workflow-settings maxParallelAgents=8/);
+  assert.match(harness.sentMessages[0].message.content, /\/workflow-settings workflowDirs=/);
 });
 
 void test("existing_workflow_freeform_input_is_steered_in_current_session", async () => {

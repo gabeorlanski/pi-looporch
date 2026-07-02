@@ -1,11 +1,11 @@
 import { Type } from "typebox";
 import { defineTool, getAgentDir, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { BackgroundWorkflowRunResult } from "./background-runs.ts";
+import type { BackgroundWorkflowRunResult } from "./workflow/background-runs.ts";
 import { workflowCompletionNotification } from "./display/workflow-completion.ts";
 import { workflowFinalOutputPath } from "./workflow/outputs.ts";
 import type { WorkflowAgent } from "./runtime/types.ts";
 import { progressDisplay } from "./display/progress.ts";
-import { saveWorkflowDraft } from "./request.ts";
+import { saveWorkflowDraft } from "./workflow/draft-save.ts";
 import { workflowDesignGuidance } from "./authoring-guide.ts";
 import { startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
 import { readWorkflowDraft } from "./workflow/drafts.ts";

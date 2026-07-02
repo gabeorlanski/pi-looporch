@@ -1,8 +1,8 @@
 import { cp, mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
-import { extractWorkflowInputContract } from "./input.ts";
-import type { WorkflowMetadata } from "./runtime/types.ts";
-import { parseWorkflowSourceMetadata } from "./workflow/metadata.ts";
+import type { WorkflowMetadata } from "../runtime/types.ts";
+import { extractWorkflowInputContract } from "./input-contract.ts";
+import { parseWorkflowSourceMetadata } from "./metadata.ts";
 
 /** Complete generated workflow draft plus source files ready to save. */
 export interface GeneratedWorkflowDraft {

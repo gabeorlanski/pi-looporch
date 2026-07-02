@@ -22,7 +22,7 @@ npm run check
 - Add concise JSDoc contracts to exported declarations in public API modules covered by `npm run docs:check`.
 - Keep workflow primitive implementations under `runtime/primitives/`; add globals through the shared `WorkflowPrimitive` protocol in `runtime/context.ts` and `runtime/globals.ts` instead of ad hoc wiring.
 - Inject `WorkflowAgent`; never hardcode pi/model providers.
-- Put TUI and visible text rendering in `display/`, one display concern per file.
+- Put TUI and visible text rendering in `display/`; stateful running-workflow UI files may coordinate widgets/inspectors but should delegate workflow behavior to `workflow/` or `runtime/`.
 - Put raw prompt text in `prompts/*.txt`; keep interpolation code outside `prompts/`.
 - Keep generated workflow authoring docs in `authoring-guide.ts`; render them into prompts through placeholders.
 - Steer generated workflows toward the default outside-project draft root provided in the current session prompt; when using that default, call `propose_workflow` with the workflow name and omit `draftDir`. If an explicit alternate `draftDir` is needed, it must point at the directory, not the `workflow.js` file.
@@ -45,14 +45,17 @@ npm run check
 
 - `runtime/types.ts`: `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, `WorkflowRunResult`.
 - `runtime/`: runtime internals. `run.ts` owns workflow execution wiring, `context.ts` defines the shared primitive protocol, `globals.ts` binds primitives, and `primitives/` owns agent/phase/log/trace/files/parallel/pipeline/coerce/mapreduce/verifier behavior.
+- `workflow/input-contract.ts`: default workflow function/JSDoc input contract extraction and normalized input validation.
 - `workflow/files.ts`: shared read/write helpers and atomic file-writing utilities used by workflow primitives and output persistence.
-- `workflow/`: workflow pathing, metadata, sandbox, output, draft, and settings helpers.
-- `request.ts`: `GeneratedWorkflowDraft` validation and draft saving.
+- `workflow/`: workflow pathing, metadata, sandbox, output, draft, status, active-run, and settings helpers.
+- `workflow/background-runs.ts`: background run lifecycle, active-run registration, output persistence, and session summary closeout.
+- `input.ts`: raw command input parsing only.
+- `workflow/draft-save.ts`: `GeneratedWorkflowDraft` validation and draft saving.
 - `discovery.ts`: `WorkflowReference`.
 - `tools.ts`: `WorkflowToolsOptions`.
 - `pi-agent.ts`: `PiWorkflowAgentOptions`.
 - `authoring-guide.ts`: on-demand workflow design guidance returned by the `workflow_design_guidance` tool.
-- `display/`: passive progress and boundary message rendering.
+- `display/`: progress rendering, status rendering, running workflow widget/inspector lifecycle, and boundary messages.
 - `prompts/`: raw prompt templates loaded by `prompt-templates.ts`.
 
 See `../agent_docs/INDEX.md` before changing patterns.

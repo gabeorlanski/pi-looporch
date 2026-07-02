@@ -10,13 +10,16 @@ const docPaths = ["README.md", "AGENTS.md", "docs/", "agent_docs/"];
 const docstringPathPatterns = [
   /^extensions\/workflow\.ts$/,
   /^src\/input\.ts$/,
-  /^src\/request\.ts$/,
+  /^src\/workflow\/background-runs\.ts$/,
+  /^src\/workflow\/input-contract\.ts$/,
+  /^src\/workflow\/draft-save\.ts$/,
   /^src\/runtime-types\.ts$/,
   /^src\/tools\.ts$/,
 ];
 const behaviorPathPatterns = [
   /^extensions\//,
-  /^src\/(?:authoring-guide|background-runs|discovery|input|pi-agent|request|runtime-types|tools|workflow-(?:outputs|paths|sandbox|settings))\.ts$/,
+  /^src\/(?:authoring-guide|discovery|input|pi-agent|runtime-types|tools|workflow-(?:outputs|paths|sandbox|settings))\.ts$/,
+  /^src\/workflow\/(?:background-runs|draft-save|input-contract|outputs|paths|sandbox|settings)\.ts$/,
   /^src\/runtime\//,
   /^src\/prompts\//,
 ];

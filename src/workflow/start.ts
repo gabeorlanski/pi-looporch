@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { discoverWorkflows, type WorkflowReference, workflowRootsForProject } from "../discovery.ts";
 import type { WorkflowAgent, WorkflowSnapshot } from "../runtime/types.ts";
+import { createInitialWorkflowSnapshot } from "../runtime/snapshot.ts";
 import { startBackgroundWorkflowRun, type BackgroundWorkflowRun } from "./background-runs.ts";
 import { extractWorkflowInputContract, validateWorkflowInput, type WorkflowInputContract } from "./input-contract.ts";
 import { normalizeWorkflowName } from "./paths.ts";
@@ -18,11 +19,7 @@ export interface PreparedWorkflowRun {
   initialSnapshot: WorkflowSnapshot;
 }
 
-export interface StartedWorkflowRun extends PreparedWorkflowRun {
-  run: BackgroundWorkflowRun;
-}
-
-export async function resolveWorkflowReference(cwd: string, workflowName: string): Promise<WorkflowReference> {
+async function resolveWorkflowReference(cwd: string, workflowName: string): Promise<WorkflowReference> {
   const normalizedName = normalizeWorkflowName(workflowName);
   const workflow = (await discoverWorkflows(cwd)).find((candidate) => candidate.name === normalizedName);
   if (!workflow) throw new Error(`Workflow '${normalizedName}' not found.`);
@@ -51,7 +48,7 @@ export async function prepareWorkflowRun(options: {
     input,
     workflowRoots: await workflowRootsForProject(options.cwd),
     maxParallelAgents: workflowSettings.maxParallelAgents,
-    initialSnapshot: initialWorkflowSnapshot(workflow, input),
+    initialSnapshot: createInitialWorkflowSnapshot(workflow.name, workflow.metadata, input),
   };
 }
 
@@ -76,40 +73,4 @@ export async function startPreparedWorkflowRun(options: {
     signal: options.signal,
     onSnapshot: options.onSnapshot,
   });
-}
-
-export async function startWorkflowRun(options: {
-  cwd: string;
-  workflowName: string;
-  input: unknown;
-  agentDir: string;
-  agent: WorkflowAgent;
-  ownerSessionId: string;
-  signal?: AbortSignal;
-  onSnapshot?: (snapshot: WorkflowSnapshot) => void;
-}): Promise<StartedWorkflowRun> {
-  const prepared = await prepareWorkflowRun(options);
-  const run = await startPreparedWorkflowRun({
-    prepared,
-    agent: options.agent,
-    ownerSessionId: options.ownerSessionId,
-    signal: options.signal,
-    onSnapshot: options.onSnapshot,
-  });
-  return { ...prepared, run };
-}
-
-function initialWorkflowSnapshot(workflow: WorkflowReference, input: unknown): WorkflowSnapshot {
-  return {
-    workflowName: workflow.name,
-    description: workflow.metadata.description,
-    plannedPhases: workflow.metadata.phases,
-    phases: [],
-    traces: [],
-    agents: [],
-    fanOuts: [],
-    messages: [],
-    status: "running",
-    input,
-  };
 }

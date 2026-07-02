@@ -1,8 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ReasoningLevel, RunWorkflowOptions, WorkflowSnapshot } from "./types.ts";
 
-/** A pipeline stage transforms one item and may be a function or object with a run method. */
-export type PipelineStage<T> = ((item: T, index: number) => Promise<T> | T) | { run: (item: T, index: number) => Promise<T> | T };
+/** A pipeline stage transforms one item. */
+export type PipelineStage<T> = (item: T, index: number) => Promise<T> | T;
 
 /** Options for no-tool child-agent coercion of text or context into schema-valid JSON. */
 export interface CoerceOptions {

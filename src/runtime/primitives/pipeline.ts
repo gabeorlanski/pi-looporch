@@ -20,7 +20,8 @@ async function runPipelineItem<T>(runtime: ActiveWorkflowRuntime, item: T, index
   let current = item;
   for (const stage of stages) {
     throwIfWorkflowAborted(runtime.options.signal);
-    current = typeof stage === "function" ? await stage(current, index) : await stage.run(current, index);
+    if (typeof stage !== "function") throw new TypeError("pipeline stages must be functions");
+    current = await stage(current, index);
   }
   throwIfWorkflowAborted(runtime.options.signal);
   return current;

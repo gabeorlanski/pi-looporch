@@ -48,7 +48,7 @@ Initial global primitives should include at least:
 
 - `agent(prompt, opts)`
 - `parallel(thunks)`
-- `pipeline(items, ...stages)`
+- `pipeline(items, stages)`
 - `phase(title)`
 - `log(message)`
 - `coerce({ schema, prompt, ...opts })`

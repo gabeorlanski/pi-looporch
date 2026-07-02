@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { RunWorkflowOptions, WorkflowPhaseMetadata, WorkflowRunResult, WorkflowSnapshot } from "./types.ts";
+import type { RunWorkflowOptions, WorkflowRunResult } from "./types.ts";
 import { normalizeWorkflowName, resolveWorkflowDirectory } from "../workflow/paths.ts";
 import { compileWorkflow } from "../workflow/sandbox.ts";
 import { writeWorkflowFinalOutput, writeWorkflowOutputManifest } from "../workflow/outputs.ts";
@@ -9,6 +9,7 @@ import { workflowGlobals } from "./globals.ts";
 import { parseWorkflowSourceMetadata } from "../workflow/metadata.ts";
 import { appendRunMessage } from "./messages.ts";
 import { createAgentLaunchQueue, normalizeMaxParallelAgents } from "./queue.ts";
+import { createInitialWorkflowSnapshot } from "./snapshot.ts";
 import { cloneSerializable, cloneSnapshot } from "./serialization.ts";
 import { errorMessage } from "../errors.ts";
 import { throwIfWorkflowAborted } from "./abort.ts";
@@ -22,19 +23,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
   const source = await readFile(entryFile, "utf8");
   const metadata = parseWorkflowSourceMetadata(source, workflowName, entryFile);
 
-  const plannedPhases = cloneSerializable(metadata.phases) as WorkflowPhaseMetadata[];
-  const snapshot: WorkflowSnapshot = {
-    workflowName,
-    description: metadata.description,
-    plannedPhases,
-    phases: [],
-    traces: [],
-    agents: [],
-    fanOuts: [],
-    messages: [],
-    status: "running",
-    input: cloneSerializable(options.input),
-  };
+  const snapshot = createInitialWorkflowSnapshot(workflowName, metadata, options.input);
   const runtime: ActiveWorkflowRuntime = {
     options: { ...options, maxParallelAgents },
     snapshot,

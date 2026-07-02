@@ -147,10 +147,17 @@ async function runExistingWorkflowCommand(
       signal: abortControls.signal,
       abortWorkflow: abortControls.abort,
     });
-    void settleBackgroundWorkflowRun(pi, ctx, workflowName, visible.run.finished, () => {
-      visible.cleanup();
-      abortControls.dispose();
-    });
+    void settleBackgroundWorkflowRun(
+      pi,
+      ctx,
+      workflowName,
+      visible.run.finished,
+      () => {
+        visible.cleanup();
+        abortControls.dispose();
+      },
+      visible.isSessionClosing,
+    );
   } catch (error) {
     abortControls.dispose();
     const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
@@ -165,15 +172,19 @@ async function settleBackgroundWorkflowRun(
   workflowName: string,
   finished: Promise<BackgroundWorkflowRunResult>,
   cleanup: () => void,
+  isSessionClosing: () => boolean,
 ): Promise<void> {
   try {
     const result = await finished;
+    if (isSessionClosing()) return;
     try {
       completeBackgroundWorkflow(pi, ctx, result);
     } catch (error) {
+      if (isSessionClosing()) return;
       ctx.ui.notify(`Workflow '${result.workflowName}' completed, but completion handling failed: ${errorMessage(error)}`, "error");
     }
   } catch (error) {
+    if (isSessionClosing()) return;
     failBackgroundWorkflow(pi, ctx, workflowName, error);
   } finally {
     cleanup();

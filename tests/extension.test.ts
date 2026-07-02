@@ -471,6 +471,32 @@ void test("session_start_project_monitor_widget_lists_all_active_workflows", asy
   await Promise.all(names.map((name) => removeActiveWorkflowRun(project, `run-${name}`)));
 });
 
+void test("workflow_monitor_timer_stops_before_using_replaced_session_context", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"], now: Date.now() });
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  await writeMonitorRun(project, {
+    runId: "run-replaced-session",
+    workflowName: "replaced-session",
+    ownerSessionId: "current-session",
+    startedAt: Date.now(),
+  });
+  const harness = createExtensionHarness({ cwd: project, sessionId: "current-session" });
+
+  await harness.sessionStart("reload");
+  await waitForCondition(() =>
+    harness.widgetUpdatesFor("workflow-monitor").some((update) => update?.some((line) => line.includes("replaced-session"))),
+  );
+  const updatesBeforeReplace = harness.widgetUpdatesFor("workflow-monitor").length;
+
+  await harness.sessionShutdown("new");
+  harness.replaceSession();
+  t.mock.timers.tick(3000);
+  await Promise.resolve();
+
+  assert.equal(harness.widgetUpdatesFor("workflow-monitor").length, updatesBeforeReplace + 1);
+  await removeActiveWorkflowRun(project, "run-replaced-session");
+});
+
 void test("view_workflow_command_does_not_use_same_cwd_workflow_from_another_session", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const ownerHarness = createExtensionHarness({ cwd: project, sessionId: "owner-session" });

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { createWorkflowTools } from "../src/tools.ts";
+import { abortVisibleWorkflowRuns } from "../src/display/visible-workflow-run.ts";
 import { defaultWorkflowDraftDirectory, defaultWorkflowDraftRoot } from "../src/workflow/drafts.ts";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
 
@@ -147,6 +148,65 @@ export default async function workflow() {
   await waitForCondition(() => notifications.some((notification) => notification.type === "error"));
 
   assert.deepEqual(notifications, [{ message: "Workflow fail failed: tool exploded", type: "error" }]);
+});
+
+void test("run_workflow_tool_skips_background_notification_after_session_shutdown", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
+  const workflowDir = path.join(project, ".pi", "workflows", "slow");
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(
+    path.join(workflowDir, "workflow.js"),
+    `export const metadata = { name: "slow", description: "Slow workflow", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return { agent: await agent("wait", { label: "slow child" }) };
+}`,
+    "utf8",
+  );
+  let stale = false;
+  let childStarted = false;
+  let childAbortSeen = false;
+  const agent: WorkflowAgent = (_prompt, options) =>
+    new Promise((_resolve, reject) => {
+      childStarted = true;
+      options.signal?.addEventListener(
+        "abort",
+        () => {
+          childAbortSeen = true;
+          reject(new Error("child aborted"));
+        },
+        { once: true },
+      );
+    });
+  const tool = createWorkflowTools({ cwd: project, agent }).find((candidate) => candidate.name === "run_workflow");
+  assert.ok(tool);
+  const notifications: string[] = [];
+  const toolContext = {
+    cwd: project,
+    mode: "print",
+    sessionManager: {
+      getSessionId: () => "tool-session",
+    },
+    ui: {
+      notify: (message: string) => {
+        if (stale) throw new Error("stale notify");
+        notifications.push(message);
+      },
+    },
+  } as never;
+
+  await tool.execute("call-1", { name: "slow" }, undefined, undefined, toolContext);
+  await waitForCondition(() => childStarted);
+  await abortVisibleWorkflowRuns({
+    cwd: project,
+    sessionManager: {
+      getSessionId: () => "tool-session",
+    },
+  } as never);
+  stale = true;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(childAbortSeen, true);
+  assert.deepEqual(notifications, []);
 });
 
 void test("propose_workflow_tool_saves_draft_directory", async () => {

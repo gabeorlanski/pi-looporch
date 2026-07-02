@@ -37,7 +37,7 @@ export async function workflowSettingsCommand(pi: ExtensionAPI, ctx: ExtensionCo
 function parseWorkflowSettingsArgs(args: string): { scope: "global" | "project"; settings: WorkflowSettingsPatch } {
   const { scope, body } = parseWorkflowSettingsScope(args);
   const assignment = /^([A-Za-z][A-Za-z0-9]*)\s*=\s*(.*)$/.exec(body);
-  const name = assignment ? assignment[1] : /^\d+$/.test(body) ? "maxParallelAgents" : "";
+  const name = assignment ? assignment[1] : "";
   const value = assignment ? assignment[2] : body;
   return { scope, settings: parseWorkflowSetting(name, value) };
 }
@@ -45,8 +45,6 @@ function parseWorkflowSettingsArgs(args: string): { scope: "global" | "project";
 function parseWorkflowSettingsScope(args: string): { scope: "global" | "project"; body: string } {
   const trimmed = args.trim();
   if (trimmed.startsWith("--global ")) return { scope: "global", body: trimmed.slice("--global ".length).trim() };
-  if (trimmed.startsWith("global ")) return { scope: "global", body: trimmed.slice("global ".length).trim() };
-  if (trimmed.startsWith("scope=global ")) return { scope: "global", body: trimmed.slice("scope=global ".length).trim() };
   return { scope: "project", body: trimmed };
 }
 
@@ -89,14 +87,10 @@ function workflowSettingsMessage(agentDir: string, settings: WorkflowSettings): 
 function parseWorkflowSetting(name: string, value: string): WorkflowSettingsPatch {
   switch (name) {
     case "maxParallelAgents":
-    case "maxParallel":
       return { maxParallelAgents: Number(value) };
     case "childAgentExtensions":
-    case "childExtensions":
-    case "extensions":
       return { childAgentExtensions: parseSettingList(value) };
     case "workflowDirs":
-    case "dirs":
       return { workflowDirs: parseSettingList(value) };
     default:
       throw new Error(workflowSettingsUsage());

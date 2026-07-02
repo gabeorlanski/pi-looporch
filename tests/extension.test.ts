@@ -539,6 +539,26 @@ void test("workflow_settings_command_writes_project_settings", async () => {
   });
 });
 
+void test("workflow_settings_command_rejects_hidden_aliases", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const harness = createExtensionHarness({ cwd: project });
+  const aliases = [
+    "8",
+    "maxParallel=8",
+    "childExtensions=pi-subagents",
+    "extensions=pi-subagents",
+    "dirs=../shared-workflows",
+    "global maxParallelAgents=8",
+    "scope=global maxParallelAgents=8",
+  ];
+
+  for (const alias of aliases) {
+    await harness.command("workflow-settings", alias);
+    assert.match(harness.notifications.at(-1)?.message ?? "", /^Usage: \/workflow-settings/);
+    assert.equal(harness.notifications.at(-1)?.type, "error");
+  }
+});
+
 void test("workflow_settings_command_shows_readable_current_settings", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const harness = createExtensionHarness({ cwd: project });

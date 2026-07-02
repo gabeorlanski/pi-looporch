@@ -60,6 +60,30 @@ export default async function workflow({ files }) {
   assert.equal(result.snapshot.status, "done");
 });
 
+void test("workflow_pipeline_rejects_object_stages", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "pipeline-object-stage",
+    `export const metadata = { name: "pipeline-object-stage", description: "Pipeline object stage", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return pipeline(["a"], [{ run: (item) => item.toUpperCase() }]);
+}`,
+  );
+  const agent: WorkflowAgent = () => Promise.resolve("unused");
+
+  await assert.rejects(
+    runWorkflowFromDirectory({
+      maxParallelAgents: 4,
+      cwd: project,
+      workflowName: "pipeline-object-stage",
+      input: {},
+      agent,
+    }),
+    /pipeline stages must be functions/,
+  );
+});
+
 void test("workflow_writes_agent_and_final_outputs_to_output_directory", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   const outputsDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-outputs-"));

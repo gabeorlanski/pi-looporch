@@ -2,6 +2,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { matchesKey, type TUI } from "@earendil-works/pi-tui";
 import { readActiveWorkflowSnapshots } from "../workflow/active-run-snapshots.ts";
 import type { WorkflowSnapshot } from "../runtime/types.ts";
+import { extensionSessionScope } from "./session-scope.ts";
 import { WorkflowInspector } from "./workflow-inspector.ts";
 import { WorkflowInspectorModel } from "./workflow-inspector-model.ts";
 import { workflowTuiTheme } from "./workflow-tui-format.ts";
@@ -35,10 +36,17 @@ export interface RunningWorkflowUiUpdate {
   abortWorkflow?: () => void;
 }
 
+interface RehydratedWorkflowRefreshState {
+  cwd: string;
+  ownerSessionId: string;
+  disposed: boolean;
+  timer?: ReturnType<typeof setInterval>;
+}
+
 const dynamicWorkflowCounts = new WeakMap<ExtensionContext, number>();
 const runningWorkflowUiStates = new WeakMap<ExtensionContext, RunningWorkflowUiState>();
 const runningWorkflowUiStatesByScope = new Map<string, RunningWorkflowUiState>();
-const rehydratedWorkflowRefreshTimers = new WeakMap<ExtensionContext, ReturnType<typeof setInterval>>();
+const rehydratedWorkflowRefreshStatesByScope = new Map<string, RehydratedWorkflowRefreshState>();
 
 export function beginDynamicWorkflow(ctx: ExtensionContext): { done: () => void } {
   let done = false;
@@ -56,12 +64,16 @@ export function beginDynamicWorkflow(ctx: ExtensionContext): { done: () => void 
 
 export async function restoreRunningWorkflowUi(ctx: ExtensionContext): Promise<number> {
   if (ctx.mode !== "tui") return 0;
-  const restoredCount = await refreshRehydratedWorkflowUi(ctx);
-  if (restoredCount > 0 && !rehydratedWorkflowRefreshTimers.has(ctx)) {
-    const timer = setInterval(() => {
-      void refreshRehydratedWorkflowUi(ctx);
+  const scope = extensionSessionScope(ctx);
+  const state = createRehydratedWorkflowRefreshState(ctx);
+  const restoredCount = await refreshRehydratedWorkflowUi(ctx, state);
+  if (restoredCount > 0 && !state.disposed && !state.timer) {
+    state.timer = setInterval(() => {
+      void refreshRehydratedWorkflowUi(ctx, state);
     }, REHYDRATED_WORKFLOW_REFRESH_MS);
-    rehydratedWorkflowRefreshTimers.set(ctx, timer);
+    state.timer.unref();
+  } else if (restoredCount === 0) {
+    disposeRehydratedWorkflowRefreshState(scope);
   }
   return restoredCount;
 }
@@ -91,7 +103,8 @@ export async function openRunningWorkflowInspector(ctx: ExtensionContext): Promi
 }
 
 export function clearRunningWorkflowUi(ctx: ExtensionContext, runId?: string): void {
-  const state = runningWorkflowUiStates.get(ctx);
+  const scope = extensionSessionScope(ctx);
+  const state = runningWorkflowUiStates.get(ctx) ?? runningWorkflowUiStatesByScope.get(scope);
   if (state && runId) removeWorkflowRun(state, runId);
   if (dynamicWorkflowCount(ctx) > 0) {
     if (state) {
@@ -101,22 +114,46 @@ export function clearRunningWorkflowUi(ctx: ExtensionContext, runId?: string): v
     return;
   }
   if (state?.animationTimer) clearInterval(state.animationTimer);
-  const refreshTimer = rehydratedWorkflowRefreshTimers.get(ctx);
-  if (refreshTimer) clearInterval(refreshTimer);
-  rehydratedWorkflowRefreshTimers.delete(ctx);
+  disposeRehydratedWorkflowRefreshState(scope);
   state?.unsubscribeInput?.();
   runningWorkflowUiStates.delete(ctx);
-  if (state && runningWorkflowUiStatesByScope.get(workflowUiScope(ctx)) === state)
-    runningWorkflowUiStatesByScope.delete(workflowUiScope(ctx));
+  if (state && runningWorkflowUiStatesByScope.get(scope) === state) runningWorkflowUiStatesByScope.delete(scope);
   ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, undefined);
   ctx.ui.setWidget(RUNNING_WORKFLOW_WIDGET, undefined);
 }
 
-async function refreshRehydratedWorkflowUi(ctx: ExtensionContext): Promise<number> {
-  const snapshots = await readActiveWorkflowSnapshots(ctx.cwd, ctx.sessionManager.getSessionId());
+async function refreshRehydratedWorkflowUi(ctx: ExtensionContext, state: RehydratedWorkflowRefreshState): Promise<number> {
+  if (rehydratedWorkflowRefreshStateDisposed(state)) return 0;
+  const snapshots = await readActiveWorkflowSnapshots(state.cwd, state.ownerSessionId);
+  if (rehydratedWorkflowRefreshStateDisposed(state)) return 0;
   for (const snapshot of snapshots) updateRunningWorkflowUi(ctx, snapshot);
   if (snapshots.length === 0) clearRunningWorkflowUi(ctx);
   return snapshots.length;
+}
+
+function rehydratedWorkflowRefreshStateDisposed(state: RehydratedWorkflowRefreshState): boolean {
+  return state.disposed;
+}
+
+function createRehydratedWorkflowRefreshState(ctx: ExtensionContext): RehydratedWorkflowRefreshState {
+  const scope = extensionSessionScope(ctx);
+  const existing = rehydratedWorkflowRefreshStatesByScope.get(scope);
+  if (existing) return existing;
+  const state: RehydratedWorkflowRefreshState = {
+    cwd: ctx.cwd,
+    ownerSessionId: ctx.sessionManager.getSessionId(),
+    disposed: false,
+  };
+  rehydratedWorkflowRefreshStatesByScope.set(scope, state);
+  return state;
+}
+
+function disposeRehydratedWorkflowRefreshState(scope: string): void {
+  const state = rehydratedWorkflowRefreshStatesByScope.get(scope);
+  if (!state) return;
+  state.disposed = true;
+  if (state.timer) clearInterval(state.timer);
+  rehydratedWorkflowRefreshStatesByScope.delete(scope);
 }
 
 function installRunningWorkflowUi(ctx: ExtensionContext, update: RunningWorkflowUiUpdate): RunningWorkflowUiState {
@@ -127,7 +164,7 @@ function installRunningWorkflowUi(ctx: ExtensionContext, update: RunningWorkflow
     overlayOpen: false,
   };
   runningWorkflowUiStates.set(ctx, state);
-  runningWorkflowUiStatesByScope.set(workflowUiScope(ctx), state);
+  runningWorkflowUiStatesByScope.set(extensionSessionScope(ctx), state);
   installWorkflowWidget(ctx, state);
   installWorkflowInputHandler(ctx, state);
   state.animationTimer = setInterval(() => {
@@ -215,12 +252,8 @@ function workflowRunState(update: RunningWorkflowUiUpdate): RunningWorkflowRunSt
 function findRunningWorkflowUiState(ctx: ExtensionContext): RunningWorkflowUiState | undefined {
   const local = runningWorkflowUiStates.get(ctx);
   if (local && local.runs.size > 0) return local;
-  const scoped = runningWorkflowUiStatesByScope.get(workflowUiScope(ctx));
+  const scoped = runningWorkflowUiStatesByScope.get(extensionSessionScope(ctx));
   return scoped && scoped.runs.size > 0 ? scoped : undefined;
-}
-
-function workflowUiScope(ctx: ExtensionContext): string {
-  return `${ctx.cwd}\0${ctx.sessionManager.getSessionId()}`;
 }
 
 function activeRun(state: RunningWorkflowUiState): RunningWorkflowRunState {

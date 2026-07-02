@@ -62,8 +62,12 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
         },
       });
       void visible.run.finished
-        .then((result) => notifyBackgroundToolCompletion(ctx, result))
-        .catch((error: unknown) => ctx.ui.notify(`Workflow ${workflowName} failed: ${errorMessage(error)}`, "error"))
+        .then((result) => {
+          if (!visible.isSessionClosing()) notifyBackgroundToolCompletion(ctx, result);
+        })
+        .catch((error: unknown) => {
+          if (!visible.isSessionClosing()) ctx.ui.notify(`Workflow ${workflowName} failed: ${errorMessage(error)}`, "error");
+        })
         .finally(visible.cleanup);
       return {
         content: [

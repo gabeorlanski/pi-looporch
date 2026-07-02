@@ -3,6 +3,7 @@ import type { BackgroundWorkflowRun } from "../workflow/background-runs.ts";
 import type { WorkflowAgent, WorkflowSnapshot } from "../runtime/types.ts";
 import { prepareWorkflowRun, startPreparedWorkflowRun, type PreparedWorkflowRun } from "../workflow/start.ts";
 import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "./running-workflow-ui.ts";
+import { extensionSessionScope } from "./session-scope.ts";
 
 export interface StartVisibleWorkflowRunOptions {
   ctx: ExtensionContext;
@@ -20,23 +21,28 @@ export interface VisibleWorkflowRun {
   prepared: PreparedWorkflowRun;
   run: BackgroundWorkflowRun;
   cleanup: () => void;
+  isSessionClosing: () => boolean;
 }
 
-interface TrackedVisibleWorkflowRun {
-  run: BackgroundWorkflowRun;
-  cleanup: () => void;
+interface TrackedVisibleWorkflowRun extends VisibleWorkflowRun {
+  markSessionClosing: () => void;
 }
 
-const visibleWorkflowRuns = new WeakMap<ExtensionContext, Map<string, TrackedVisibleWorkflowRun>>();
+const visibleWorkflowRunsByScope = new Map<string, Map<string, TrackedVisibleWorkflowRun>>();
 
 export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOptions): Promise<VisibleWorkflowRun> {
   const showRunningUi = options.ctx.mode === "tui";
   const ownerSessionId = options.ctx.sessionManager.getSessionId();
+  const scope = extensionSessionScope(options.ctx);
   const activeWorkflow = showRunningUi ? beginDynamicWorkflow(options.ctx) : undefined;
   let run: BackgroundWorkflowRun | undefined;
   let runId: string | undefined;
+  let cleaned = false;
+  let sessionClosing = false;
   const cleanup = (): void => {
-    untrackVisibleWorkflowRun(options.ctx, runId);
+    if (cleaned) return;
+    cleaned = true;
+    untrackVisibleWorkflowRun(scope, runId);
     activeWorkflow?.done();
     if (showRunningUi) clearRunningWorkflowUi(options.ctx, runId);
   };
@@ -62,12 +68,20 @@ export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOp
       ownerSessionId,
       signal: options.signal,
       onSnapshot: (snapshot) => {
-        if (!run) return;
+        if (!run || cleaned || sessionClosing) return;
         if (showRunningUi) updateRunningWorkflowUi(options.ctx, { runId: prepared.runId, snapshot, abortWorkflow });
         options.onSnapshot?.(snapshot, prepared, run);
       },
     });
-    const visible = { prepared, run, cleanup };
+    const visible: TrackedVisibleWorkflowRun = {
+      prepared,
+      run,
+      cleanup,
+      isSessionClosing: () => sessionClosing,
+      markSessionClosing: () => {
+        sessionClosing = true;
+      },
+    };
     trackVisibleWorkflowRun(options.ctx, visible);
     return visible;
   } catch (error) {
@@ -77,7 +91,8 @@ export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOp
 }
 
 export async function abortVisibleWorkflowRuns(ctx: ExtensionContext): Promise<void> {
-  const runs = [...(visibleWorkflowRuns.get(ctx)?.values() ?? [])];
+  const runs = [...(visibleWorkflowRunsByScope.get(extensionSessionScope(ctx))?.values() ?? [])];
+  for (const run of runs) run.markSessionClosing();
   for (const { run } of runs) run.abort();
   await Promise.allSettled(runs.map(({ run }) => run.finished));
   for (const run of runs) run.cleanup();
@@ -85,15 +100,16 @@ export async function abortVisibleWorkflowRuns(ctx: ExtensionContext): Promise<v
 }
 
 function trackVisibleWorkflowRun(ctx: ExtensionContext, run: TrackedVisibleWorkflowRun): void {
-  const runs = visibleWorkflowRuns.get(ctx) ?? new Map<string, TrackedVisibleWorkflowRun>();
+  const scope = extensionSessionScope(ctx);
+  const runs = visibleWorkflowRunsByScope.get(scope) ?? new Map<string, TrackedVisibleWorkflowRun>();
   runs.set(run.run.runId, run);
-  visibleWorkflowRuns.set(ctx, runs);
-  void run.run.finished.finally(() => untrackVisibleWorkflowRun(ctx, run.run.runId)).catch(() => undefined);
+  visibleWorkflowRunsByScope.set(scope, runs);
+  void run.run.finished.finally(() => untrackVisibleWorkflowRun(scope, run.run.runId)).catch(() => undefined);
 }
 
-function untrackVisibleWorkflowRun(ctx: ExtensionContext, runId: string | undefined): void {
+function untrackVisibleWorkflowRun(scope: string, runId: string | undefined): void {
   if (!runId) return;
-  const runs = visibleWorkflowRuns.get(ctx);
+  const runs = visibleWorkflowRunsByScope.get(scope);
   runs?.delete(runId);
-  if (runs?.size === 0) visibleWorkflowRuns.delete(ctx);
+  if (runs?.size === 0) visibleWorkflowRunsByScope.delete(scope);
 }

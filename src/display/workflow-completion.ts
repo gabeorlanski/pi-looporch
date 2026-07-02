@@ -1,6 +1,3 @@
-import { completeMessage } from "./messages.ts";
-
-const VISIBLE_RESULT_LIMIT = 12_000;
 const PROMPT_RESULT_LIMIT = 16_000;
 
 export interface WorkflowCompletionInfo {
@@ -9,17 +6,6 @@ export interface WorkflowCompletionInfo {
   outputsDir?: string;
   resultPath?: string;
   sessionLogDir?: string;
-}
-
-export function workflowCompletionMessage(info: WorkflowCompletionInfo): string {
-  return [
-    completeMessage(info.workflowName),
-    "",
-    renderWorkflowResultSection(info.result, VISIBLE_RESULT_LIMIT, info.resultPath),
-    "",
-    "Outputs:",
-    ...workflowCompletionLocations(info),
-  ].join("\n");
 }
 
 export function workflowCompletionReviewPrompt(info: WorkflowCompletionInfo): string {
@@ -33,10 +19,6 @@ export function workflowCompletionReviewPrompt(info: WorkflowCompletionInfo): st
     "Paths:",
     ...workflowCompletionLocations(info),
   ].join("\n");
-}
-
-export function workflowCompletionNotification(info: WorkflowCompletionInfo): string {
-  return workflowCompletionMessage(info);
 }
 
 function workflowCompletionLocations(info: WorkflowCompletionInfo): string[] {

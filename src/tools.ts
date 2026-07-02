@@ -1,16 +1,14 @@
 import { Type } from "typebox";
 import { defineTool, getAgentDir, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { BackgroundWorkflowRunResult } from "./workflow/background-runs.ts";
-import { workflowCompletionNotification } from "./display/workflow-completion.ts";
+import { startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
+import type { SendWorkflowUserMessage } from "./display/workflow-user-message.ts";
 import { workflowFinalOutputPath } from "./workflow/outputs.ts";
 import type { WorkflowAgent } from "./runtime/types.ts";
 import { progressDisplay } from "./display/progress.ts";
 import { saveWorkflowDraft } from "./workflow/draft-save.ts";
 import { workflowDesignGuidance } from "./authoring-guide.ts";
-import { startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
 import { readWorkflowDraft } from "./workflow/drafts.ts";
 import { normalizeWorkflowName } from "./workflow/paths.ts";
-import { errorMessage } from "./errors.ts";
 import { renderWorkflowStatus, renderWorkflowStatusJson } from "./display/workflow-status.ts";
 import { readSelectedWorkflowStatus, type WorkflowStatusQuery } from "./workflow/status.ts";
 
@@ -19,19 +17,34 @@ export interface WorkflowToolsOptions {
   cwd?: string;
   agent?: WorkflowAgent;
   agentForContext?: (ctx: ExtensionContext) => WorkflowAgent;
+  sendUserMessageForContext?: (ctx: ExtensionContext) => SendWorkflowUserMessage | undefined;
 }
 
 /** Builds the public tool surface for running, authoring guidance, and proposing workflows. */
 export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefinition[] {
   return [
-    createRunWorkflowTool(options),
+    ...workflowRunTools(options),
     createWorkflowStatusTool(options),
     createWorkflowDesignGuidanceTool(),
     createProposeWorkflowTool(options),
   ];
 }
 
-function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
+function workflowRunTools(options: WorkflowToolsOptions): ToolDefinition[] {
+  return isWorkflowRunToolOptions(options) ? [createRunWorkflowTool(options)] : [];
+}
+
+interface WorkflowRunToolOptions extends WorkflowToolsOptions {
+  agent?: WorkflowAgent;
+  agentForContext?: (ctx: ExtensionContext) => WorkflowAgent;
+  sendUserMessageForContext: (ctx: ExtensionContext) => SendWorkflowUserMessage;
+}
+
+function isWorkflowRunToolOptions(options: WorkflowToolsOptions): options is WorkflowRunToolOptions {
+  return (options.agent !== undefined || options.agentForContext !== undefined) && options.sendUserMessageForContext !== undefined;
+}
+
+function createRunWorkflowTool(options: WorkflowRunToolOptions): ToolDefinition {
   return defineTool({
     name: "run_workflow",
     label: "Run Workflow",
@@ -46,6 +59,7 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
       const workflowName = normalizeWorkflowName(params.name);
       const agent = options.agent ?? options.agentForContext?.(ctx);
       if (!agent) throw new Error("run_workflow requires a workflow agent");
+      const sendUserMessage = options.sendUserMessageForContext(ctx);
       const visible = await startVisibleWorkflowRun({
         ctx,
         cwd,
@@ -54,6 +68,7 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
         agentDir: getAgentDir(),
         agent,
         signal,
+        sendUserMessage,
         onSnapshot: (snapshot, prepared, run) => {
           onUpdate?.({
             content: [{ type: "text", text: progressDisplay(snapshot).text }],
@@ -61,14 +76,6 @@ function createRunWorkflowTool(options: WorkflowToolsOptions): ToolDefinition {
           });
         },
       });
-      void visible.run.finished
-        .then((result) => {
-          if (!visible.isSessionClosing()) notifyBackgroundToolCompletion(ctx, result);
-        })
-        .catch((error: unknown) => {
-          if (!visible.isSessionClosing()) ctx.ui.notify(`Workflow ${workflowName} failed: ${errorMessage(error)}`, "error");
-        })
-        .finally(visible.cleanup);
       return {
         content: [
           {
@@ -100,10 +107,6 @@ function runningWorkflowToolDetails(
     outputsDir,
     resultPath: workflowFinalOutputPath(outputsDir),
   };
-}
-
-function notifyBackgroundToolCompletion(ctx: ExtensionContext, result: BackgroundWorkflowRunResult): void {
-  ctx.ui.notify(workflowCompletionNotification(result), "info");
 }
 
 function createWorkflowStatusTool(options: WorkflowToolsOptions): ToolDefinition {

@@ -139,10 +139,11 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 ## Repository map
 
-- `extensions/workflow.ts`: pi extension entry, tool registration, workflow command steering, named workflow aliases, session hooks, and completion/failure handoff.
+- `extensions/workflow.ts`: pi extension entry, tool registration, workflow command steering, named workflow aliases, and session hooks.
 - `extensions/commands/status.ts`: `/workflow-status` argument parsing and host message wiring.
 - `extensions/commands/settings.ts`: `/workflow-settings` argument parsing and settings writes.
 - `extensions/commands/review.ts`: `/workflow-review` host message wiring.
+- `src/display/visible-workflow-run.ts`: shared visible workflow launch, UI tracking, cleanup, and post-start completion/failure handoff for command and tool launches.
 - `src/runtime/run.ts`: sandboxed workflow execution wiring and progress snapshots.
 - `src/runtime/types.ts`: runtime public type contracts.
 - `src/workflow/start.ts`: shared workflow lookup, input validation, settings, run id, initial snapshot, and background-start policy.

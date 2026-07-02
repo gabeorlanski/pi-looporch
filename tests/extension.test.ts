@@ -101,12 +101,24 @@ export default async function workflow(input) {
       (update) => update?.some((line) => line.includes("workflow tool-echo")) && update.some((line) => line.includes("0/0 agents done")),
     ),
   );
-  await waitForCondition(() =>
-    harness.notifications.some(
-      (notification) =>
-        notification.message.includes("Workflow 'tool-echo' complete") && notification.message.includes('"message": "hello"'),
-    ),
+  await waitForCondition(() => harness.sentUserMessages.length === 1);
+  assert.deepEqual(harness.notifications.at(-1), { message: "Workflow 'tool-echo' complete.", type: "info" });
+  assert.equal(harness.sentMessages.length, 0);
+  const handoff = harness.sentUserMessages[0];
+  assert.deepEqual(handoff.options, undefined);
+  assert.match(
+    typeof handoff.message === "string" ? handoff.message : "",
+    /Automated workflow completion handoff: workflow 'tool-echo' completed/,
   );
+  assert.match(typeof handoff.message === "string" ? handoff.message : "", /"message": "hello"/);
+});
+
+void test("workflow_product_callers_do_not_settle_visible_runs", async () => {
+  const productSources = await Promise.all([readFile("extensions/workflow.ts", "utf8"), readFile("src/tools.ts", "utf8")]);
+
+  for (const source of productSources) {
+    assert.doesNotMatch(source, /\.run\.finished|visible\.cleanup/);
+  }
 });
 
 void test("workflow_status_tool_reads_project_wide_active_runs", async () => {
@@ -238,6 +250,7 @@ export default async function workflow() {
     input: {},
     agentDir: path.join(project, "agent-dir"),
     agent,
+    sendUserMessage: () => undefined,
   });
 
   await waitForCondition(() => childStarted);
@@ -488,11 +501,11 @@ export default async function workflow() {
   const harness = createExtensionHarness({ cwd: project });
 
   await harness.command("workflow", "fail");
-  await waitForCondition(() => harness.sentMessages.length === 1);
+  await waitForCondition(() => harness.sentUserMessages.length === 1);
 
   assert.deepEqual(harness.notifications.at(-1), { message: "Workflow 'fail' failed: workflow exploded", type: "error" });
-  assert.equal(harness.sentMessages[0].message.content, "Workflow 'fail' failed: workflow exploded");
-  assert.deepEqual(harness.sentMessages[0].message.details, { workflowName: "fail" });
+  assert.deepEqual(harness.sentMessages, []);
+  assert.deepEqual(harness.sentUserMessages[0], { message: "Workflow 'fail' failed: workflow exploded", options: undefined });
   assert.equal(harness.widgetUpdates.at(-1), undefined);
 });
 
@@ -604,9 +617,13 @@ export default async function workflow({ repo, problem, mode = "fast" }) {
 
   await harness.command("workflow", "plan repo=owner/name");
 
-  assert.equal(harness.sentMessages.length, 1);
-  assert.match(harness.sentMessages[0].message.content, /missing required input: problem/);
-  assert.match(harness.sentMessages[0].message.content, /problem=<value>/);
+  assert.deepEqual(harness.sentMessages, []);
+  assert.equal(harness.sentUserMessages.length, 1);
+  assert.match(
+    typeof harness.sentUserMessages[0].message === "string" ? harness.sentUserMessages[0].message : "",
+    /missing required input: problem/,
+  );
+  assert.match(typeof harness.sentUserMessages[0].message === "string" ? harness.sentUserMessages[0].message : "", /problem=<value>/);
   assert.equal(harness.notifications.at(-1)?.type, "warning");
 });
 

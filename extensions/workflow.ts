@@ -3,14 +3,12 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { naturalLanguageRequestMessage, steerableInputResolutionMessage } from "../src/prompt-templates.ts";
 import { discoverWorkflows } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
-import type { BackgroundWorkflowRunResult } from "../src/workflow/background-runs.ts";
 import { parseWorkflowInput } from "../src/input.ts";
-import { workflowCompletionReviewPrompt } from "../src/display/workflow-completion.ts";
-import { completeMessage, failureMessage } from "../src/display/messages.ts";
+import { failureMessage } from "../src/display/messages.ts";
 import { startWorkflowMonitorWidget, stopWorkflowMonitorWidget } from "../src/display/workflow-monitor-widget.ts";
 import { openRunningWorkflowInspector, restoreRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
 import { abortVisibleWorkflowRuns, startVisibleWorkflowRun } from "../src/display/visible-workflow-run.ts";
-import { errorMessage } from "../src/errors.ts";
+import { sendWorkflowUserMessage } from "../src/display/workflow-user-message.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import { WorkflowInputError } from "../src/workflow/input-contract.ts";
 import { normalizeWorkflowName } from "../src/workflow/paths.ts";
@@ -18,7 +16,6 @@ import { readWorkflowInputContract } from "../src/workflow/start.ts";
 import { reviewWorkflowCommand } from "./commands/review.ts";
 import { workflowSettingsCommand } from "./commands/settings.ts";
 import { workflowStatusCommand } from "./commands/status.ts";
-import { WORKFLOW_MESSAGE_TYPE } from "./messages.ts";
 
 /** Registers pi-workflow commands, tools, and TUI hooks with a Pi extension host. */
 export default function piWorkflow(pi: ExtensionAPI) {
@@ -26,6 +23,7 @@ export default function piWorkflow(pi: ExtensionAPI) {
 
   for (const tool of createWorkflowTools({
     agentForContext: (ctx) => createPiWorkflowAgent({ cwd: ctx.cwd }),
+    sendUserMessageForContext: () => (message, options) => pi.sendUserMessage(message, options),
   })) {
     pi.registerTool(tool);
   }
@@ -102,7 +100,7 @@ async function steerWorkflowCommand(
   }
 
   ctx.ui.notify("Workflow request sent to current session", "info");
-  sendUserMessageWhenReady(pi, ctx, naturalLanguageRequestMessage(trimmed, names));
+  sendWorkflowUserMessage(ctx, (message, options) => pi.sendUserMessage(message, options), naturalLanguageRequestMessage(trimmed, names));
 }
 
 async function runExistingWorkflowCommand(
@@ -116,16 +114,15 @@ async function runExistingWorkflowCommand(
     ctx.ui.notify(`Workflow '${workflowName}' not found.`, "warning");
     return;
   }
-  const abortControls = createWorkflowAbortControls(ctx);
   try {
     const inputContract = await readWorkflowInputContract(workflow);
     const parsedInput = parseWorkflowInput(rawInput);
+    const sendUserMessage = (message: string, options?: { deliverAs?: "followUp" }) => pi.sendUserMessage(message, options);
     if (parsedInput.action === "resolve") {
-      abortControls.dispose();
       ctx.ui.notify(`Workflow '${workflowName}' input resolution sent to current session`, "info");
-      sendUserMessageWhenReady(
-        pi,
+      sendWorkflowUserMessage(
         ctx,
+        sendUserMessage,
         steerableInputResolutionMessage({
           rawInput: parsedInput.rawInput,
           workflowName,
@@ -137,98 +134,21 @@ async function runExistingWorkflowCommand(
     }
     const agent = createPiWorkflowAgent({ cwd: ctx.cwd });
     ctx.ui.notify(`Running workflow '${workflowName}' in the background`, "info");
-    const visible = await startVisibleWorkflowRun({
+    await startVisibleWorkflowRun({
       ctx,
       cwd: ctx.cwd,
       workflowName,
       input: parsedInput.input,
       agentDir: getAgentDir(),
       agent,
-      signal: abortControls.signal,
-      abortWorkflow: abortControls.abort,
+      signal: ctx.signal,
+      sendUserMessage,
     });
-    void settleBackgroundWorkflowRun(
-      pi,
-      ctx,
-      workflowName,
-      visible.run.finished,
-      () => {
-        visible.cleanup();
-        abortControls.dispose();
-      },
-      visible.isSessionClosing,
-    );
   } catch (error) {
-    abortControls.dispose();
     const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
-    pi.sendMessage({ customType: WORKFLOW_MESSAGE_TYPE, content: message, display: true, details: { workflowName } });
+    sendWorkflowUserMessage(ctx, (content, options) => pi.sendUserMessage(content, options), message);
   }
-}
-
-async function settleBackgroundWorkflowRun(
-  pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
-  workflowName: string,
-  finished: Promise<BackgroundWorkflowRunResult>,
-  cleanup: () => void,
-  isSessionClosing: () => boolean,
-): Promise<void> {
-  try {
-    const result = await finished;
-    if (isSessionClosing()) return;
-    try {
-      completeBackgroundWorkflow(pi, ctx, result);
-    } catch (error) {
-      if (isSessionClosing()) return;
-      ctx.ui.notify(`Workflow '${result.workflowName}' completed, but completion handling failed: ${errorMessage(error)}`, "error");
-    }
-  } catch (error) {
-    if (isSessionClosing()) return;
-    failBackgroundWorkflow(pi, ctx, workflowName, error);
-  } finally {
-    cleanup();
-  }
-}
-
-function completeBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, result: BackgroundWorkflowRunResult): void {
-  ctx.ui.notify(completeMessage(result.workflowName), "info");
-  sendUserMessageWhenReady(pi, ctx, workflowCompletionReviewPrompt(result));
-}
-
-function failBackgroundWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, workflowName: string, error: unknown): void {
-  const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
-  ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
-  pi.sendMessage({ customType: WORKFLOW_MESSAGE_TYPE, content: message, display: true, details: { workflowName } });
-}
-
-function createWorkflowAbortControls(ctx: ExtensionCommandContext): { signal: AbortSignal; abort: () => void; dispose: () => void } {
-  const controller = new AbortController();
-  const abortWorkflow = () => {
-    if (controller.signal.aborted) return;
-    controller.abort();
-  };
-  const removeHostAbortListener = ctx.signal
-    ? (() => {
-        ctx.signal.addEventListener("abort", abortWorkflow, { once: true });
-        return () => ctx.signal?.removeEventListener("abort", abortWorkflow);
-      })()
-    : () => undefined;
-  return {
-    signal: controller.signal,
-    abort: abortWorkflow,
-    dispose() {
-      removeHostAbortListener();
-    },
-  };
-}
-
-function sendUserMessageWhenReady(pi: ExtensionAPI, ctx: ExtensionCommandContext, message: string): void {
-  if (ctx.isIdle()) {
-    pi.sendUserMessage(message);
-    return;
-  }
-  pi.sendUserMessage(message, { deliverAs: "followUp" });
 }
 
 async function viewWorkflowCommand(ctx: ExtensionCommandContext): Promise<void> {

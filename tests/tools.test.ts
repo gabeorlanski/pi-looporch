@@ -85,13 +85,19 @@ export default async function workflow(input) {
     "utf8",
   );
   const agent: WorkflowAgent = (prompt, options) => Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
-  const tool = createWorkflowTools({ cwd: project, agent }).find((candidate) => candidate.name === "run_workflow");
+  const sentUserMessages: { message: string; options: unknown }[] = [];
+  const tool = createWorkflowTools({
+    cwd: project,
+    agent,
+    sendUserMessageForContext: () => (message, options) => sentUserMessages.push({ message, options }),
+  }).find((candidate) => candidate.name === "run_workflow");
   assert.ok(tool);
 
   const updates: string[] = [];
   const notifications: string[] = [];
   const toolContext = {
     mode: "print",
+    isIdle: () => true,
     sessionManager: {
       getSessionId: () => "tool-session",
     },
@@ -114,13 +120,16 @@ export default async function workflow(input) {
   assert.match(details.outputsDir, /pi-workflow-.*echo/);
   assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /Workflow echo started in the background/);
   await waitForCondition(() => updates.some((update) => update.includes("workflow echo") && update.includes("#1 helper")));
-  await waitForCondition(() => notifications.some((message) => message.includes("Workflow 'echo' complete")));
-  const completionNotice = notifications.find((message) => message.includes("Workflow 'echo' complete")) ?? "";
-  assert.match(completionNotice, /Result:\n\n```json/);
-  assert.match(completionNotice, /helper:say hi/);
-  assert.match(completionNotice, /- Workflow result: .*final\.json/);
-  assert.match(completionNotice, /- Workflow outputs: /);
-  assert.match(completionNotice, /- Workflow session logs: /);
+  await waitForCondition(() => sentUserMessages.length === 1);
+  assert.deepEqual(sentUserMessages[0]?.options, undefined);
+  assert.deepEqual(notifications, ["Workflow 'echo' complete."]);
+  const completionHandoff = sentUserMessages[0]?.message ?? "";
+  assert.match(completionHandoff, /Automated workflow completion handoff: workflow 'echo' completed/);
+  assert.match(completionHandoff, /Result:\n\n```json/);
+  assert.match(completionHandoff, /helper:say hi/);
+  assert.match(completionHandoff, /- Workflow result: .*final\.json/);
+  assert.match(completionHandoff, /- Workflow outputs: /);
+  assert.match(completionHandoff, /- Workflow session logs: /);
   assert.deepEqual(JSON.parse(await readFile(path.join(details.outputsDir, "outputs", "final.json"), "utf8")), {
     input: { message: "hello" },
     agent: "helper:say hi",
@@ -140,11 +149,17 @@ export default async function workflow() {
     "utf8",
   );
   const agent: WorkflowAgent = () => Promise.resolve("unused");
-  const tool = createWorkflowTools({ cwd: project, agent }).find((candidate) => candidate.name === "run_workflow");
+  const sentUserMessages: { message: string; options: unknown }[] = [];
+  const tool = createWorkflowTools({
+    cwd: project,
+    agent,
+    sendUserMessageForContext: () => (message, options) => sentUserMessages.push({ message, options }),
+  }).find((candidate) => candidate.name === "run_workflow");
   assert.ok(tool);
   const notifications: { message: string; type?: string }[] = [];
   const toolContext = {
     mode: "print",
+    isIdle: () => true,
     sessionManager: {
       getSessionId: () => "tool-session",
     },
@@ -154,7 +169,8 @@ export default async function workflow() {
   await tool.execute("call-1", { name: "fail" }, undefined, undefined, toolContext);
   await waitForCondition(() => notifications.some((notification) => notification.type === "error"));
 
-  assert.deepEqual(notifications, [{ message: "Workflow fail failed: tool exploded", type: "error" }]);
+  assert.deepEqual(notifications, [{ message: "Workflow 'fail' failed: tool exploded", type: "error" }]);
+  assert.deepEqual(sentUserMessages, [{ message: "Workflow 'fail' failed: tool exploded", options: undefined }]);
 });
 
 void test("run_workflow_tool_skips_background_notification_after_session_shutdown", async () => {
@@ -184,12 +200,21 @@ export default async function workflow() {
         { once: true },
       );
     });
-  const tool = createWorkflowTools({ cwd: project, agent }).find((candidate) => candidate.name === "run_workflow");
+  const sentUserMessages: string[] = [];
+  const tool = createWorkflowTools({
+    cwd: project,
+    agent,
+    sendUserMessageForContext: () => (message) => {
+      if (stale) throw new Error("stale user message");
+      sentUserMessages.push(message);
+    },
+  }).find((candidate) => candidate.name === "run_workflow");
   assert.ok(tool);
   const notifications: string[] = [];
   const toolContext = {
     cwd: project,
     mode: "print",
+    isIdle: () => true,
     sessionManager: {
       getSessionId: () => "tool-session",
     },
@@ -214,6 +239,7 @@ export default async function workflow() {
 
   assert.equal(childAbortSeen, true);
   assert.deepEqual(notifications, []);
+  assert.deepEqual(sentUserMessages, []);
 });
 
 void test("propose_workflow_tool_saves_draft_directory", async () => {

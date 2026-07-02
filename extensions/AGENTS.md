@@ -16,6 +16,7 @@ npm run check
 ## Rules
 
 - Keep this layer thin; delegate workflow behavior to `src/`.
+- Put command-specific parsing and host message wiring in `extensions/commands/`; keep `extensions/workflow.ts` focused on registration, workflow steering, and session hooks.
 - Parse and coerce command text here before calling core code.
 - Keep generated workflow saving direct. `propose_workflow` validates a complete draft directory and saves it in one call.
 - Register commands/tools with clear descriptions and stable names.

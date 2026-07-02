@@ -1,18 +1,21 @@
-import type { RunWorkflowOptions, WorkflowRunResult, WorkflowSnapshot } from "./runtime/types.ts";
-import { runWorkflowFromDirectory } from "./runtime/run.ts";
-import { writeWorkflowSessionSummary } from "./session-logs.ts";
-import { registerActiveWorkflowRun, removeActiveWorkflowRun } from "./workflow/active-runs.ts";
-import { createWorkflowOutputsDir, writeWorkflowSnapshot } from "./workflow/outputs.ts";
+import type { RunWorkflowOptions, WorkflowRunResult, WorkflowSnapshot } from "../runtime/types.ts";
+import { runWorkflowFromDirectory } from "../runtime/run.ts";
+import { writeWorkflowSessionSummary } from "../session-logs.ts";
+import { registerActiveWorkflowRun, removeActiveWorkflowRun } from "./active-runs.ts";
+import { createWorkflowOutputsDir, writeWorkflowSnapshot } from "./outputs.ts";
 
+/** Options for starting a workflow as a persisted background run owned by a Pi session. */
 export interface StartBackgroundWorkflowRunOptions extends RunWorkflowOptions {
   runId: string;
   ownerSessionId: string;
 }
 
+/** Terminal background workflow result plus the persisted child-session summary directory. */
 export interface BackgroundWorkflowRunResult extends WorkflowRunResult {
   sessionLogDir: string;
 }
 
+/** Handle for a running background workflow, including abort, latest snapshot, and completion promise. */
 export interface BackgroundWorkflowRun {
   runId: string;
   workflowName: string;
@@ -22,6 +25,7 @@ export interface BackgroundWorkflowRun {
   finished: Promise<BackgroundWorkflowRunResult>;
 }
 
+/** Starts a workflow run, registers it as active, writes snapshots, and cleans up the active record on completion. */
 export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflowRunOptions): Promise<BackgroundWorkflowRun> {
   const outputsDir = options.outputsDir ?? (await createWorkflowOutputsDir(options.runId));
   await registerActiveWorkflowRun(options.cwd, {

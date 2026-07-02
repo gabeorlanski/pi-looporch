@@ -1,7 +1,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { GeneratedWorkflowDraft } from "../request.ts";
+import type { GeneratedWorkflowDraft } from "./draft-save.ts";
 import { parseWorkflowSourceMetadata } from "./metadata.ts";
 
 export interface WorkflowDraftReadOptions {

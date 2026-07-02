@@ -87,6 +87,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Workflow child-agent SDK sessions should disable ambient pi extensions and load only `workflow.childAgentExtensions` from merged global/project settings; configured extension state must stay child-session-local and never mutate parent/global extension state.
 - Workflows started by named commands and by the current-session agent through `run_workflow` should share the same TUI running-workflow widget, `/view-workflow` inspector entrypoint, reload reattachment, and cleanup behavior, scoped to the parent Pi session id rather than cwd alone.
 - `workflow_status`, `/workflow-status`, and the passive monitor widget are project-scoped by default and may show workflows owned by other Pi sessions; use `scope: "current-session"` only when the caller explicitly wants the current session.
+- Configured workflow roots live in `.pi/settings.json` or global settings as `workflow.workflowDirs`; discovery resolves those paths from the project root.
 - Workflow completion messages should surface the final result or report, keep output/session-log paths visible, and for command-launched workflows inject a visible follow-up user message asking the current agent to review and summarize the result.
 - `/workflow-review` reviews actual workflow session logs for token-cost reduction; keep it focused on recorded token spend, repeated tool activity, common commands across agents, and actionable ways to reduce future workflow cost.
 - Workflow completion handoffs should be visible to the user. Do not hide result-review prompts; include a bounded result preview plus paths so the agent can read more if needed.
@@ -111,32 +112,57 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 ## Key data shapes
 
 - Runtime types: `src/runtime/types.ts` defines `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, and `WorkflowRunResult`.
-- Runtime execution: `src/runtime/run.ts` wires workflow execution; `src/workflow/start.ts` owns shared run preparation/start policy for commands and tools.
-- Workflow source analysis: `src/workflow/source-analysis.ts`, `src/workflow/sandbox.ts`, and `src/workflow/metadata.ts` own shared AST restrictions, sandbox transforms, and static metadata parsing.
-- Workflow saving: `src/request.ts` defines `GeneratedWorkflowDraft` validation and draft saving.
+- Runtime execution: `src/runtime/run.ts` wires sandboxed execution; `src/workflow/start.ts` owns shared run preparation/start policy for commands and tools; `src/workflow/background-runs.ts` owns background execution, active-run registration, outputs, and session-summary closeout.
+- Workflow source analysis: `src/workflow/source-analysis.ts`, `src/workflow/sandbox.ts`, `src/workflow/metadata.ts`, and `src/workflow/input-contract.ts` own AST restrictions, sandbox transforms, static metadata parsing, and default workflow input contracts.
+- Workflow saving: `src/workflow/draft-save.ts` defines `GeneratedWorkflowDraft` validation and draft saving.
 - Discovery: `src/discovery.ts` defines `WorkflowReference` and workflow root handling; workflow root settings come from `src/workflow/settings.ts`.
 - Settings: `src/workflow/settings.ts` defines workflow global/project settings parsing and persistence, including configured workflow roots.
 - Tools: `src/tools.ts` defines `WorkflowToolsOptions` and tool creation.
 - Pi bridge: `src/pi-agent.ts` defines `PiWorkflowAgentOptions`; session event filtering, token usage, and logged child-session persistence live in `src/session-events.ts`, `src/session-usage.ts`, and `src/agent-session-logs.ts`.
 - Prompt templates: `src/prompts/*.txt` contains raw agent prompt copy; `src/prompt-templates.ts` binds typed data into those templates.
 - Authoring guide: `src/authoring-guide.ts` owns on-demand workflow design guidance returned by `workflow_design_guidance`; routing prompts should stay compact and point agents to the tool instead of embedding verbose examples.
-- Display: `src/display/` contains progress and message renderers.
+- Display: `src/display/` contains progress/message renderers plus the running-workflow widget, inspector, and visible-run UI lifecycle.
+
+## Question Dispatch
+
+- Run an existing workflow from a slash command: start in `extensions/workflow.ts`, then `src/workflow/start.ts`, `src/workflow/background-runs.ts`, and `src/runtime/run.ts`.
+- Run an existing workflow from a tool: start in `src/tools.ts`, then follow the same `src/workflow/start.ts` -> `src/workflow/background-runs.ts` -> `src/runtime/run.ts` path.
+- Parse named-command input: `src/input.ts` parses raw JSON/key-value/freeform command text; `src/workflow/input-contract.ts` reads workflow function/JSDoc contracts and validates normalized direct input.
+- Discover workflows and configured roots: `src/discovery.ts` plus `src/workflow/settings.ts`.
+- Save generated workflow drafts: `src/workflow/draft-save.ts` validates and saves complete draft directories; `src/workflow/drafts.ts` reads generated draft directories from the default draft root.
+- Understand runtime primitives: `src/runtime/globals.ts` registers primitives from `src/runtime/primitives/`; shared primitive context lives in `src/runtime/context.ts`.
+- Inspect active workflow status: data comes from `src/workflow/status.ts`, active records from `src/workflow/active-runs.ts`, snapshots from `src/workflow/active-run-snapshots.ts`, rendering from `src/display/workflow-status.ts`, slash command parsing from `extensions/commands/status.ts`, and tool wiring from `src/tools.ts`.
+- Inspect workflow UI: running widget lifecycle lives in `src/display/running-workflow-ui.ts`, command/tool visible-run startup in `src/display/visible-workflow-run.ts`, compact widget rendering in `src/display/workflow-widget.ts`, and detail inspector rendering in `src/display/workflow-inspector.ts`.
+- Inspect outputs and artifacts: `src/workflow/outputs.ts` writes final output, snapshots, manifests, child-agent prompts, child-agent output, and tool activity artifacts.
+- Inspect session logs and cost review: `src/session-logs.ts` writes workflow summaries, `src/agent-session-logs.ts` creates child-agent session logs, `src/session-events.ts` filters event metadata, `src/session-transcript.ts` reads session JSONL, `src/session-usage.ts` parses token usage, and `src/log-review.ts` builds `/workflow-review`.
+- Inspect pi child-agent integration: `src/pi-agent.ts` adapts pi sessions to `WorkflowAgent`, loads child-agent extension settings, reports progress, and re-exports log/session helpers.
 
 ## Repository map
 
-- `extensions/workflow.ts`: pi extension entry, commands, aliases, and passive workflow progress.
+- `extensions/workflow.ts`: pi extension entry, tool registration, workflow command steering, named workflow aliases, session hooks, and completion/failure handoff.
+- `extensions/commands/status.ts`: `/workflow-status` argument parsing and host message wiring.
+- `extensions/commands/settings.ts`: `/workflow-settings` argument parsing and settings writes.
+- `extensions/commands/review.ts`: `/workflow-review` host message wiring.
 - `src/runtime/run.ts`: sandboxed workflow execution wiring and progress snapshots.
 - `src/runtime/types.ts`: runtime public type contracts.
 - `src/workflow/start.ts`: shared workflow lookup, input validation, settings, run id, initial snapshot, and background-start policy.
+- `src/workflow/background-runs.ts`: background run lifecycle, active-run record registration, final output/session summary persistence, and cleanup.
 - `src/workflow/source-analysis.ts`: shared workflow AST validation and module-edit analysis used by metadata parsing and sandbox compilation.
+- `src/workflow/input-contract.ts`: default workflow function/JSDoc input contract extraction and normalized input validation.
 - `src/workflow/paths.ts`: workflow path/name/cwd helpers.
 - `src/workflow/sandbox.ts`: source transform and import/require restrictions.
 - `src/workflow/metadata.ts`: static metadata extraction.
+- `src/workflow/outputs.ts`: workflow output directories, final results, snapshot/manifest persistence, and child-agent artifacts.
+- `src/workflow/status.ts`: active-run status projection for tools and commands.
+- `src/workflow/active-runs.ts`, `src/workflow/active-run-snapshots.ts`: active-run records and snapshot rehydration.
+- `src/workflow/drafts.ts`: generated draft directory reading and default draft path helpers.
 - `src/discovery.ts`: local and configured workflow root discovery.
 - `src/workflow/settings.ts`: global `~/.pi/agent/settings.json` and project `.pi/settings.json` workflow settings.
-- `src/request.ts`: generated workflow draft validation and saving.
+- `src/workflow/draft-save.ts`: generated workflow draft validation and saving.
+- `src/input.ts`: direct slash-command input parsing only.
 - `src/tools.ts`: `run_workflow`, `workflow_design_guidance`, and `propose_workflow` tool definitions.
 - `src/session-events.ts`, `src/session-usage.ts`, `src/agent-session-logs.ts`: child-agent session event filtering, token usage parsing, and persisted child-session setup.
-- `src/display/`: passive progress and visible message rendering.
+- `src/session-logs.ts`, `src/session-transcript.ts`, `src/log-review.ts`: workflow session summary paths, session JSONL reading, and cost-review reports.
+- `src/display/`: progress rendering, status rendering, running widget lifecycle, visible-run startup, and inspector UI.
 - `src/prompts/`: raw prompt templates for agent-facing instructions.
 - `tests/`: deterministic coverage for each core module.

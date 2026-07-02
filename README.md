@@ -104,6 +104,7 @@ Project settings live in `.pi/settings.json`; global settings can live in
 ```json
 {
   "workflow": {
+    "workflowDirs": ["../shared-workflows"],
     "maxParallelAgents": 4,
     "childAgentExtensions": ["pi-subagents", "./extensions/todo.ts"]
   }
@@ -112,6 +113,7 @@ Project settings live in `.pi/settings.json`; global settings can live in
 
 ```text
 /workflow-settings
+/workflow-settings workflowDirs=../shared-workflows
 /workflow-settings maxParallelAgents=8
 /workflow-settings childAgentExtensions=pi-subagents,./extensions/todo.ts
 /workflow-settings --global maxParallelAgents=4

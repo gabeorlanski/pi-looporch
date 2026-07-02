@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
-import { startBackgroundWorkflowRun, type BackgroundWorkflowRun } from "../background-runs.ts";
 import { discoverWorkflows, type WorkflowReference, workflowRootsForProject } from "../discovery.ts";
-import { extractWorkflowInputContract, validateWorkflowInput, type WorkflowInputContract } from "../input.ts";
 import type { WorkflowAgent, WorkflowSnapshot } from "../runtime/types.ts";
+import { startBackgroundWorkflowRun, type BackgroundWorkflowRun } from "./background-runs.ts";
+import { extractWorkflowInputContract, validateWorkflowInput, type WorkflowInputContract } from "./input-contract.ts";
 import { normalizeWorkflowName } from "./paths.ts";
 import { createWorkflowRunId } from "./run-id.ts";
 import { readWorkflowSettings } from "./settings.ts";

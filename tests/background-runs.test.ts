@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { startBackgroundWorkflowRun } from "../src/background-runs.ts";
+import { startBackgroundWorkflowRun } from "../src/workflow/background-runs.ts";
 import { workflowAgentSessionLogParentDirectory } from "../src/session-logs.ts";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
 import { readActiveWorkflowRuns } from "../src/workflow/active-runs.ts";

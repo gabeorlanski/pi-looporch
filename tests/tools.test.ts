@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { createWorkflowTools } from "../src/tools.ts";
 import { abortVisibleWorkflowRuns } from "../src/display/visible-workflow-run.ts";
 import { defaultWorkflowDraftDirectory, defaultWorkflowDraftRoot } from "../src/workflow/drafts.ts";
+import { workflowPrimitiveReference } from "../src/runtime/globals.ts";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
 
 const generatedWorkflowDocstring = `/**
@@ -35,7 +36,8 @@ void test("workflow_design_guidance_tool_returns_topic_index_and_focused_guidanc
   assert.match(allText, /overview/);
   assert.match(allText, /workflow-api/);
   assert.match(allText, /prompt-files/);
-  assert.doesNotMatch(allText, /Available workflow globals/);
+  assert.match(allText, /Supported workflow primitives \(generated from the runtime registry\)/);
+  assertPrimitiveReferenceIsRendered(allText);
   assert.doesNotMatch(allText, /additionalProperties/);
 
   const overview = await tool.execute("call-2", { topic: "overview" }, undefined, undefined, {} as never);
@@ -43,15 +45,20 @@ void test("workflow_design_guidance_tool_returns_topic_index_and_focused_guidanc
   assert.match(overviewText, /workflow_design_guidance: overview|Workflow design guidance: overview/);
   assert.match(overviewText, new RegExp(escapeRegExp(defaultWorkflowDraftRoot())));
   assert.match(overviewText, /prompts\/\*\.txt/);
+  assertPrimitiveReferenceIsRendered(overviewText);
 
   const api = await tool.execute("call-3", { topic: "workflow-api" }, undefined, undefined, {} as never);
   const apiText = api.content[0]?.type === "text" ? api.content[0].text : "";
-  assert.match(apiText, /Runtime globals are listed in the session prompt/);
+  assert.match(apiText, /Supported workflow primitives are rendered below from the runtime registry/);
   assert.match(apiText, /cannot import modules/);
+  assertPrimitiveReferenceIsRendered(apiText);
 
   const promptFiles = await tool.execute("call-4", { topic: "prompt-files" }, undefined, undefined, {} as never);
   const promptFilesText = promptFiles.content[0]?.type === "text" ? promptFiles.content[0].text : "";
   assert.match(promptFilesText, /Inputs, Purpose, Definitions, Rules, Task, and Output/);
+  assert.match(promptFilesText, /more than five distinct non-verifier prompts/);
+  assert.match(promptFilesText, /Keep the Inputs section intentionally small/);
+  assert.match(promptFilesText, /not every workflow input or global/);
   assert.match(promptFilesText, /\{\{file\}\}/);
   assert.match(promptFilesText, /do not write JS template variables/);
   assert.match(promptFilesText, /Avoid unstructured global preamble dumps/);
@@ -360,6 +367,12 @@ export default async function workflow({ prompt }) {
     /must start with a JSDoc docstring/,
   );
 });
+
+function assertPrimitiveReferenceIsRendered(text: string): void {
+  for (const primitive of workflowPrimitiveReference()) {
+    assert.match(text, new RegExp(`- ${escapeRegExp(primitive.signature)}: ${escapeRegExp(primitive.summary)}`));
+  }
+}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

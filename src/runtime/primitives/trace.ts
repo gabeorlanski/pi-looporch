@@ -5,6 +5,13 @@ import { cloneSerializable } from "../serialization.ts";
 
 export const tracePrimitive: WorkflowPrimitive<{ trace: (label: string, value?: unknown) => void }> = {
   name: "trace",
+  docs: [
+    {
+      name: "trace",
+      signature: "trace(label, value?)",
+      summary: "Records structured debug or handoff state in workflow snapshots and session summaries.",
+    },
+  ],
   globals: ({ runtime }) => ({ trace: (label: string, value?: unknown) => recordTrace(runtime, label, value) }),
 };
 

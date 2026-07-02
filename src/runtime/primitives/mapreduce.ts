@@ -6,6 +6,13 @@ import { runParallel } from "./parallel.ts";
 
 export const mapReducePrimitive: WorkflowPrimitive<{ mapreduce: (options: MapReduceOptions) => Promise<unknown> }> = {
   name: "mapreduce",
+  docs: [
+    {
+      name: "mapreduce",
+      signature: "mapreduce({ inputPrompt, mapPrompt, reducePrompt, ...context })",
+      summary: "Coerces items, maps them through bounded child-agent fan-out, then reduces mapped outputs with one child agent.",
+    },
+  ],
   globals: ({ runtime }) => ({ mapreduce: (options: MapReduceOptions) => mapReduceWithAgents(runtime, options) }),
 };
 

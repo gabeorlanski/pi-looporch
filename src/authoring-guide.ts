@@ -1,3 +1,4 @@
+import { renderWorkflowPrimitiveReference } from "./runtime/globals.ts";
 import { defaultWorkflowDraftRoot } from "./workflow/drafts.ts";
 
 interface DesignTopic {
@@ -17,6 +18,7 @@ const designTopics: DesignTopic[] = [
       `Draft the workflow under the default outside-project draft root ${defaultWorkflowDraftRoot()}, then call propose_workflow with the workflow name.`,
       "Keep workflow.js as orchestration code. Put reusable child-agent prompt text in prompts/*.txt and render it with renderPrompt(...).",
       "Ask this tool for narrower topics only when needed: workflow-api, draft-directory, prompt-files, child-agents, structured-outputs, fanout, verification, artifacts.",
+      "The supported workflow primitives are listed below from the runtime registry so this guide stays synchronized with implementation.",
     ],
   },
   {
@@ -25,7 +27,7 @@ const designTopics: DesignTopic[] = [
     guidance: [
       "workflow.js exports static metadata and a default async workflow function; metadata must include name, description, inputInstructions, and phases.",
       "Document the default function with JSDoc covering purpose, input fields/defaults, phases, child agents, file reads, and result shape.",
-      "Runtime globals are listed in the session prompt with short descriptions and signatures; call narrower guidance topics for examples only when needed.",
+      "Supported workflow primitives are rendered below from the runtime registry with short descriptions and signatures; call narrower guidance topics for examples only when needed.",
       "Receive workflow input through workflow({ field, optional = default }) parameters.",
       "Workflows cannot import modules or use ambient Node globals. Use readText/readJson/writeText/writeJson/renderPrompt for workflow-owned files and artifacts.",
     ],
@@ -52,8 +54,10 @@ const designTopics: DesignTopic[] = [
     summary: "How to keep child-agent prompts in workflow-owned prompt files.",
     guidance: [
       "Put reusable child-agent prompts under prompts/*.txt; use subdirectories when a workflow has several phases.",
+      "If a workflow needs more than five distinct non-verifier prompts, split them into separate prompt files instead of packing variants into workflow.js or one oversized template.",
       "Call renderPrompt(templatePath, values) from workflow.js. Template paths resolve inside the workflow prompts/ directory.",
       "Prompt files may include shared context, but shape it as a compact contract with sections like Inputs, Purpose, Definitions, Rules, Task, and Output.",
+      "Keep the Inputs section intentionally small: include only values this stage directly consumes, not every workflow input or global. Move stable rules to Rules/Definitions and pass paths, IDs, counts, or compact summaries instead of full objects.",
       "Use renderPrompt placeholders such as {{file}}, {{focus}}, {{outputPath}}, and {{priorSummary}}; do not write JS template variables like ${input.file} inside prompt files.",
       "Avoid unstructured global preamble dumps and repeated irrelevant globals. Include only the shared context that child stage needs.",
       "Keep tiny inline prompts only for glue such as one-line synthesis labels.",
@@ -137,6 +141,8 @@ function workflowDesignTopicIndex(): string {
     "Start with topic: overview. Use topic: workflow-api for primitive syntax and sandbox rules.",
     "Topics:",
     ...designTopics.map((topic) => `- ${topic.name}: ${topic.summary}`),
+    "",
+    renderWorkflowPrimitiveReference(),
   ].join("\n");
 }
 
@@ -148,5 +154,6 @@ function workflowDesignTopicText(topic: DesignTopic): string {
     "Guidance:",
     ...topic.guidance.map((line) => `- ${line}`),
     ...(topic.examples?.length ? ["", "Examples:", ...topic.examples] : []),
+    ...(topic.name === "overview" || topic.name === "workflow-api" ? ["", renderWorkflowPrimitiveReference()] : []),
   ].join("\n");
 }

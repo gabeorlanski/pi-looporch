@@ -5,6 +5,13 @@ import { runParallel } from "./parallel.ts";
 
 export const verifierPrimitive: WorkflowPrimitive<{ verifier: (options: VerifierOptions) => Promise<unknown> }> = {
   name: "verifier",
+  docs: [
+    {
+      name: "verifier",
+      signature: "verifier({ criteria, criteriaPrompt, reducePrompt, ...context })",
+      summary: "Runs criterion voter child agents followed by a reducer for adversarial review or validation workflows.",
+    },
+  ],
   globals: ({ runtime }) => ({ verifier: (options: VerifierOptions) => verifyWithAgents(runtime, options) }),
 };
 

@@ -63,9 +63,17 @@ export interface WorkflowPrimitiveContext {
   workflowDir: string;
 }
 
+/** Author-facing documentation for one sandbox global exposed by a runtime primitive. */
+export interface WorkflowPrimitiveGlobalDoc {
+  name: string;
+  signature: string;
+  summary: string;
+}
+
 /** Runtime primitive contract for exposing one or more sandbox globals. */
 export interface WorkflowPrimitive<TGlobals extends Record<string, unknown> = Record<string, unknown>> {
   name: string;
+  docs: readonly WorkflowPrimitiveGlobalDoc[];
   globals: (context: WorkflowPrimitiveContext) => TGlobals;
 }
 

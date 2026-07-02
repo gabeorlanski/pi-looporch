@@ -1,4 +1,4 @@
-import type { ActiveWorkflowRuntime, WorkflowPrimitive } from "./context.ts";
+import type { ActiveWorkflowRuntime, WorkflowPrimitive, WorkflowPrimitiveGlobalDoc } from "./context.ts";
 import { agentPrimitive } from "./primitives/agent.ts";
 import { coercePrimitive } from "./primitives/coerce.ts";
 import { environmentPrimitive, filePrimitive } from "./primitives/files.ts";
@@ -23,6 +23,21 @@ const workflowPrimitives: WorkflowPrimitive[] = [
   mapReducePrimitive,
   verifierPrimitive,
 ];
+
+export interface WorkflowPrimitiveReference extends WorkflowPrimitiveGlobalDoc {
+  primitive: string;
+}
+
+export function workflowPrimitiveReference(): WorkflowPrimitiveReference[] {
+  return workflowPrimitives.flatMap((primitive) => primitive.docs.map((doc) => ({ primitive: primitive.name, ...doc })));
+}
+
+export function renderWorkflowPrimitiveReference(): string {
+  return [
+    "Supported workflow primitives (generated from the runtime registry):",
+    ...workflowPrimitiveReference().map((doc) => `- ${doc.signature}: ${doc.summary}`),
+  ].join("\n");
+}
 
 export function workflowGlobals(runtime: ActiveWorkflowRuntime, workflowDir: string): Record<string, unknown> {
   const globals: Record<string, unknown> = {};

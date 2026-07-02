@@ -20,6 +20,13 @@ export const agentPrimitive: WorkflowPrimitive<{
   agent: (prompt: string, agentOptions?: WorkflowAgentOptions) => Promise<unknown>;
 }> = {
   name: "agent",
+  docs: [
+    {
+      name: "agent",
+      signature: "agent(prompt, options?)",
+      summary: "Launches a child agent; options include label, cwd, taskFile, tools, model, reasoning, schema, and maxAttempts.",
+    },
+  ],
   globals: ({ runtime }) => ({
     agent: (prompt: string, agentOptions: WorkflowAgentOptions = {}) => runAgent(runtime, prompt, agentOptions),
   }),

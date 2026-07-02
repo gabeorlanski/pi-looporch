@@ -92,9 +92,11 @@ code runs in a sandbox with globals such as `agent`, `parallel`, `pipeline`,
 `coerce`, `mapreduce`, `verifier`, `phase`, `log`, `trace`, file helpers, and
 `renderPrompt`.
 
-Agents can call `workflow_design_guidance` for focused authoring help and
-`propose_workflow` to save complete generated workflow draft directories.
-Agents can call `workflow_status` to check active project workflow progress.
+Agents can call `workflow_design_guidance` for focused authoring help. Its
+primitive reference is generated from the runtime primitive registry so supported
+globals stay synchronized with implementation. Agents call `propose_workflow` to
+save complete generated workflow draft directories and `workflow_status` to check
+active project workflow progress.
 
 ## Settings
 

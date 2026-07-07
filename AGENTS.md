@@ -67,6 +67,57 @@ user asks for workflow help
 Workflow phases are progress markers, not shared memory. If later work needs an
 earlier result, pass that result explicitly through the workflow.
 
+## Conversational Style
+
+- Keep answers short and concise
+- No emojis in commits, issues, PR comments, or code
+- No fluff or cheerful filler text (e.g., "Thanks @user" not "Thanks so much @user!")
+- Technical prose only, be direct
+- When the user asks a question, answer it first before making edits or running implementation commands.
+- When responding to user feedback or an analysis, explicitly say whether you agree or disagree before saying what you changed.
+
+## Code Quality
+
+- Read files in full before wide-ranging changes, before editing files you have not fully inspected, and when asked to investigate or audit. Do not rely on search snippets for broad changes.
+- No `any` unless absolutely necessary.
+- Inline single-line helpers that have only one call site.
+- Check node_modules for external API types; don't guess.
+- **No inline imports** (`await import()`, `import("pkg").Type`, dynamic type imports). Top-level imports only.
+- Never remove or downgrade code to fix type errors from outdated deps; upgrade the dep instead.
+- Use only erasable TypeScript syntax (Node strip-only mode) in code checked by the root config (`packages/*/src`, `packages/*/test`, `packages/coding-agent/examples`): no parameter properties, `enum`, `namespace`/`module`, `import =`, `export =`, or other constructs needing JS emit. Use explicit fields with constructor assignments.
+- Always ask before removing functionality or code that appears intentional.
+- Do not preserve backward compatibility unless the user asks for it.
+- Never hardcode key checks (e.g. `matchesKey(keyData, "ctrl+x")`). Add defaults to `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` so they stay configurable.
+
+## Testing pi Interactive Mode with tmux
+
+Run the TUI in a controlled terminal (from the repo root):
+
+```bash
+tmux new-session -d -s pi-test -x 80 -y 24
+tmux send-keys -t pi-test "./pi-test.sh" Enter
+sleep 3 && tmux capture-pane -t pi-test -p     # capture after startup
+tmux send-keys -t pi-test "your prompt here" Enter
+tmux send-keys -t pi-test Escape               # special keys (also C-o for ctrl+o, etc.)
+tmux kill-session -t pi-test
+```
+
+## Changelog
+
+Location: `packages/*/CHANGELOG.md` (one per package).
+
+Sections under `## [Unreleased]`: `### Breaking Changes` (API changes requiring migration), `### Added`, `### Changed`, `### Fixed`, `### Removed`.
+
+Rules:
+
+- All new entries go under `## [Unreleased]`. Read the full section first and append to existing subsections; never duplicate them.
+- Released version sections (e.g. `## [0.12.2]`) are immutable; never modify them.
+
+Attribution:
+
+- Internal (from issues): `Fixed foo bar ([#123](https://github.com/gabeorlanski/pi-looporch/issues/123))`
+- External contributions: `Added feature X ([#456](https://github.com/gabeorlanski/pi-looporch/pull/456) by [@username](https://github.com/username))`
+
 ## Coding Standards
 
 - Keep the extension small and dependency-light.

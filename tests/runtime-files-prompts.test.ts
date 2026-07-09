@@ -31,6 +31,29 @@ export default async function workflow({ file, focus }) {
   assert.equal(result.result, "review:Review src/index.ts for edge cases.");
 });
 
+void test("workflow_render_prompt_keeps_legacy_missing_and_extra_value_behavior", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "manual-template",
+    `export const metadata = { name: "manual-template", description: "Manual template", inputInstructions: "Use provided input.", phases: [{ title: "Run" }] };
+export default async function workflow({ file }) {
+  return renderPrompt("review.txt", { file, extra: "ignored" });
+}`,
+    { "prompts/review.txt": "Review {{file}} for {{focus}}." },
+  );
+
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "manual-template",
+    input: { file: "src/index.ts" },
+    agent: () => Promise.resolve("unused"),
+  });
+
+  assert.equal(result.result, "Review src/index.ts for .");
+});
+
 void test("workflow_renders_prompt_template_from_external_workflow_root", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   const workflowRoot = await mkdtemp(path.join(tmpdir(), "pi-workflow-root-"));
@@ -83,6 +106,30 @@ export default async function workflow() {
   );
 });
 
+void test("workflow_template_task_rejects_unknown_descriptor_keys", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "unknown-template-key",
+    `export const metadata = { name: "unknown-template-key", description: "Unknown key", inputInstructions: "No input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return agent({ template: "review.txt", values: { file: "src/index.ts" }, unexpected: true });
+}`,
+    { "prompts/review.txt": "Review {{file}}." },
+  );
+
+  await assert.rejects(
+    runWorkflowFromDirectory({
+      maxParallelAgents: 4,
+      cwd: project,
+      workflowName: "unknown-template-key",
+      input: {},
+      agent: () => Promise.resolve("unused"),
+    }),
+    /unknown key 'unexpected'/,
+  );
+});
+
 void test("workflow_template_task_rejects_unused_values", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
@@ -104,6 +151,30 @@ export default async function workflow() {
       agent: () => Promise.resolve("unused"),
     }),
     /does not reference supplied value 'extra'/,
+  );
+});
+
+void test("workflow_template_task_rejects_malformed_placeholders", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "malformed-template",
+    `export const metadata = { name: "malformed-template", description: "Malformed template", inputInstructions: "No input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return agent({ template: "review.txt", values: { file: "src/index.ts" } });
+}`,
+    { "prompts/review.txt": "Review {{ file." },
+  );
+
+  await assert.rejects(
+    runWorkflowFromDirectory({
+      maxParallelAgents: 4,
+      cwd: project,
+      workflowName: "malformed-template",
+      input: {},
+      agent: () => Promise.resolve("unused"),
+    }),
+    /malformed placeholder/,
   );
 });
 

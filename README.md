@@ -89,8 +89,10 @@ A workflow directory contains `workflow.js` and optional prompt files:
 
 `workflow.js` exports static `metadata` and a default async function. Workflow
 code runs in a sandbox with globals such as `agent`, `parallel`, `pipeline`,
-`coerce`, `mapreduce`, `verifier`, `phase`, `log`, `trace`, file helpers, and
-`renderPrompt`.
+`coerce`, `mapreduce`, `verifier`, `phase`, `log`, `trace`, and file helpers.
+Reusable child prompts live in `prompts/*.txt` and launch through
+`agent({ template, values }, options)`; `renderPrompt` remains available for
+exceptional composition.
 
 Agents can call `workflow_design_guidance` for focused authoring help. Its
 primitive reference is generated from the runtime primitive registry so supported

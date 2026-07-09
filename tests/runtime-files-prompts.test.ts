@@ -7,14 +7,14 @@ import type { WorkflowAgent } from "../src/runtime/types.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
 import { writeWorkflow } from "./runtime-helpers.ts";
 
-void test("workflow_renders_project_prompt_template", async () => {
+void test("workflow_renders_agent_template_task_at_launch", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
     "templated",
     `export const metadata = { name: "templated", description: "Templated prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow({ file, focus }) {
-  return agent(renderPrompt("review.txt", { file, focus }), { label: "review" });
+  return agent({ template: "review.txt", values: { file, focus } }, { label: "review" });
 }`,
     { "prompts/review.txt": "Review {{file}} for {{focus}}." },
   );
@@ -40,12 +40,12 @@ void test("workflow_renders_prompt_template_from_external_workflow_root", async 
     path.join(workflowDir, "workflow.js"),
     `export const metadata = { name: "external-prompt", description: "External prompt", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow({ topic }) {
-  return renderPrompt("review/base.txt", { topic });
+  return agent({ template: "review/base.txt", values: { topic } });
 }`,
     "utf8",
   );
   await writeFile(path.join(workflowDir, "prompts", "review", "base.txt"), "External {{topic}} prompt.", "utf8");
-  const agent: WorkflowAgent = () => Promise.resolve("unused");
+  const agent: WorkflowAgent = (prompt) => Promise.resolve(prompt);
 
   const result = await runWorkflowFromDirectory({
     maxParallelAgents: 4,
@@ -57,6 +57,89 @@ export default async function workflow({ topic }) {
   });
 
   assert.equal(result.result, "External template prompt.");
+});
+
+void test("workflow_template_task_requires_referenced_values", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "missing-template-value",
+    `export const metadata = { name: "missing-template-value", description: "Missing value", inputInstructions: "No input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return agent({ template: "review.txt", values: {} });
+}`,
+    { "prompts/review.txt": "Review {{file}}." },
+  );
+
+  await assert.rejects(
+    runWorkflowFromDirectory({
+      maxParallelAgents: 4,
+      cwd: project,
+      workflowName: "missing-template-value",
+      input: {},
+      agent: () => Promise.resolve("unused"),
+    }),
+    /missing value 'file'/,
+  );
+});
+
+void test("workflow_template_task_rejects_unused_values", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "unused-template-value",
+    `export const metadata = { name: "unused-template-value", description: "Unused value", inputInstructions: "No input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return agent({ template: "review.txt", values: { file: "src/index.ts", extra: "unused" } });
+}`,
+    { "prompts/review.txt": "Review {{file}}." },
+  );
+
+  await assert.rejects(
+    runWorkflowFromDirectory({
+      maxParallelAgents: 4,
+      cwd: project,
+      workflowName: "unused-template-value",
+      input: {},
+      agent: () => Promise.resolve("unused"),
+    }),
+    /does not reference supplied value 'extra'/,
+  );
+});
+
+void test("workflow_template_tasks_keep_a_stable_prefix_before_dynamic_values", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "stable-template-prefix",
+    `export const metadata = { name: "stable-template-prefix", description: "Stable prefix", inputInstructions: "No input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return parallel(["src/left.ts", "src/right.ts"], (file) => agent({ template: "review.txt", values: { file } }));
+}`,
+    {
+      "prompts/review.txt":
+        "Purpose:\nReview a file.\n\nRules:\n- Cite evidence.\n\nOutput:\nReturn findings.\n\nTask instance:\nReview {{file}}.",
+    },
+  );
+  const prompts: string[] = [];
+
+  await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "stable-template-prefix",
+    input: {},
+    agent: (prompt) => {
+      prompts.push(prompt);
+      return Promise.resolve("ok");
+    },
+  });
+
+  assert.equal(prompts.length, 2);
+  const dynamicSection = "Task instance:\nReview ";
+  const prefixLength = prompts[0]?.indexOf(dynamicSection) ?? -1;
+  assert.ok(prefixLength > 0);
+  assert.equal(prompts[0]?.slice(0, prefixLength), prompts[1]?.slice(0, prefixLength));
+  assert.notEqual(prompts[0], prompts[1]);
 });
 
 void test("workflow_writes_text_and_json_files", async () => {

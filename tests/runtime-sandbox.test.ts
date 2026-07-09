@@ -66,7 +66,7 @@ export default async function workflow({ absolutePath }) {
     "prompt-escape",
     `export const metadata = { name: "prompt-escape", description: "Prompt escape", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow() {
-  return renderPrompt("../secret.txt", {});
+  return agent({ template: "../secret.txt", values: {} });
 }`,
   );
   await assert.rejects(

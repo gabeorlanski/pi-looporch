@@ -73,7 +73,10 @@ export default async function workflow() {
   assert.deepEqual(result.result, { ok: true, summary: "done" });
   assert.equal(prompts.length, 2);
   assert.match(prompts[0], /return only JSON that validates/);
-  assert.match(prompts[1], /Previous response failed validation/);
+  assert.equal(
+    prompts[1],
+    `${prompts[0]}\n\nPrevious response failed validation:\n/ must have required properties summary; /ok must be boolean\nReturn corrected JSON only.`,
+  );
   assert.deepEqual(
     optionsSeen.map((options) => (options as { schema?: unknown }).schema),
     [undefined, undefined],
@@ -113,6 +116,38 @@ export default async function workflow() {
   });
 
   assert.ok(snapshots >= 4);
+});
+
+void test("workflow_template_task_reaches_agent_and_persists_its_reported_launch_prompt", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  const outputsDir = path.join(project, "outputs");
+  await writeWorkflow(
+    project,
+    "templated-prompt-artifact",
+    `export const metadata = { name: "templated-prompt-artifact", description: "Template prompt artifact", inputInstructions: "No input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return agent({ template: "review.txt", values: { file: "src/index.ts" } }, { label: "review" });
+}`,
+    { "prompts/review.txt": "Review {{file}}." },
+  );
+  const prompts: string[] = [];
+  const agent: WorkflowAgent = (prompt, _options, reporter) => {
+    prompts.push(prompt);
+    reporter.launched({ prompt });
+    return Promise.resolve("ok");
+  };
+
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "templated-prompt-artifact",
+    input: {},
+    agent,
+    outputsDir,
+  });
+
+  assert.deepEqual(prompts, ["Review src/index.ts."]);
+  assert.equal(await readFile(result.snapshot.agents[0]?.promptPath ?? "", "utf8"), "Review src/index.ts.\n");
 });
 
 void test("workflow_tracks_agent_progress_with_exact_prompt_tools_and_output", async () => {

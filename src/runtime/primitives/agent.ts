@@ -1,6 +1,7 @@
 import type {
   WorkflowAgentLaunchMetadata,
   WorkflowAgentOptions,
+  WorkflowAgentTask,
   WorkflowAgentProgress,
   WorkflowAgentReporter,
   WorkflowAgentSnapshot,
@@ -13,24 +14,44 @@ import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from 
 import { appendRunMessage } from "../messages.ts";
 import { jsonSchemaPrompt, normalizeAttemptCount, parseAndValidateJsonResponse } from "../schema.ts";
 import { cloneSerializable } from "../serialization.ts";
+import { renderWorkflowPrompt } from "../prompts.ts";
 import { throwIfWorkflowAborted } from "../abort.ts";
 import { recordTrace } from "./trace.ts";
 
 export const agentPrimitive: WorkflowPrimitive<{
-  agent: (prompt: string, agentOptions?: WorkflowAgentOptions) => Promise<unknown>;
+  agent: (task: WorkflowAgentTask, agentOptions?: WorkflowAgentOptions) => Promise<unknown>;
 }> = {
   name: "agent",
   docs: [
     {
       name: "agent",
-      signature: "agent(prompt, options?)",
-      summary: "Launches a child agent; options include label, cwd, taskFile, tools, model, reasoning, schema, and maxAttempts.",
+      signature: "agent(task, options?)",
+      summary:
+        "Launches a child agent from inline task text or a workflow-owned { template, values } task; options include label, cwd, taskFile, tools, model, reasoning, schema, and maxAttempts.",
     },
   ],
-  globals: ({ runtime }) => ({
-    agent: (prompt: string, agentOptions: WorkflowAgentOptions = {}) => runAgent(runtime, prompt, agentOptions),
+  globals: ({ runtime, workflowDir }) => ({
+    agent: (task: WorkflowAgentTask, agentOptions: WorkflowAgentOptions = {}) => runWorkflowAgent(runtime, workflowDir, task, agentOptions),
   }),
 };
+
+function runWorkflowAgent(
+  runtime: ActiveWorkflowRuntime,
+  workflowDir: string,
+  task: WorkflowAgentTask,
+  agentOptions: WorkflowAgentOptions,
+): Promise<unknown> {
+  return runAgent(runtime, renderWorkflowAgentTask(workflowDir, task), agentOptions);
+}
+
+function renderWorkflowAgentTask(workflowDir: string, task: unknown): string {
+  if (typeof task === "string") return task;
+  if (typeof task !== "object" || task === null || Array.isArray(task))
+    throw new Error("agent task must be inline text or an object with template and values");
+  const descriptor = task as Record<string, unknown>;
+  if (typeof descriptor.template !== "string") throw new Error("agent template task template must be a string");
+  return renderWorkflowPrompt(workflowDir, descriptor.template, descriptor.values);
+}
 
 export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
   if (agentOptions.schema === undefined) return runRawAgent(runtime, prompt, agentOptions);

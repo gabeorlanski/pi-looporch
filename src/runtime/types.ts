@@ -15,6 +15,15 @@ export interface WorkflowMetadata {
   phases: WorkflowPhaseMetadata[];
 }
 
+/** A workflow-owned prompt template and the values used to render it at agent launch. */
+export interface WorkflowAgentTemplateTask {
+  template: string;
+  values: Record<string, unknown>;
+}
+
+/** Workflow task text or a workflow-owned template rendered immediately before launch. */
+export type WorkflowAgentTask = string | WorkflowAgentTemplateTask;
+
 /** Options passed from workflow source to a launched child agent. */
 export interface WorkflowAgentOptions {
   label?: string;

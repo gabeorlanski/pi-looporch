@@ -39,6 +39,8 @@ void test("workflow_agent_launch_prompt_matches_reported_child_session_prompt", 
   assert.match(prompt, /Workflow task label: security/);
   assert.match(prompt, /Task file: tasks\/security\.md/);
   assert.match(prompt, /Review auth/);
+  assert.ok(prompt.indexOf("Operating contract:") < prompt.indexOf("Task:\nReview auth"));
+  assert.ok(prompt.indexOf("Task:\nReview auth") < prompt.indexOf("Workflow task label: security"));
 });
 
 void test("workflow_agent_progress_tracker_reports_tool_start_arguments", () => {

@@ -55,17 +55,18 @@ void test("workflow_design_guidance_tool_returns_topic_index_and_focused_guidanc
 
   const promptFiles = await tool.execute("call-4", { topic: "prompt-files" }, undefined, undefined, {} as never);
   const promptFilesText = promptFiles.content[0]?.type === "text" ? promptFiles.content[0].text : "";
-  assert.match(promptFilesText, /Inputs, Purpose, Definitions, Rules, Task, and Output/);
+  assert.match(promptFilesText, /stable Purpose, Definitions, Rules, and Output sections/);
+  assert.match(promptFilesText, /final Task instance or Inputs section/);
   assert.match(promptFilesText, /more than five distinct non-verifier prompts/);
-  assert.match(promptFilesText, /Keep the Inputs section intentionally small/);
+  assert.match(promptFilesText, /Keep the dynamic Task instance intentionally small/);
   assert.match(promptFilesText, /not every workflow input or global/);
   assert.match(promptFilesText, /\{\{file\}\}/);
-  assert.match(promptFilesText, /do not write JS template variables/);
+  assert.match(promptFilesText, /Do not write JS template variables/);
   assert.match(promptFilesText, /Avoid unstructured global preamble dumps/);
 
   const structured = await tool.execute("call-5", { topic: "structured-outputs" }, undefined, undefined, {} as never);
   const structuredText = structured.content[0]?.type === "text" ? structured.content[0].text : "";
-  assert.match(structuredText, /agent\(prompt, \{ schema, maxAttempts \}\)/);
+  assert.match(structuredText, /agent\(\{ template, values \}, \{ schema, maxAttempts \}\)/);
   assert.match(structuredText, /maxLength/);
   assert.match(structuredText, /control surface/);
   assert.match(structuredText, /JSONL\/artifact files/);

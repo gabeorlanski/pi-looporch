@@ -6,7 +6,6 @@ import { WorkflowInputError } from "../workflow/input-contract.ts";
 import { prepareWorkflowRun, startPreparedWorkflowRun, type PreparedWorkflowRun } from "../workflow/start.ts";
 import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "./running-workflow-ui.ts";
 import { extensionSessionScope } from "./session-scope.ts";
-import { completeMessage, failureMessage } from "./messages.ts";
 import { workflowCompletionReviewPrompt } from "./workflow-completion.ts";
 import { sendWorkflowUserMessage, type SendWorkflowUserMessage } from "./workflow-user-message.ts";
 
@@ -122,7 +121,7 @@ async function settleVisibleWorkflowRun(
     const result = await visible.run.finished;
     if (visible.isSessionClosing()) return;
     try {
-      ctx.ui.notify(completeMessage(result.workflowName), "info");
+      ctx.ui.notify(`Workflow '${result.workflowName}' complete.`, "info");
       sendWorkflowUserMessage(ctx, sendUserMessage, workflowCompletionReviewPrompt(result));
     } catch (error) {
       if (!visible.isSessionClosing()) {
@@ -142,7 +141,7 @@ function failVisibleWorkflowRun(
   error: unknown,
   sendUserMessage: SendWorkflowUserMessage,
 ): void {
-  const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
+  const message = error instanceof WorkflowInputError ? error.message : `Workflow '${workflowName}' failed: ${errorMessage(error)}`;
   try {
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
     sendWorkflowUserMessage(ctx, sendUserMessage, message);

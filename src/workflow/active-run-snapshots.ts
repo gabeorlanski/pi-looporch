@@ -1,6 +1,7 @@
 import { readActiveWorkflowRuns, removeActiveWorkflowRun, type ActiveWorkflowRunRecord } from "./active-runs.ts";
 import { readWorkflowOutputManifest, readWorkflowSnapshot } from "./outputs.ts";
 import type { WorkflowSnapshot } from "../runtime/types.ts";
+import { isMissingFileError } from "../errors.ts";
 
 export interface ActiveWorkflowSnapshot {
   runId: string;
@@ -30,8 +31,4 @@ async function readActiveWorkflowSnapshot(cwd: string, record: ActiveWorkflowRun
     await removeActiveWorkflowRun(cwd, record.runId);
     return undefined;
   }
-}
-
-function isMissingFileError(error: unknown): boolean {
-  return error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT";
 }

@@ -38,3 +38,9 @@ export function resolveInsideRoot(root: string, relativePath: string, escapeMess
   if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`${escapeMessage}: ${relativePath}`);
   return target;
 }
+
+/** Returns whether target is root itself or lies beneath it. */
+export function isInsideOrEqual(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}

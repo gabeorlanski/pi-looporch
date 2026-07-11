@@ -8,7 +8,7 @@ import { parseWorkflowSourceMetadata } from "../src/workflow/metadata.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
 import { writeWorkflow } from "./runtime-helpers.ts";
 
-void test("workflow_sandbox_blocks_ambient_authority_but_read_helpers_can_read_anywhere", async () => {
+void test("sandbox blocks ambient authority but permits reads", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   const outside = await mkdtemp(path.join(tmpdir(), "pi-workflow-readable-"));
   const absolutePath = path.join(outside, "absolute.txt");

@@ -7,7 +7,7 @@ import type { WorkflowAgent } from "../src/runtime/types.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
 import { writeWorkflow } from "./runtime-helpers.ts";
 
-void test("workflow_agent_cwd_option_resolves_relative_paths_from_project_cwd", async () => {
+void test("agent cwd resolves relative to the project", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   const scratch = path.join(project, "scratch");
   await mkdir(scratch, { recursive: true });
@@ -118,7 +118,7 @@ export default async function workflow() {
   assert.ok(snapshots >= 4);
 });
 
-void test("workflow_template_task_reaches_agent_and_persists_its_reported_launch_prompt", async () => {
+void test("template tasks persist the agent launch prompt", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   const outputsDir = path.join(project, "outputs");
   await writeWorkflow(
@@ -150,7 +150,7 @@ export default async function workflow() {
   assert.equal(await readFile(result.snapshot.agents[0]?.promptPath ?? "", "utf8"), "Review src/index.ts.\n");
 });
 
-void test("workflow_tracks_agent_progress_with_exact_prompt_tools_and_output", async () => {
+void test("workflow tracks agent prompt, tools, and output", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   const outputsDir = path.join(project, "outputs");
   await writeWorkflow(

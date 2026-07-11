@@ -37,12 +37,8 @@ export function renderWorkflowAgentTask(workflowDir: string, task: unknown): str
 }
 
 function readWorkflowPromptTemplate(workflowDir: string, templatePath: string): string {
-  const resolvedTemplate = resolvePromptTemplate(workflowPromptDirectory(workflowDir), templatePath);
+  const resolvedTemplate = resolvePromptTemplate(path.join(workflowDir, "prompts"), templatePath);
   return readFileSync(resolvedTemplate, "utf8");
-}
-
-function workflowPromptDirectory(workflowDir: string): string {
-  return path.join(workflowDir, "prompts");
 }
 
 function resolvePromptTemplate(promptDir: string, templatePath: string): string {

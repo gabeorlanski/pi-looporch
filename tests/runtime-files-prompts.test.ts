@@ -31,7 +31,7 @@ export default async function workflow({ file, focus }) {
   assert.equal(result.result, "review:Review src/index.ts for edge cases.");
 });
 
-void test("workflow_render_prompt_keeps_legacy_missing_and_extra_value_behavior", async () => {
+void test("render_prompt_allows_missing_and_extra_values", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
@@ -178,7 +178,7 @@ export default async function workflow() {
   );
 });
 
-void test("workflow_template_tasks_keep_a_stable_prefix_before_dynamic_values", async () => {
+void test("template tasks keep a stable prefix", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
@@ -277,7 +277,7 @@ export default async function workflow() {
   );
 });
 
-void test("workflow_does_not_read_legacy_sibling_prompt_template", async () => {
+void test("prompt_lookup_uses_the_workflow_prompts_directory", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await mkdir(path.join(project, ".pi", "workflows", "legacy.prompts"), { recursive: true });
   await writeFile(path.join(project, ".pi", "workflows", "legacy.prompts", "review.txt"), "Legacy {{topic}} prompt.", "utf8");

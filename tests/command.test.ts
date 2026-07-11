@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { naturalLanguageRequestMessage } from "../src/prompt-templates.ts";
 import { defaultWorkflowDraftRoot } from "../src/workflow/drafts.ts";
 
-void test("natural_language_workflow_command_steers_current_session_to_tools_without_authoring_bloat", () => {
+void test("natural language workflow requests steer to tools", () => {
   const message = naturalLanguageRequestMessage("create a workflow named smoke-created", ["echo"]);
 
   assert.match(message, /current session/);

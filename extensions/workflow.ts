@@ -1,10 +1,10 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { errorMessage } from "../src/errors.ts";
 import { naturalLanguageRequestMessage, steerableInputResolutionMessage } from "../src/prompt-templates.ts";
 import { discoverWorkflows } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
 import { parseWorkflowInput } from "../src/input.ts";
-import { failureMessage } from "../src/display/messages.ts";
 import { startWorkflowMonitorWidget, stopWorkflowMonitorWidget } from "../src/display/workflow-monitor-widget.ts";
 import { openRunningWorkflowInspector, restoreRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
 import { abortVisibleWorkflowRuns, startVisibleWorkflowRun } from "../src/display/visible-workflow-run.ts";
@@ -46,7 +46,9 @@ export default function piWorkflow(pi: ExtensionAPI) {
 
   pi.registerCommand("view-workflow", {
     description: "Open the running workflow inspector",
-    handler: async (_args, ctx) => viewWorkflowCommand(ctx),
+    handler: async (_args, ctx) => {
+      if (!(await openRunningWorkflowInspector(ctx))) ctx.ui.notify("No running workflows to view.", "warning");
+    },
   });
 
   pi.registerCommand("workflow-settings", {
@@ -145,15 +147,10 @@ async function runExistingWorkflowCommand(
       sendUserMessage,
     });
   } catch (error) {
-    const message = error instanceof WorkflowInputError ? error.message : failureMessage(workflowName, error);
+    const message = error instanceof WorkflowInputError ? error.message : `Workflow '${workflowName}' failed: ${errorMessage(error)}`;
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
     sendWorkflowUserMessage(ctx, (content, options) => pi.sendUserMessage(content, options), message);
   }
-}
-
-async function viewWorkflowCommand(ctx: ExtensionCommandContext): Promise<void> {
-  const opened = await openRunningWorkflowInspector(ctx);
-  if (!opened) ctx.ui.notify("No running workflows to view.", "warning");
 }
 
 function splitFirstWord(text: string): [string, string] {

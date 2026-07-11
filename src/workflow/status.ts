@@ -1,8 +1,8 @@
 import path from "node:path";
 import { readActiveWorkflowRuns, type ActiveWorkflowRunRecord } from "./active-runs.ts";
 import { readWorkflowOutputManifest, readWorkflowSnapshot } from "./outputs.ts";
-import type { WorkflowAgentSnapshot, WorkflowFanOutSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
-import { errorMessage } from "../errors.ts";
+import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
+import { errorMessage, isMissingFileError } from "../errors.ts";
 
 export type WorkflowStatusScope = "project" | "current-session";
 
@@ -174,7 +174,14 @@ function workflowRunStatusFromSnapshot(
     currentPhase: currentPhase(snapshot, manifestStatus),
     snapshotAvailable: true,
     agents: agentTotals(snapshot.agents),
-    fanouts: snapshot.fanOuts.map(fanoutStatus),
+    fanouts: snapshot.fanOuts.map((fanout) => ({
+      id: fanout.id,
+      label: fanout.label,
+      total: fanout.total,
+      done: fanout.done,
+      running: fanout.running,
+      error: fanout.error,
+    })),
     activeAgents: snapshot.agents.filter((agent) => agent.status === "running").map((agent) => agentStatus(agent, query.now)),
     errors,
   };
@@ -230,17 +237,6 @@ function agentTotals(agents: WorkflowAgentSnapshot[]): WorkflowAgentTotals {
   };
 }
 
-function fanoutStatus(fanout: WorkflowFanOutSnapshot): WorkflowFanOutStatus {
-  return {
-    id: fanout.id,
-    label: fanout.label,
-    total: fanout.total,
-    done: fanout.done,
-    running: fanout.running,
-    error: fanout.error,
-  };
-}
-
 function agentStatus(agent: WorkflowAgentSnapshot, now: number): WorkflowAgentStatus {
   return {
     id: agent.id,
@@ -259,8 +255,4 @@ function agentStatus(agent: WorkflowAgentSnapshot, now: number): WorkflowAgentSt
 
 function elapsedSeconds(startedAt: number, now: number): number {
   return Math.max(0, Math.round((now - startedAt) / 1000));
-}
-
-function isMissingFileError(error: unknown): boolean {
-  return error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT";
 }

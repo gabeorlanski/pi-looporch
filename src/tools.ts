@@ -22,12 +22,7 @@ export interface WorkflowToolsOptions {
 
 /** Builds the public tool surface for running, authoring guidance, and proposing workflows. */
 export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefinition[] {
-  return [
-    ...workflowRunTools(options),
-    createWorkflowStatusTool(options),
-    createWorkflowDesignGuidanceTool(),
-    createProposeWorkflowTool(options),
-  ];
+  return [...workflowRunTools(options), createWorkflowStatusTool(options), createGuidanceTool(), createProposeWorkflowTool(options)];
 }
 
 function workflowRunTools(options: WorkflowToolsOptions): ToolDefinition[] {
@@ -144,7 +139,7 @@ function createWorkflowStatusTool(options: WorkflowToolsOptions): ToolDefinition
   });
 }
 
-function createWorkflowDesignGuidanceTool(): ToolDefinition {
+function createGuidanceTool(): ToolDefinition {
   return defineTool({
     name: "workflow_design_guidance",
     label: "Workflow Design Guidance",

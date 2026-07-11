@@ -24,21 +24,6 @@ export interface PiWorkflowAgentOptions {
   session?: Partial<CreateAgentSessionOptions>;
 }
 
-export function createWorkflowAgentResourceLoader(
-  cwd: string,
-  agentDir: string,
-  settingsManager: SettingsManager,
-  childAgentExtensions: string[] = [],
-): DefaultResourceLoader {
-  return new DefaultResourceLoader({ cwd, agentDir, settingsManager, noExtensions: true, additionalExtensionPaths: childAgentExtensions });
-}
-
-export function resolveChildAgentExtensionPaths(projectCwd: string, childAgentExtensions: string[]): string[] {
-  return childAgentExtensions.map((extensionPath) =>
-    isProjectRelativeExtensionPath(extensionPath) ? path.resolve(projectCwd, extensionPath) : extensionPath,
-  );
-}
-
 export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): WorkflowAgent {
   return async (prompt, agentOptions, reporter) => {
     const agentDir = getAgentDir();
@@ -51,12 +36,15 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
     const settingsManager = options.session?.settingsManager ?? SettingsManager.create(effectiveCwd, agentDir);
     const resourceLoader =
       options.session?.resourceLoader ??
-      createWorkflowAgentResourceLoader(
-        effectiveCwd,
+      new DefaultResourceLoader({
+        cwd: effectiveCwd,
         agentDir,
         settingsManager,
-        resolveChildAgentExtensionPaths(projectCwd, workflowSettings.childAgentExtensions),
-      );
+        noExtensions: true,
+        additionalExtensionPaths: workflowSettings.childAgentExtensions.map((extensionPath) =>
+          extensionPath.startsWith("./") || extensionPath.startsWith("../") ? path.resolve(projectCwd, extensionPath) : extensionPath,
+        ),
+      });
     if (!options.session?.resourceLoader) await resourceLoader.reload();
     const loggedSession = agentOptions.sessionLog
       ? await createLoggedWorkflowAgentSession(options.cwd, effectiveCwd, agentOptions.sessionLog)
@@ -83,8 +71,12 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       ...(noTools ? { noTools, tools: [], customTools: [] } : {}),
     });
 
-    const sessionModel = session.model ? displayModelName(session.model) : undefined;
-    const sessionPrompt = workflowAgentLaunchPrompt(prompt, agentOptions);
+    const sessionModel = session.model
+      ? session.model.name.trim()
+        ? session.model.name
+        : `${session.model.provider}/${session.model.id}`
+      : undefined;
+    const sessionPrompt = agentTaskPrompt(prompt, agentOptions);
     reporter.launched({ prompt: sessionPrompt });
     reporter.progress({
       ...(sessionModel ? { model: sessionModel } : {}),
@@ -131,24 +123,11 @@ export { workflowAgentSessionLogDirectory } from "./session-logs.ts";
 export { workflowAgentLogEvent } from "./session-events.ts";
 export { parseSessionTokens } from "./session-usage.ts";
 
-function isProjectRelativeExtensionPath(extensionPath: string): boolean {
-  return extensionPath.startsWith("./") || extensionPath.startsWith("../");
-}
-
 function resolveModel(modelRegistry: ModelRegistry, spec: string): ReturnType<ModelRegistry["find"]> {
   const modelSpec = spec.split(":", 1)[0] ?? spec;
   const slash = modelSpec.indexOf("/");
   if (slash >= 0) return modelRegistry.find(modelSpec.slice(0, slash), modelSpec.slice(slash + 1));
   return modelRegistry.getAll().find((model) => model.id === modelSpec || model.name === modelSpec);
-}
-
-function displayModelName(model: { name: string; provider: string; id: string }): string {
-  return model.name.trim() ? model.name : `${model.provider}/${model.id}`;
-}
-
-/** Builds the exact prompt sent to a Pi child-agent session for workflow launch reporting and execution. */
-export function workflowAgentLaunchPrompt(prompt: string, agentOptions: Parameters<WorkflowAgent>[1]): string {
-  return agentTaskPrompt(prompt, agentOptions);
 }
 
 /** Deterministic tracker for translating Pi child-agent session events into workflow progress snapshots. */

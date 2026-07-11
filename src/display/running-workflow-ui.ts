@@ -35,7 +35,7 @@ export interface RunningWorkflowUiUpdate {
   abortWorkflow?: () => void;
 }
 
-interface RehydratedWorkflowRefreshState {
+interface RefreshState {
   cwd: string;
   ownerSessionId: string;
   disposed: boolean;
@@ -45,7 +45,7 @@ interface RehydratedWorkflowRefreshState {
 const dynamicWorkflowCounts = new WeakMap<ExtensionContext, number>();
 const runningWorkflowUiStates = new WeakMap<ExtensionContext, RunningWorkflowUiState>();
 const runningWorkflowUiStatesByScope = new Map<string, RunningWorkflowUiState>();
-const rehydratedWorkflowRefreshStatesByScope = new Map<string, RehydratedWorkflowRefreshState>();
+const refreshStatesByScope = new Map<string, RefreshState>();
 
 export function beginDynamicWorkflow(ctx: ExtensionContext): { done: () => void } {
   let done = false;
@@ -64,15 +64,20 @@ export function beginDynamicWorkflow(ctx: ExtensionContext): { done: () => void 
 export async function restoreRunningWorkflowUi(ctx: ExtensionContext): Promise<number> {
   if (ctx.mode !== "tui") return 0;
   const scope = extensionSessionScope(ctx);
-  const state = createRehydratedWorkflowRefreshState(ctx);
-  const restoredCount = await refreshRehydratedWorkflowUi(ctx, state);
+  const state = refreshStatesByScope.get(scope) ?? {
+    cwd: ctx.cwd,
+    ownerSessionId: ctx.sessionManager.getSessionId(),
+    disposed: false,
+  };
+  refreshStatesByScope.set(scope, state);
+  const restoredCount = await refreshUi(ctx, state);
   if (restoredCount > 0 && !state.disposed && !state.timer) {
     state.timer = setInterval(() => {
-      void refreshRehydratedWorkflowUi(ctx, state);
+      void refreshUi(ctx, state);
     }, REHYDRATED_WORKFLOW_REFRESH_MS);
     state.timer.unref();
   } else if (restoredCount === 0) {
-    disposeRehydratedWorkflowRefreshState(scope);
+    disposeRefreshState(scope);
   }
   return restoredCount;
 }
@@ -109,7 +114,7 @@ export function clearRunningWorkflowUi(ctx: ExtensionContext, runId?: string): v
     return;
   }
   if (state?.animationTimer) clearInterval(state.animationTimer);
-  disposeRehydratedWorkflowRefreshState(scope);
+  disposeRefreshState(scope);
   state?.unsubscribeInput?.();
   runningWorkflowUiStates.delete(ctx);
   if (state && runningWorkflowUiStatesByScope.get(scope) === state) runningWorkflowUiStatesByScope.delete(scope);
@@ -117,38 +122,20 @@ export function clearRunningWorkflowUi(ctx: ExtensionContext, runId?: string): v
   ctx.ui.setWidget(RUNNING_WORKFLOW_WIDGET, undefined);
 }
 
-async function refreshRehydratedWorkflowUi(ctx: ExtensionContext, state: RehydratedWorkflowRefreshState): Promise<number> {
-  if (rehydratedWorkflowRefreshStateDisposed(state)) return 0;
+async function refreshUi(ctx: ExtensionContext, state: RefreshState): Promise<number> {
   const snapshots = await readActiveWorkflowSnapshots(state.cwd, state.ownerSessionId);
-  if (rehydratedWorkflowRefreshStateDisposed(state)) return 0;
+  if (state.disposed) return 0;
   for (const snapshot of snapshots) updateRunningWorkflowUi(ctx, snapshot);
   if (snapshots.length === 0) clearRunningWorkflowUi(ctx);
   return snapshots.length;
 }
 
-function rehydratedWorkflowRefreshStateDisposed(state: RehydratedWorkflowRefreshState): boolean {
-  return state.disposed;
-}
-
-function createRehydratedWorkflowRefreshState(ctx: ExtensionContext): RehydratedWorkflowRefreshState {
-  const scope = extensionSessionScope(ctx);
-  const existing = rehydratedWorkflowRefreshStatesByScope.get(scope);
-  if (existing) return existing;
-  const state: RehydratedWorkflowRefreshState = {
-    cwd: ctx.cwd,
-    ownerSessionId: ctx.sessionManager.getSessionId(),
-    disposed: false,
-  };
-  rehydratedWorkflowRefreshStatesByScope.set(scope, state);
-  return state;
-}
-
-function disposeRehydratedWorkflowRefreshState(scope: string): void {
-  const state = rehydratedWorkflowRefreshStatesByScope.get(scope);
+function disposeRefreshState(scope: string): void {
+  const state = refreshStatesByScope.get(scope);
   if (!state) return;
   state.disposed = true;
   if (state.timer) clearInterval(state.timer);
-  rehydratedWorkflowRefreshStatesByScope.delete(scope);
+  refreshStatesByScope.delete(scope);
 }
 
 function installRunningWorkflowUi(ctx: ExtensionContext, update: RunningWorkflowUiUpdate): RunningWorkflowUiState {

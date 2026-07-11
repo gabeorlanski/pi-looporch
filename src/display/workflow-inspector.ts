@@ -151,7 +151,7 @@ export class WorkflowInspector implements Component, Focusable {
     const pushExact = (line = ""): void => {
       for (const wrapped of wrapExactLine(line, innerWidth)) lines.push(wrapped);
     };
-    push(`${agentStatusGlyph(agent, this.model.tick, this.theme)} ${statusWord(agent.status)} ${glyph.mid} ${agent.model}`);
+    push(`${agentGlyph(agent, this.model.tick, this.theme)} ${statusWord(agent.status)} ${glyph.mid} ${agent.model}`);
     push(
       this.theme.dim(
         `${fmtTokens(agent.inputTokens)} in ${glyph.mid} ${fmtTokens(agent.outputTokens)} out ${glyph.mid} ${String(agent.toolCalls)} tools ${glyph.mid} ${String(agent.steps)} steps ${glyph.mid} ${fmtDuration(agent.durationSeconds, true)}`,
@@ -220,10 +220,6 @@ function agentGlyph(agent: WorkflowUiAgent, tick: number, theme: WorkflowTuiThem
   return theme.danger("✗");
 }
 
-function agentStatusGlyph(agent: WorkflowUiAgent, tick: number, theme: WorkflowTuiTheme): string {
-  return agentGlyph(agent, tick, theme);
-}
-
 function statusWord(status: WorkflowUiAgent["status"]): string {
   if (status === "completed") return "Completed";
   if (status === "running") return "Running";
@@ -256,7 +252,7 @@ function readToolActivityArtifact(filePath: string | undefined): string[] {
   return text
     .split("\n")
     .filter((line) => line.trim())
-    .map((line) => toolActivityLine(line));
+    .map(toolActivityLine);
 }
 
 function toolActivityLine(line: string): string {

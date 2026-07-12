@@ -1,0 +1,9 @@
+Workflow design guidance: child-agents
+How to launch child agents with clear boundaries and compact handoffs.
+
+Guidance:
+- Give child agents source-of-truth paths and tell them to read files with tools; do not paste large project files into prompts.
+- Use taskFile for the primary file, cwd for alternate/scratch directories, and tools: false for extraction or formatting tasks that do not need tools.
+- Pass only compact prior results, artifact paths, counts, and evidence paths between stages.
+- Return compact status, summaries, and artifact paths; large results belong in files, not parent-session prompts.
+- Use log(...) before slow launches and at handoffs; use trace(...) for structured debug state such as selected files, output paths, and compact summaries.

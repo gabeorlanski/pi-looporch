@@ -1,0 +1,9 @@
+Workflow design guidance: fanout
+How to use parallelism without launching unbounded agents.
+
+Guidance:
+- Select and cap inputs before fan-out; never map over an unbounded project tree.
+- Use parallel(items, worker, { label }) only when items are independent.
+- Use pipeline(items, stages) when every item follows the same ordered stages.
+- Record skipped scope with log(...) or trace(...) so users can see what was intentionally left out.
+- Workflow runs obey the project maxParallelAgents cap; design fan-outs as bounded queues, not bursts.

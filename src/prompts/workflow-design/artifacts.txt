@@ -1,0 +1,8 @@
+Workflow design guidance: artifacts
+How to handle large generated outputs and resource files.
+
+Guidance:
+- Route large generated content to files; prompts should name exact output paths.
+- Final results should include artifactPaths plus concise status/summary, not full file contents.
+- Use @workflow/... with readText/readJson for workflow-owned prompts, schemas, fixtures, and small deterministic inputs; use writeText/writeJson for artifacts and manifests that later stages should read by path.
+- Avoid bulk-reading project source just to paste it into a prompt; pass paths instead.

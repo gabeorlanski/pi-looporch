@@ -1,0 +1,8 @@
+Workflow design guidance: verification
+When to add verifier/repair stages.
+
+Guidance:
+- Add verification only for high-risk, user-visible, or artifact-producing workflows; do not add it by default.
+- Prefer one verifier voter and at most one bounded repair pass unless the user explicitly asks for stronger assurance.
+- Verifier prompts should cite evidence and separate major correctness failures from recommendations.
+- Skip optional verification when budget.agentCount or budget.tokenCount shows the run is already expensive; these are observed counters, not estimates.

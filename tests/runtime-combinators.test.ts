@@ -39,7 +39,8 @@ export default async function workflow() {
 
   assert.deepEqual(result.result, { title: "Ready", score: 4 });
   assert.equal(prompts.length, 2);
-  assert.match(prompts[1], /Previous response failed validation/);
+  assert.match(prompts[1], /Repair the rejected response/);
+  assert.match(prompts[1], /not json/);
   assert.deepEqual(
     agentOptions.map((options) => (options as { tools?: unknown }).tools),
     [false, false],
@@ -47,7 +48,7 @@ export default async function workflow() {
   assert.equal(result.snapshot.agents.length, 2);
   assert.deepEqual(
     result.snapshot.agents.map((agentSnapshot) => agentSnapshot.label),
-    ["extract result", "extract result"],
+    ["extract result", "extract result repair 2"],
   );
 });
 

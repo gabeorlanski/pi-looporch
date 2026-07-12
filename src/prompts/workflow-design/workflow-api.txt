@@ -1,0 +1,19 @@
+Workflow design guidance: workflow-api
+Sandbox globals and metadata contract for workflow.js.
+
+Guidance:
+- workflow.js exports static metadata and a default async workflow function; metadata must include name, description, inputInstructions, and phases.
+- Document the default function with JSDoc covering purpose, input fields/defaults, phases, child agents, file reads, and result shape.
+- Supported workflow primitives are rendered below from the runtime registry with short descriptions and signatures; call narrower guidance topics for examples only when needed.
+- Receive workflow input through workflow({ field, optional = default }) parameters.
+- Workflows cannot import modules or use ambient Node globals. Use readText/readJson/writeText/writeJson and workflow-owned template tasks for files and artifacts.
+
+Examples:
+export const metadata = {
+  name: "review",
+  description: "Review selected files",
+  inputInstructions: "Resolve files from explicit path mentions; use remaining prose as focus.",
+  phases: [{ title: "review" }, { title: "synthesis" }],
+};
+
+{{primitiveReference}}

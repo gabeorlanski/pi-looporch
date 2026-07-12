@@ -1,0 +1,30 @@
+Workflow design guidance: prompt-files
+How to keep child-agent prompts in workflow-owned prompt files.
+
+Guidance:
+- Put reusable child-agent prompts under prompts/*.txt; use subdirectories when a workflow has several phases.
+- If a workflow needs more than five distinct non-verifier prompts, split them into separate prompt files instead of packing variants into workflow.js or one oversized template.
+- Launch reusable prompt files with agent({ template: templatePath, values }, options). Template paths resolve inside the workflow prompts/ directory immediately before child-agent launch.
+- Prompt files should start with stable Purpose, Definitions, Rules, and Output sections, then put interpolated values in a final Task instance or Inputs section so matching task shapes retain a reusable prefix.
+- Keep the dynamic Task instance intentionally small: include only values this stage directly consumes, not every workflow input or global. Pass paths, IDs, counts, or compact summaries instead of full objects.
+- Use {{file}}, {{focus}}, {{outputPath}}, and {{priorSummary}} placeholders; every supplied value must be referenced, and every placeholder needs a supplied value. Do not write JS template variables like ${input.file} inside prompt files.
+- Avoid unstructured global preamble dumps and repeated irrelevant globals. Keep renderPrompt(...) only for exceptional prompt composition and inline text only for tiny one-off glue.
+
+Examples:
+Purpose:
+Review the externally meaningful behavior for this stage.
+
+Rules:
+- Cite evidence with file paths and lines.
+- Preserve observable behavior; do not restate every source detail.
+
+Output:
+Return compact JSON with status, summary, and artifactPaths.
+
+Task instance:
+Read {{file}} for {{focus}} and write findings to {{outputPath}}.
+
+const result = await agent(
+  { template: "review/file.txt", values: { file, focus, outputPath } },
+  { label: "review " + file, taskFile: file, cwd },
+);

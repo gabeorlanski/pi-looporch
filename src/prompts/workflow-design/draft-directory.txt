@@ -1,0 +1,16 @@
+Workflow design guidance: draft-directory
+How to stage generated workflows with resources for saving.
+
+Guidance:
+- Create a complete draft directory with workflow.js plus workflow-owned prompts, schemas, fixtures, or examples before proposing.
+- Use {{draftRoot}}/<workflow-name>/ by default so workflow authoring does not dirty the worktree.
+- Call propose_workflow with the workflow name. Omit draftDir when using the default draft directory; otherwise set draftDir to the directory path, not the workflow.js file path.
+- Drafts copy to .pi/workflows/<name>/ so workflow.js and resources land together.
+
+Examples:
+{{draftRoot}}/review/
+  workflow.js
+  prompts/review.txt
+  prompts/synthesize.txt
+  schemas/finding.schema.json
+propose_workflow({ name: "review" })

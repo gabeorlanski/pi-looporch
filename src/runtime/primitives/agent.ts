@@ -12,7 +12,14 @@ import { resolveWorkflowAgentCwd } from "../../workflow/paths.ts";
 import { writeWorkflowAgentActivity, writeWorkflowAgentOutput, writeWorkflowAgentPrompt } from "../../workflow/outputs.ts";
 import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
-import { jsonSchemaPrompt, normalizeAttemptCount, parseAndValidateJsonResponse } from "../schema.ts";
+import { boundedJson } from "../json-response.ts";
+import {
+  jsonRepairPrompt,
+  normalizeAttemptCount,
+  parseAndValidateJsonResponse,
+  preflightJsonSchema,
+  structuredTaskPrompt,
+} from "../schema.ts";
 import { cloneSerializable } from "../serialization.ts";
 import { renderWorkflowAgentTask } from "../prompts.ts";
 import { throwIfWorkflowAborted } from "../abort.ts";
@@ -39,25 +46,44 @@ export const agentPrimitive: WorkflowPrimitive<{
 export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
   if (agentOptions.schema === undefined) return runRawAgent(runtime, prompt, agentOptions);
   const { schema, maxAttempts, ...launchOptions } = agentOptions;
+  preflightJsonSchema(schema);
   const attempts = normalizeAttemptCount(maxAttempts, "agent");
+  let rejectedResponse: unknown;
   let validationFailure: string | undefined;
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    const isRepair = attempt > 1;
     const result = await runRawAgent(
       runtime,
-      jsonSchemaPrompt(
-        "Complete the task, then return only JSON that validates against this JSON Schema. Do not include markdown fences, commentary, or extra text outside the JSON value.",
-        prompt,
-        schema,
-        validationFailure,
-      ),
-      launchOptions,
+      isRepair
+        ? jsonRepairPrompt(
+            schema,
+            rejectedResponse,
+            validationFailure ?? "response did not validate",
+            isNoUsableResponse(rejectedResponse) ? prompt : undefined,
+          )
+        : structuredTaskPrompt(prompt, schema),
+      {
+        ...launchOptions,
+        ...(isRepair ? { label: `${launchOptions.label ?? "agent"} repair ${String(attempt)}`, tools: false } : {}),
+      },
     );
     const validation = parseAndValidateJsonResponse(result, schema);
     if (validation.ok) return validation.value;
+    rejectedResponse = result;
     validationFailure = validation.error;
-    recordTrace(runtime, `${launchOptions.label ?? "agent"} schema validation failed`, { attempt, error: validationFailure });
+    const rejectedAgent = runtime.snapshot.agents.at(-1);
+    recordTrace(runtime, `${launchOptions.label ?? "agent"} schema validation failed`, {
+      attempt,
+      error: validationFailure,
+      rejectedResponse: boundedJson(result, 1000),
+      ...(rejectedAgent?.outputPath ? { outputPath: rejectedAgent.outputPath } : {}),
+    });
   }
   throw new Error(`agent failed schema validation after ${String(attempts)} attempts: ${validationFailure ?? "unknown error"}`);
+}
+
+function isNoUsableResponse(response: unknown): boolean {
+  return response === undefined || response === null || (typeof response === "string" && !response.trim());
 }
 
 async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {

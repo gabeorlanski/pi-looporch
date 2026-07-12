@@ -1,0 +1,23 @@
+Workflow design guidance: structured-outputs
+How to require compact JSON without filling the route prompt with schemas.
+
+Guidance:
+- Prefer agent({ template, values }, { schema, maxAttempts }) when a child agent must do tool work and return typed data.
+- Use coerce(...) for no-tool extraction/normalization tasks.
+- Keep prompts and schemas aligned: name the exact same keys and include a tiny valid JSON skeleton in the prompt. Ask for exactly one JSON value with no prose or fences.
+- Keep schemas shallow and small: required fields, short keys, enums/booleans, and additionalProperties: false. Add maxLength or maxItems only when a real downstream limit requires them.
+- The first schema-enabled agent performs the task; invalid output is retained and later maxAttempts are no-tools JSON-only repairs. Do not increase attempts to repeat tool work.
+- Use JSON as the control surface only: status, decision, IDs, counts, short summary, artifactPaths, evidence paths, and line references.
+- Route large reasoning, transcripts, diffs, reports, and generated artifacts to named files; return their paths and a compact manifest.
+- For large lists, prefer capped summaries or JSONL/artifact files over one giant nested JSON object.
+- Stage expansion: first return a compact selector/manifest, then launch follow-up agents only for selected items that need detail.
+- Use stable IDs and lookup tables instead of repeating long strings across every finding.
+
+Examples:
+const schema = {
+  type: "object",
+  properties: { status: { type: "string", enum: ["pass", "fail"] }, summary: { type: "string" } },
+  required: ["status", "summary"],
+  additionalProperties: false,
+};
+// Prompt skeleton: {"status":"pass","summary":"short result"}

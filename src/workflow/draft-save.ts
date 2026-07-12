@@ -1,8 +1,10 @@
 import { cp, mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
+import { isMissingFileError } from "../errors.ts";
 import type { WorkflowMetadata } from "../runtime/types.ts";
 import { extractWorkflowInputContract } from "./input-contract.ts";
 import { parseWorkflowSourceMetadata } from "./metadata.ts";
+import { isInsideOrEqual } from "./paths.ts";
 
 /** Complete generated workflow draft plus source files ready to save. */
 export interface GeneratedWorkflowDraft {
@@ -21,19 +23,14 @@ export interface SaveWorkflowDraftOptions {
 
 /** Validates and atomically saves a generated workflow draft under .pi/workflows. */
 export async function saveWorkflowDraft(options: SaveWorkflowDraftOptions): Promise<GeneratedWorkflowDraft> {
-  const draft = validatedWorkflowDraft(options.draft);
+  validateDraftDocstring(options.draft.source);
+  const draft = { ...options.draft, metadata: parseWorkflowSourceMetadata(options.draft.source, options.draft.name) };
   await saveDraft(options.cwd, draft);
   return draft;
 }
 
-function validatedWorkflowDraft(draft: GeneratedWorkflowDraft): GeneratedWorkflowDraft {
-  validateGeneratedWorkflowDocstring(draft.source);
-  const metadata = parseWorkflowSourceMetadata(draft.source, draft.name);
-  return { ...draft, metadata };
-}
-
 /** Ensures generated workflow source has default-function JSDoc covering the required runbook topics. */
-function validateGeneratedWorkflowDocstring(source: string): void {
+function validateDraftDocstring(source: string): void {
   const contract = extractWorkflowInputContract(source);
   if (!contract.jsdoc) throw new Error("Generated workflow function must start with a JSDoc docstring before it can be saved");
   const normalized = contract.jsdoc.toLowerCase();
@@ -74,7 +71,7 @@ async function renameIfExists(from: string, to: string): Promise<boolean> {
     await rename(from, to);
     return true;
   } catch (error) {
-    if (isNotFoundError(error)) return false;
+    if (isMissingFileError(error)) return false;
     throw error;
   }
 }
@@ -85,13 +82,4 @@ function validateDraftSourceDirectory(sourceDirectory: string, workflowRoot: str
     throw new Error("Workflow draft source directory must not be inside, equal to, or an ancestor of .pi/workflows");
   }
   return resolved;
-}
-
-function isInsideOrEqual(root: string, target: string): boolean {
-  const relative = path.relative(root, target);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-function isNotFoundError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ENOENT";
 }

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { GeneratedWorkflowDraft } from "./draft-save.ts";
 import { parseWorkflowSourceMetadata } from "./metadata.ts";
+import { isInsideOrEqual } from "./paths.ts";
 
 export interface WorkflowDraftReadOptions {
   cwd: string;
@@ -75,9 +76,4 @@ function resolveDraftWorkflowDirectory(cwd: string, draftDir: string, toolName: 
     throw new Error(`${toolName} draftDir must not be inside, equal to, or an ancestor of .pi/workflows`);
   }
   return resolved;
-}
-
-function isInsideOrEqual(root: string, target: string): boolean {
-  const relative = path.relative(root, target);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }

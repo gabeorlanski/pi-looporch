@@ -42,22 +42,22 @@ export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, a
   const attempts = normalizeAttemptCount(maxAttempts, "agent");
   let validationFailure: string | undefined;
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    const result = await runRawAgent(runtime, structuredAgentPrompt(prompt, schema, validationFailure), launchOptions);
+    const result = await runRawAgent(
+      runtime,
+      jsonSchemaPrompt(
+        "Complete the task, then return only JSON that validates against this JSON Schema. Do not include markdown fences, commentary, or extra text outside the JSON value.",
+        prompt,
+        schema,
+        validationFailure,
+      ),
+      launchOptions,
+    );
     const validation = parseAndValidateJsonResponse(result, schema);
     if (validation.ok) return validation.value;
     validationFailure = validation.error;
     recordTrace(runtime, `${launchOptions.label ?? "agent"} schema validation failed`, { attempt, error: validationFailure });
   }
   throw new Error(`agent failed schema validation after ${String(attempts)} attempts: ${validationFailure ?? "unknown error"}`);
-}
-
-function structuredAgentPrompt(prompt: string, schema: unknown, validationFailure: string | undefined): string {
-  return jsonSchemaPrompt(
-    "Complete the task, then return only JSON that validates against this JSON Schema. Do not include markdown fences, commentary, or extra text outside the JSON value.",
-    prompt,
-    schema,
-    validationFailure,
-  );
 }
 
 async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
@@ -156,7 +156,10 @@ function workflowAgentReporter(runtime: ActiveWorkflowRuntime, agent: WorkflowAg
   let latestToolActivity: WorkflowToolActivitySnapshot[] = [];
   const reportProgress = (progress: WorkflowAgentProgress): void => {
     if (progress.toolActivity !== undefined && !sameToolActivity(progress.toolActivity, latestToolActivity)) {
-      latestToolActivity = progress.toolActivity.map(cloneToolActivity);
+      latestToolActivity = progress.toolActivity.map((tool) => ({
+        ...tool,
+        ...(tool.arguments !== undefined ? { arguments: cloneSerializable(tool.arguments) } : {}),
+      }));
       activityWrite = enqueueActivityWrite(activityWrite, runtime, agent, latestToolActivity);
     }
     if (!applyAgentProgress(agent, progress)) return;
@@ -245,13 +248,6 @@ function sameToolActivity(left: WorkflowToolActivitySnapshot[], right: WorkflowT
   return left.every(
     (value, index) => value.name === right[index]?.name && JSON.stringify(value.arguments) === JSON.stringify(right[index]?.arguments),
   );
-}
-
-function cloneToolActivity(tool: WorkflowToolActivitySnapshot): WorkflowToolActivitySnapshot {
-  return {
-    ...tool,
-    ...(tool.arguments !== undefined ? { arguments: cloneSerializable(tool.arguments) } : {}),
-  };
 }
 
 function workflowAgentOptionsForLaunch(

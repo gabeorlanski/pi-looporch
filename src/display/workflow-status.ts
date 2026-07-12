@@ -56,28 +56,26 @@ export function renderWorkflowStatusJson(status: SelectedWorkflowStatus): string
 
 export function renderWorkflowStatusList(statuses: WorkflowRunStatus[]): string {
   if (statuses.length === 0) return "No active workflows in this project.";
-  return statuses.map((status) => renderWorkflowStatus(status)).join("\n\n");
+  return statuses.map(renderWorkflowStatus).join("\n\n");
 }
 
 export function workflowMonitorWidgetLines(statuses: WorkflowRunStatus[], ownerSessionId: string): string[] {
   const active = statuses.filter((status) => status.status === "running" && status.ownerSessionId !== ownerSessionId);
   if (active.length === 0) return [];
-  if (active.length === 1) return singleWorkflowWidgetLines(active[0], ownerSessionId);
+  if (active.length === 1) return singleWorkflowWidgetLines(active[0]);
   return [
     `${glyph.spinner[0]} ${String(active.length)} workflows active in this project`,
     ...active.map((status) => {
-      const session = status.ownerSessionId === ownerSessionId ? "" : " · other session";
-      return `  ${status.workflowName}${session} · ${status.currentPhase} · ${String(status.agents.done)}/${String(
+      return `  ${status.workflowName} · other session · ${status.currentPhase} · ${String(status.agents.done)}/${String(
         status.agents.total,
       )} agents`;
     }),
   ];
 }
 
-function singleWorkflowWidgetLines(status: WorkflowRunStatus, ownerSessionId: string): string[] {
-  const session = status.ownerSessionId === ownerSessionId ? "" : " · other session";
+function singleWorkflowWidgetLines(status: WorkflowRunStatus): string[] {
   const lines = [
-    `${glyph.spinner[0]} ${status.workflowName}${session} · ${status.currentPhase} · ${String(status.agents.done)}/${String(
+    `${glyph.spinner[0]} ${status.workflowName} · other session · ${status.currentPhase} · ${String(status.agents.done)}/${String(
       status.agents.total,
     )} agents · ${fmtDuration(status.elapsedSeconds)}`,
   ];

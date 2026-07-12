@@ -6,22 +6,22 @@ import { workflowMonitorWidgetLines } from "./workflow-status.ts";
 const WORKFLOW_MONITOR_WIDGET = "workflow-monitor";
 const WORKFLOW_MONITOR_REFRESH_MS = 3000;
 
-interface WorkflowMonitorState {
+interface MonitorState {
   timer: ReturnType<typeof setInterval>;
   cwd: string;
   ownerSessionId: string;
   disposed: boolean;
 }
 
-const monitorStatesByScope = new Map<string, WorkflowMonitorState>();
+const monitorStatesByScope = new Map<string, MonitorState>();
 
 export function startWorkflowMonitorWidget(ctx: ExtensionContext): void {
   if (!ctx.hasUI) return;
   const scope = extensionSessionScope(ctx);
   if (monitorStatesByScope.has(scope)) return;
-  const state: WorkflowMonitorState = {
+  const state: MonitorState = {
     timer: setInterval(() => {
-      void refreshWorkflowMonitorWidget(ctx, state);
+      void refreshMonitor(ctx, state);
     }, WORKFLOW_MONITOR_REFRESH_MS),
     cwd: ctx.cwd,
     ownerSessionId: ctx.sessionManager.getSessionId(),
@@ -29,16 +29,21 @@ export function startWorkflowMonitorWidget(ctx: ExtensionContext): void {
   };
   state.timer.unref();
   monitorStatesByScope.set(scope, state);
-  void refreshWorkflowMonitorWidget(ctx, state);
+  void refreshMonitor(ctx, state);
 }
 
 export function stopWorkflowMonitorWidget(ctx: ExtensionContext): void {
-  disposeWorkflowMonitorState(ctx);
+  const scope = extensionSessionScope(ctx);
+  const state = monitorStatesByScope.get(scope);
+  if (state) {
+    state.disposed = true;
+    clearInterval(state.timer);
+    monitorStatesByScope.delete(scope);
+  }
   ctx.ui.setWidget(WORKFLOW_MONITOR_WIDGET, undefined);
 }
 
-async function refreshWorkflowMonitorWidget(ctx: ExtensionContext, state: WorkflowMonitorState): Promise<void> {
-  if (workflowMonitorStateDisposed(state)) return;
+async function refreshMonitor(ctx: ExtensionContext, state: MonitorState): Promise<void> {
   const query: WorkflowStatusQuery = {
     scope: "project",
     ownerSessionId: state.ownerSessionId,
@@ -47,20 +52,7 @@ async function refreshWorkflowMonitorWidget(ctx: ExtensionContext, state: Workfl
     now: Date.now(),
   };
   const statuses = await readWorkflowStatusList(state.cwd, query).catch(() => []);
-  if (workflowMonitorStateDisposed(state)) return;
+  if (state.disposed) return;
   const lines = workflowMonitorWidgetLines(statuses, query.ownerSessionId);
   ctx.ui.setWidget(WORKFLOW_MONITOR_WIDGET, lines.length > 0 ? lines : undefined, { placement: "belowEditor" });
-}
-
-function workflowMonitorStateDisposed(state: WorkflowMonitorState): boolean {
-  return state.disposed;
-}
-
-function disposeWorkflowMonitorState(ctx: ExtensionContext): void {
-  const scope = extensionSessionScope(ctx);
-  const state = monitorStatesByScope.get(scope);
-  if (!state) return;
-  state.disposed = true;
-  clearInterval(state.timer);
-  monitorStatesByScope.delete(scope);
 }

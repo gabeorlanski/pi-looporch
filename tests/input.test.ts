@@ -21,7 +21,7 @@ void test("workflow_input_uses_key_value_directly", () => {
   });
 });
 
-void test("workflow_input_leaves_freeform_for_steerable_session_resolution", () => {
+void test("input leaves freeform text for session resolution", () => {
   assert.deepEqual(parseWorkflowInput("scratch/repo @problems/python_dag/ is the problem."), {
     action: "resolve",
     rawInput: "scratch/repo @problems/python_dag/ is the problem.",

@@ -136,7 +136,7 @@ export default async function workflow() {
   });
 });
 
-void test("workflow_writes_valid_json_for_undefined_agent_and_final_outputs", async () => {
+void test("workflow writes JSON for undefined outputs", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   const outputsDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-outputs-"));
   await writeWorkflow(

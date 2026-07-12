@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isMissingFileError } from "../errors.ts";
 
 export interface WorkflowSettings {
   workflowDirs: string[];
@@ -80,7 +81,7 @@ async function readWorkflowSettingsObject(settingsPath: string): Promise<Record<
   try {
     rawSettings = JSON.parse(await readFile(settingsPath, "utf8")) as unknown;
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") return {};
+    if (isMissingFileError(error)) return {};
     throw error;
   }
   if (!isRecord(rawSettings)) throw new Error(`${settingsPath} must contain a JSON object`);
@@ -106,7 +107,7 @@ async function writeWorkflowSettingsFile(settingsPath: string, settings: Workflo
     if (!isRecord(parsed)) throw new Error(`${settingsPath} must contain a JSON object`);
     rawSettings = parsed;
   } catch (error) {
-    if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+    if (!isMissingFileError(error)) throw error;
   }
   const workflow = isRecord(rawSettings.workflow) ? rawSettings.workflow : {};
   rawSettings.workflow = { ...workflow, ...patch };
@@ -125,8 +126,4 @@ function normalizeWorkflowSettingsPatch(settings: WorkflowSettingsPatch): Workfl
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

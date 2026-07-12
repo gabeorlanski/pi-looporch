@@ -88,7 +88,7 @@ function expandHomePath(value: string): string {
 }
 
 async function analyzeWorkflowLogDirectory(logDir: string, summary: Record<string, unknown>): Promise<WorkflowLogReview> {
-  const agents = await Promise.all(arrayValue(summary.agents).map((agent) => analyzeAgentLog(agent)));
+  const agents = await Promise.all((Array.isArray(summary.agents) ? summary.agents : []).map((agent) => analyzeAgentLog(agent)));
   return {
     logDir,
     workflowName: stringValue(summary.workflowName) ?? "unknown",
@@ -289,10 +289,6 @@ function readJsonLine(line: string): unknown {
 
 function recordValue(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function arrayValue(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
 }
 
 function stringValue(value: unknown): string | undefined {

@@ -14,7 +14,7 @@ async function writeWorkflow(project: string, name: string, source: string): Pro
   await writeFile(path.join(workflowDir, "workflow.js"), source, "utf8");
 }
 
-void test("background_workflow_run_returns_before_workflow_finishes_and_writes_outputs", async () => {
+void test("background run returns early and writes outputs", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-background-"));
   await writeWorkflow(
     project,
@@ -68,7 +68,7 @@ export default async function workflow() {
   assert.equal(doneManifest.status, "done");
 });
 
-void test("background_workflow_run_respects_already_aborted_parent_signal", async () => {
+void test("background run respects an aborted parent", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-background-"));
   await writeWorkflow(
     project,
@@ -104,7 +104,7 @@ export default async function workflow() {
   assert.equal(run.snapshot(), undefined);
 });
 
-void test("background_workflow_abort_stops_running_child_and_removes_active_record", async () => {
+void test("background abort stops the child and clears its record", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-background-"));
   await writeWorkflow(
     project,
@@ -157,7 +157,7 @@ export default async function workflow() {
   });
 });
 
-void test("background_workflow_run_writes_error_manifest_when_workflow_fails", async () => {
+void test("background failure writes an error manifest", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-background-"));
   await writeWorkflow(
     project,
@@ -188,7 +188,7 @@ export default async function workflow() {
   });
 });
 
-void test("background_workflow_run_persists_terminal_snapshot_when_workflow_body_fails", async () => {
+void test("background body failure persists its terminal snapshot", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-background-"));
   await writeWorkflow(
     project,

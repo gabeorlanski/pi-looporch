@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { workflowLogReviewMessage } from "../src/log-review.ts";
 import { workflowAgentSessionLogParentDirectory } from "../src/session-logs.ts";
 
-void test("workflow_log_review_reports_tokens_tools_and_repeated_commands", async () => {
+void test("log review reports tokens, tools, and repeated commands", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-log-review-"));
   const sessionsRoot = await mkdtemp(path.join(tmpdir(), "pi-workflow-sessions-"));
   const runDir = workflowAgentSessionLogParentDirectory(project, "run-1", sessionsRoot);

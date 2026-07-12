@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { checkDocumentationContracts, docsSynchronizationIssues, shouldCheckDocstrings } from "../scripts/check-doc-contracts.ts";
 
-void test("documentation_contracts_require_jsdoc_on_exported_api_declarations", async () => {
+void test("documentation contracts require JSDoc on exports", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-doc-contracts-"));
   await mkdir(path.join(project, "src"), { recursive: true });
   await writeFile(
@@ -31,7 +31,7 @@ function privateHelper(): void {}
   ]);
 });
 
-void test("documentation_contracts_staged_mode_checks_only_staged_public_source", async () => {
+void test("staged documentation checks only public source", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-doc-contracts-"));
   await mkdir(path.join(project, "src"), { recursive: true });
   await mkdir(path.join(project, "tests"), { recursive: true });
@@ -43,7 +43,7 @@ void test("documentation_contracts_staged_mode_checks_only_staged_public_source"
   assert.deepEqual(result.issues, []);
 });
 
-void test("documentation_contracts_require_docs_with_staged_behavior_surface_changes", () => {
+void test("behavior changes require staged documentation", () => {
   assert.deepEqual(docsSynchronizationIssues(["src/tools.ts"]), [
     {
       filePath: "<staged files>",
@@ -55,7 +55,7 @@ void test("documentation_contracts_require_docs_with_staged_behavior_surface_cha
   assert.deepEqual(docsSynchronizationIssues(["tests/tools.test.ts"]), []);
 });
 
-void test("documentation_contracts_scope_skips_tests_and_runtime_primitives", () => {
+void test("documentation scope skips tests and primitives", () => {
   assert.equal(shouldCheckDocstrings("src/tools.ts"), true);
   assert.equal(shouldCheckDocstrings("extensions/workflow.ts"), true);
   assert.equal(shouldCheckDocstrings("src/runtime/primitives/agent.ts"), false);

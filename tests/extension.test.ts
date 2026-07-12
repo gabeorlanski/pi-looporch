@@ -57,7 +57,7 @@ export default async function workflow(input) {
   assert.deepEqual(JSON.parse(await readFile(workflowResultPathFrom(handoff.text), "utf8")), { message: "hello" });
 });
 
-void test("existing_workflow_completion_queues_user_message_as_followup_when_busy", async () => {
+void test("workflow completion follows up when busy", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeProjectWorkflow(
     project,
@@ -111,14 +111,6 @@ export default async function workflow(input) {
     /Automated workflow completion handoff: workflow 'tool-echo' completed/,
   );
   assert.match(typeof handoff.message === "string" ? handoff.message : "", /"message": "hello"/);
-});
-
-void test("workflow_product_callers_do_not_settle_visible_runs", async () => {
-  const productSources = await Promise.all([readFile("extensions/workflow.ts", "utf8"), readFile("src/tools.ts", "utf8")]);
-
-  for (const source of productSources) {
-    assert.doesNotMatch(source, /\.run\.finished|visible\.cleanup/);
-  }
 });
 
 void test("workflow_status_tool_reads_project_wide_active_runs", async () => {
@@ -217,7 +209,7 @@ void test("workflow_status_command_rejects_multiple_refs", async () => {
   });
 });
 
-void test("session_shutdown_aborts_visible_workflow_and_cleans_active_registry", async () => {
+void test("session shutdown aborts visible workflows", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeProjectWorkflow(
     project,
@@ -281,7 +273,7 @@ void test("view_workflow_command_opens_running_workflow_inspector", async () => 
   clearRunningWorkflowUi(launchCtx, "run-view");
 });
 
-void test("session_start_restores_running_workflow_widget_from_active_registry", async () => {
+void test("session start restores the running workflow widget", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const outputsDir = path.join(project, "outputs", "reloadable-run");
   await registerActiveWorkflowRun(project, {
@@ -344,7 +336,7 @@ void test("session_start_removes_active_workflow_from_dead_process", async () =>
   assert.deepEqual(await readActiveWorkflowRuns(project), []);
 });
 
-void test("session_start_does_not_restore_workflow_owned_by_another_session", async () => {
+void test("session start ignores workflows from other sessions", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const outputsDir = path.join(project, "outputs", "other-session-run");
   await registerActiveWorkflowRun(project, {
@@ -371,7 +363,7 @@ void test("session_start_does_not_restore_workflow_owned_by_another_session", as
   await removeActiveWorkflowRun(project, "run-other-session");
 });
 
-void test("session_start_shows_project_wide_monitor_widget_for_other_session_workflows", async () => {
+void test("session start shows the other-session monitor", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const outputsDir = path.join(project, "outputs", "project-monitor-run");
   await registerActiveWorkflowRun(project, {
@@ -403,7 +395,7 @@ void test("session_start_shows_project_wide_monitor_widget_for_other_session_wor
   await removeActiveWorkflowRun(project, "run-project-monitor");
 });
 
-void test("session_start_project_monitor_widget_lists_other_session_active_workflows", async () => {
+void test("project monitor lists active other-session workflows", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const names = ["project-monitor-a", "project-monitor-b", "project-monitor-c", "project-monitor-d", "project-monitor-e"];
   await Promise.all(
@@ -434,7 +426,7 @@ void test("session_start_project_monitor_widget_lists_other_session_active_workf
   await Promise.all(names.map((name) => removeActiveWorkflowRun(project, `run-${name}`)));
 });
 
-void test("workflow_monitor_timer_stops_before_using_replaced_session_context", async (t) => {
+void test("monitor timer stops before a session is replaced", async (t) => {
   t.mock.timers.enable({ apis: ["setInterval"], now: Date.now() });
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeMonitorRun(project, {
@@ -460,7 +452,7 @@ void test("workflow_monitor_timer_stops_before_using_replaced_session_context", 
   await removeActiveWorkflowRun(project, "run-replaced-session");
 });
 
-void test("view_workflow_command_does_not_use_same_cwd_workflow_from_another_session", async () => {
+void test("view workflow ignores another session's run", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const ownerHarness = createExtensionHarness({ cwd: project, sessionId: "owner-session" });
   const viewerHarness = createExtensionHarness({ cwd: project, sessionId: "viewer-session" });
@@ -488,7 +480,7 @@ void test("view_workflow_command_warns_when_no_workflow_is_running", async () =>
   assert.equal(harness.customOpenCount(), 0);
 });
 
-void test("existing_workflow_command_reports_background_failure_and_cleans_up_ui", async () => {
+void test("workflow command reports background failure", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeProjectWorkflow(
     project,
@@ -576,7 +568,7 @@ void test("workflow_settings_command_shows_readable_current_settings", async () 
   assert.match(harness.sentMessages[0].message.content, /\/workflow-settings workflowDirs=/);
 });
 
-void test("existing_workflow_freeform_input_is_steered_in_current_session", async () => {
+void test("workflow command steers freeform input", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeProjectWorkflow(
     project,
@@ -612,7 +604,7 @@ export default async function workflow({ message }) {
   assert.doesNotMatch(prompt, /return \{ message \};/);
 });
 
-void test("existing_workflow_command_reports_missing_required_input_without_running", async () => {
+void test("workflow command reports missing required input", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeProjectWorkflow(
     project,

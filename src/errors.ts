@@ -7,3 +7,8 @@ export function errorMessage(error: unknown): string {
   if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") return error.message;
   return JSON.stringify(error);
 }
+
+/** Returns whether an unknown filesystem failure reports a missing path. */
+export function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT";
+}

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isMissingFileError } from "../errors.ts";
 
 export interface ActiveWorkflowRunRecord {
   runId: string;
@@ -74,8 +75,4 @@ function isActiveWorkflowRunRecord(value: unknown): value is ActiveWorkflowRunRe
     typeof candidate.ownerSessionId === "string" &&
     typeof candidate.ownerProcessId === "number"
   );
-}
-
-function isMissingFileError(error: unknown): boolean {
-  return error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT";
 }

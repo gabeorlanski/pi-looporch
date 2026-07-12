@@ -26,7 +26,7 @@ async function waitForCondition(condition: () => boolean): Promise<void> {
   assert.ok(condition(), "condition was not met before timeout");
 }
 
-void test("workflow_design_guidance_tool_returns_topic_index_and_focused_guidance", async () => {
+void test("guidance tool returns index and focused guidance", async () => {
   const tool = createWorkflowTools({ cwd: process.cwd() }).find((candidate) => candidate.name === "workflow_design_guidance");
   assert.ok(tool);
 
@@ -137,7 +137,7 @@ export default async function workflow(input) {
   });
 });
 
-void test("run_workflow_tool_reports_background_failure_with_stable_error_text", async () => {
+void test("run tool reports background failures", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const workflowDir = path.join(project, ".pi", "workflows", "fail");
   await mkdir(workflowDir, { recursive: true });
@@ -174,7 +174,7 @@ export default async function workflow() {
   assert.deepEqual(sentUserMessages, [{ message: "Workflow 'fail' failed: tool exploded", options: undefined }]);
 });
 
-void test("run_workflow_tool_skips_background_notification_after_session_shutdown", async () => {
+void test("run tool skips notifications after shutdown", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const workflowDir = path.join(project, ".pi", "workflows", "slow");
   await mkdir(workflowDir, { recursive: true });
@@ -329,7 +329,7 @@ export default async function workflow({ prompt }) {
   assert.equal((await readFile(workflowFile, "utf8")).trim(), source);
 });
 
-void test("propose_workflow_tool_rejects_draft_directory_inside_published_workflows", async () => {
+void test("propose tool rejects drafts inside published workflows", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow({ prompt }) {
@@ -347,7 +347,7 @@ export default async function workflow({ prompt }) {
   );
 });
 
-void test("propose_workflow_tool_rejects_published_workflows_directory_as_draft", async () => {
+void test("propose tool rejects the published workflows directory", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const draftDir = path.join(project, ".pi", "workflows");
   await mkdir(draftDir, { recursive: true });
@@ -360,7 +360,7 @@ void test("propose_workflow_tool_rejects_published_workflows_directory_as_draft"
   );
 });
 
-void test("propose_workflow_tool_rejects_draft_directory_that_contains_published_workflows", async () => {
+void test("propose tool rejects draft directories containing workflows", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
 export default async function workflow({ prompt }) {

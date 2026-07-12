@@ -18,7 +18,7 @@ const plainTheme = {
   bold: (text: string) => text,
 };
 
-void test("workflow_progress_summarizes_status_input_tokens_and_active_agents", () => {
+void test("progress summarizes status, input, tokens, and agents", () => {
   const snapshot: WorkflowSnapshot = {
     workflowName: "review",
     description: "Review files",
@@ -59,7 +59,7 @@ void test("workflow_progress_summarizes_status_input_tokens_and_active_agents", 
   assert.ok(!display.widgetLines.some((line) => line.includes("using read")));
 });
 
-void test("workflow_progress_reports_errors_without_rendering_completed_agent_rows", () => {
+void test("progress reports errors without completed agent rows", () => {
   const snapshot: WorkflowSnapshot = {
     workflowName: "many",
     description: "Many agents",
@@ -140,7 +140,7 @@ void test("workflow_widget_and_inspector_render_within_width", () => {
   assert.ok(inspectorLines.every((line) => visibleWidth(line) <= 100));
 });
 
-void test("workflow_inspector_shows_exact_activity_output_and_expandable_prompt", async () => {
+void test("inspector shows activity, output, and expandable prompts", async () => {
   const artifactsDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-inspector-"));
   const promptPath = path.join(artifactsDir, "prompt.txt");
   const activityPath = path.join(artifactsDir, "activity.jsonl");
@@ -209,7 +209,7 @@ void test("workflow_inspector_shows_exact_activity_output_and_expandable_prompt"
   assert.match(expanded, /EXACT PROMPT/);
 });
 
-void test("running_workflow_ui_handles_widget_selection_inspector_and_abort", () => {
+void test("running workflow UI selects, inspects, and aborts", () => {
   let editorText = "";
   let terminalInputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
   let widget: TestWorkflowComponent | undefined;

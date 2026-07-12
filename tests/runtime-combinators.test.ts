@@ -51,7 +51,7 @@ export default async function workflow() {
   );
 });
 
-void test("workflow_mapreduce_coerces_items_maps_them_and_reduces_results", async () => {
+void test("mapreduce coerces, maps, and reduces items", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
@@ -132,7 +132,7 @@ export default async function workflow() {
   assert.deepEqual(result.snapshot.fanOuts, [{ id: 1, label: "rubric voters", total: 3, running: 0, done: 3, error: 0 }]);
 });
 
-void test("workflow_parallel_records_failures_after_finishing_remaining_items", async () => {
+void test("parallel records failures after remaining items finish", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,

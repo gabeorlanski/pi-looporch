@@ -19,13 +19,6 @@ export interface PreparedWorkflowRun {
   initialSnapshot: WorkflowSnapshot;
 }
 
-async function resolveWorkflowReference(cwd: string, workflowName: string): Promise<WorkflowReference> {
-  const normalizedName = normalizeWorkflowName(workflowName);
-  const workflow = (await discoverWorkflows(cwd)).find((candidate) => candidate.name === normalizedName);
-  if (!workflow) throw new Error(`Workflow '${normalizedName}' not found.`);
-  return workflow;
-}
-
 export async function readWorkflowInputContract(workflow: WorkflowReference): Promise<WorkflowInputContract> {
   return extractWorkflowInputContract(await readFile(workflow.entryFile, "utf8"));
 }
@@ -36,7 +29,9 @@ export async function prepareWorkflowRun(options: {
   input: unknown;
   agentDir: string;
 }): Promise<PreparedWorkflowRun> {
-  const workflow = await resolveWorkflowReference(options.cwd, options.workflowName);
+  const workflowName = normalizeWorkflowName(options.workflowName);
+  const workflow = (await discoverWorkflows(options.cwd)).find((candidate) => candidate.name === workflowName);
+  if (!workflow) throw new Error(`Workflow '${workflowName}' not found.`);
   const input = validateWorkflowInput(options.input, workflow.name, await readWorkflowInputContract(workflow));
   const runId = createWorkflowRunId(workflow.name);
   const workflowSettings = await readWorkflowSettings(options.cwd, options.agentDir);

@@ -3,7 +3,9 @@ How to launch child agents with clear boundaries and compact handoffs.
 
 Guidance:
 - Give child agents source-of-truth paths and tell them to read files with tools; do not paste large project files into prompts.
-- Use taskFile for the primary file, cwd for alternate/scratch directories, and tools: false for extraction or formatting tasks that do not need tools.
+- Use taskFile for the primary file and cwd for alternate/scratch directories.
+- agent, coerce, mapreduce, and verifier accept extensions and tools string lists. Omit a list to inherit workflow.childAgentExtensions or workflow.childAgentTools; missing settings mean all, [] means none, and a per-call list overrides its default.
+- Treat tools as an exact allowlist. Naming an extension-owned tool loads its owner but no sibling tools; naming an extension with unrestricted tools exposes built-ins plus all tools from that extension.
 - Pass only compact prior results, artifact paths, counts, and evidence paths between stages.
 - Return compact status, summaries, and artifact paths; large results belong in files, not parent-session prompts.
 - Use log(...) before slow launches and at handoffs; use trace(...) for structured debug state such as selected files, output paths, and compact summaries.

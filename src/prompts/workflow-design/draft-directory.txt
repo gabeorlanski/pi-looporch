@@ -5,6 +5,7 @@ Guidance:
 - Create a complete draft directory with workflow.js plus workflow-owned prompts, schemas, fixtures, or examples before proposing.
 - Use {{draftRoot}}/<workflow-name>/ by default so workflow authoring does not dirty the worktree.
 - Call propose_workflow with the workflow name. Omit draftDir when using the default draft directory; otherwise set draftDir to the directory path, not the workflow.js file path.
+- Before saving, propose_workflow validates inline and top-level const agent capability lists plus inherited childAgentExtensions/childAgentTools against real Pi metadata, reports all source-located failures, and leaves published files unchanged on error.
 - Drafts copy to .pi/workflows/<name>/ so workflow.js and resources land together.
 
 Examples:

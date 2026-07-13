@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -32,6 +33,64 @@ export default async function workflow(input) {
       (update) => update?.some((line) => line.includes("workflow echo")) && update.some((line) => line.includes("0/0 agents done")),
     ),
   );
+});
+
+void test("generic workflow command uses parent tool ownership without initializing unrelated ambient extensions", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-capabilities-"));
+  const selectedCountPath = path.join(project, "selected-count.txt");
+  const unrelatedCountPath = path.join(project, "unrelated-count.txt");
+  const extensionDir = path.join(project, ".pi", "extensions");
+  const selectedPath = path.join(extensionDir, "selected.js");
+  await mkdir(extensionDir, { recursive: true });
+  await writeFile(
+    selectedPath,
+    `import { appendFileSync } from "node:fs";
+export default function selectedExtension(pi) {
+  appendFileSync(${JSON.stringify(selectedCountPath)}, "loaded\\n");
+  pi.registerTool({
+    name: "selected_tool",
+    label: "selected_tool",
+    description: "selected_tool",
+    parameters: { type: "object", properties: {} },
+    execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
+  });
+}
+`,
+    "utf8",
+  );
+  await writeFile(
+    path.join(extensionDir, "unrelated.js"),
+    `import { appendFileSync } from "node:fs";
+export default function unrelatedExtension() { appendFileSync(${JSON.stringify(unrelatedCountPath)}, "loaded\\n"); }
+`,
+    "utf8",
+  );
+  await writeProjectWorkflow(
+    project,
+    "selected-owner",
+    `export const metadata = { name: "selected-owner", description: "Use selected tool", inputInstructions: "No input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return agent("use selected access", { extensions: [], tools: ["selected_tool"] });
+}`,
+  );
+  const harness = createExtensionHarness({
+    cwd: project,
+    parentTools: [
+      {
+        name: "selected_tool",
+        description: "selected_tool",
+        parameters: { type: "object", properties: {} },
+        sourceInfo: { path: selectedPath, source: "auto", scope: "project", origin: "top-level" },
+      },
+    ],
+  });
+
+  await harness.command("workflow", "selected-owner");
+  await waitForCondition(() => existsSync(selectedCountPath), 1000);
+  await harness.sessionShutdown();
+
+  assert.equal((await readFile(selectedCountPath, "utf8")).trim(), "loaded");
+  await assert.rejects(readFile(unrelatedCountPath, "utf8"), { code: "ENOENT" });
 });
 
 void test("existing_workflow_completion_sends_automated_user_message", async () => {
@@ -519,6 +578,17 @@ void test("workflow_settings_command_writes_project_settings", async () => {
     workflow: { maxParallelAgents: 8, childAgentExtensions: ["pi-subagents", "./extensions/todo.ts"] },
   });
 
+  await harness.command("workflow-settings", "childAgentTools=read,bash");
+
+  assert.match(harness.notifications.at(-1)?.message ?? "", /child agent tools set/);
+  assert.deepEqual(JSON.parse(await readFile(path.join(project, ".pi", "settings.json"), "utf8")), {
+    workflow: {
+      maxParallelAgents: 8,
+      childAgentExtensions: ["pi-subagents", "./extensions/todo.ts"],
+      childAgentTools: ["read", "bash"],
+    },
+  });
+
   await harness.command("workflow-settings", "workflowDirs=../shared-workflows,.pi/team-workflows");
 
   assert.match(harness.notifications.at(-1)?.message ?? "", /Workflow directories set/);
@@ -526,6 +596,7 @@ void test("workflow_settings_command_writes_project_settings", async () => {
     workflow: {
       maxParallelAgents: 8,
       childAgentExtensions: ["pi-subagents", "./extensions/todo.ts"],
+      childAgentTools: ["read", "bash"],
       workflowDirs: ["../shared-workflows", ".pi/team-workflows"],
     },
   });
@@ -539,6 +610,9 @@ void test("workflow_settings_command_rejects_hidden_aliases", async () => {
     "maxParallel=8",
     "childExtensions=pi-subagents",
     "extensions=pi-subagents",
+    "childTools=read,bash",
+    "defaultAgentTools=read,bash",
+    "tools=read,bash",
     "dirs=../shared-workflows",
     "global maxParallelAgents=8",
     "scope=global maxParallelAgents=8",
@@ -549,6 +623,19 @@ void test("workflow_settings_command_rejects_hidden_aliases", async () => {
     assert.match(harness.notifications.at(-1)?.message ?? "", /^Usage: \/workflow-settings/);
     assert.equal(harness.notifications.at(-1)?.type, "error");
   }
+});
+
+void test("workflow_settings_command_supports_all_and_explicit_none_capabilities", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const harness = createExtensionHarness({ cwd: project });
+
+  await harness.command("workflow-settings", "childAgentExtensions=all");
+  await harness.command("workflow-settings", "childAgentTools=");
+
+  assert.deepEqual(JSON.parse(await readFile(path.join(project, ".pi", "settings.json"), "utf8")), {
+    workflow: { childAgentExtensions: "all", childAgentTools: [] },
+  });
+  assert.match(harness.notifications.at(-1)?.message ?? "", /child agent tools set to none/);
 });
 
 void test("workflow_settings_command_shows_readable_current_settings", async () => {
@@ -563,9 +650,12 @@ void test("workflow_settings_command_shows_readable_current_settings", async () 
   assert.match(harness.sentMessages[0].message.content, /# Workflow Settings/);
   assert.match(harness.sentMessages[0].message.content, /Workflow directories: none/);
   assert.match(harness.sentMessages[0].message.content, /Max parallel agents: 4/);
+  assert.match(harness.sentMessages[0].message.content, /Child agent extensions: all/);
+  assert.match(harness.sentMessages[0].message.content, /Child agent tools: all/);
   assert.match(harness.sentMessages[0].message.content, /Project: \.pi\/settings\.json/);
   assert.match(harness.sentMessages[0].message.content, /\/workflow-settings maxParallelAgents=8/);
   assert.match(harness.sentMessages[0].message.content, /\/workflow-settings workflowDirs=/);
+  assert.match(harness.sentMessages[0].message.content, /\/workflow-settings childAgentTools=read,bash/);
 });
 
 void test("workflow command steers freeform input", async () => {

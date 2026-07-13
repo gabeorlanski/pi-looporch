@@ -6,6 +6,7 @@ Guidance:
 - Before asking about missing purpose or contract details, inspect relevant project context and infer the workflow purpose, inputs/defaults, phases, child-agent roles, file reads, and result shape when they are reasonably clear.
 - Draft the workflow under the default outside-project draft root {{draftRoot}}, then call propose_workflow with the workflow name.
 - Keep workflow.js as orchestration code. Put reusable child-agent prompt text in prompts/*.txt and launch it with agent({ template, values }, options).
+- Give agent-calling primitives explicit extensions/tools lists when they should not inherit project defaults; [] means none, and named extension tools imply their owner without exposing sibling tools.
 - Ask this tool for narrower topics only when needed: workflow-api, draft-directory, prompt-files, child-agents, structured-outputs, fanout, verification, artifacts.
 - The supported workflow primitives are listed below from the runtime registry so this guide stays synchronized with implementation.
 

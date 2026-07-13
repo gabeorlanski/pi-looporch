@@ -61,7 +61,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 - Inject `WorkflowAgent`; never hardcode model or pi providers into core logic.
 - Propose generated workflows as complete project-local draft directories such as `.pi/workflow-drafts/<name>/`; `propose_workflow` `draftDir` values should point at the directory, not the `workflow.js` file.
-- `propose_workflow` saves directly after validating the draft directory; do not add confirmation flags or two-step save flows.
+- `propose_workflow` saves directly after validating the draft directory and child-agent capabilities; it must statically resolve inline or top-level `const` capability lists, validate inherited settings defaults against Pi's real extension/tool metadata, aggregate source-located failures, and leave published workflows untouched on error.
 - Require workflow metadata to include `phases: [{ title, detail? }]`; this planned runbook outline is required planning data, while runtime `phase()` calls are actual progress.
 - Require agent-generated workflow source to document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
 - Let workflow `readText`/`readJson` read and `writeText`/`writeJson` write files anywhere the pi process can access: absolute paths as absolute, bare relative paths from project `cwd`, and `@workflow/...` paths from the workflow directory. Keep shared pathing and atomic write behavior in common workflow helpers, not per-primitive ad hoc code.
@@ -73,7 +73,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Put reusable generated-workflow child-agent prompt templates in workflow-local `prompts/*.txt` files and launch them with `agent({ template, values }, options)`. Put stable rules/examples before a final dynamic Task instance section, require every `{{name}}` placeholder to receive a value, and reserve inline prompts for tiny one-off glue.
 - If a workflow needs more than five distinct non-verifier prompts, split them into separate prompt files rather than packing variants into `workflow.js` or one oversized template.
 - Use adversarial verifier/repair stages for important generated artifacts only when the risk justifies the extra agents; verifier prompts should cite evidence and separate major correctness failures from recommendations.
-- Prefer `agent({ template, values }, { schema, maxAttempts? })` for child agents that do real work and must return typed JSON; reserve `coerce` for no-tools extraction/normalization.
+- Prefer `agent({ template, values }, { schema, maxAttempts? })` for child agents that do real work and must return typed JSON; `coerce` uses the same `extensions`/`tools` capability controls for extraction or normalization, while schema repair attempts always use `extensions: []` and `tools: []`.
 - Treat structured JSON as a control surface, not the payload: return status, decisions, stable IDs, counts, line/evidence references, short summaries, and artifact paths; put reasoning, transcripts, diffs, generated reports, and large evidence in files or JSONL artifacts.
 - Keep structured-output schemas token-efficient with short keys, bounded strings/lists, enums/booleans, `additionalProperties: false`, stable lookup IDs, and staged expansion for only selected items that need detail.
 - Use `agent({ template, values }, { cwd })` when a child agent should operate from a scratch or alternate directory; relative `cwd` values resolve from the workflow project cwd.
@@ -85,7 +85,8 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Named workflow commands must not require users to hand-write JSON; direct JSON/key-value input should validate required fields, while freeform named-workflow input should become a visible, steerable session conversation that shows the exact prompt using `metadata.inputInstructions` plus the workflow function JSDoc/signature before calling `run_workflow`.
 - `/workflow` steering prompts must require agents to resolve clear ambiguities from project context before asking. For new workflow authoring, infer purpose, inputs/defaults, phases, child-agent roles, file reads, and result shape from the request, docs, code, tests, and existing workflows when reasonably clear; ask only for unknowable or high-impact choices.
 - Workflow parallelism is bounded by project `.pi/settings.json` `workflow.maxParallelAgents`; enforce it globally for child-agent launches, and make `parallel` queue excess fan-out workers instead of launching unbounded work.
-- Workflow child-agent SDK sessions should disable ambient pi extensions and load only `workflow.childAgentExtensions` from merged global/project settings; configured extension state must stay child-session-local and never mutate parent/global extension state.
+- `agent`, `coerce`, `mapreduce`, and `verifier` accept `extensions?: string[]` and `tools?: string[]`; omission inherits merged `workflow.childAgentExtensions`/`workflow.childAgentTools`, absent settings mean all, `[]` means none, and per-call lists override their corresponding defaults.
+- Treat an explicit tool list as exact: an extension-owned tool implies and loads its owner but does not expose sibling tools; an explicit extension list with unrestricted tools exposes the built-ins plus all tools from those extensions. Capability state must stay child-session-local and never mutate parent/global extension state.
 - Workflows started by named commands and by the current-session agent through `run_workflow` should share the same TUI running-workflow widget, `/view-workflow` inspector entrypoint, reload reattachment, and cleanup behavior, scoped to the parent Pi session id rather than cwd alone.
 - `workflow_status`, `/workflow-status`, and the passive monitor widget are project-scoped by default and may show workflows owned by other Pi sessions; use `scope: "current-session"` only when the caller explicitly wants the current session.
 - Configured workflow roots live in `.pi/settings.json` or global settings as `workflow.workflowDirs`; discovery resolves those paths from the project root.
@@ -113,12 +114,12 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 - Runtime types: `src/runtime/types.ts` defines `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, and `WorkflowRunResult`.
 - Runtime execution: `src/runtime/run.ts` wires sandboxed execution; `src/workflow/start.ts` owns shared run preparation/start policy for commands and tools; `src/workflow/background-runs.ts` owns background execution, active-run registration, outputs, and session-summary closeout.
-- Workflow source analysis: `src/workflow/source-analysis.ts`, `src/workflow/sandbox.ts`, `src/workflow/metadata.ts`, and `src/workflow/input-contract.ts` own AST restrictions, sandbox transforms, static metadata parsing, and default workflow input contracts.
+- Workflow source analysis: `src/workflow/source-analysis.ts`, `src/workflow/sandbox.ts`, `src/workflow/metadata.ts`, `src/workflow/input-contract.ts`, and `src/workflow/agent-capability-source.ts` own AST restrictions, sandbox transforms, static metadata/input parsing, and child-agent capability extraction.
 - Workflow saving: `src/workflow/draft-save.ts` defines `GeneratedWorkflowDraft` validation and draft saving.
 - Discovery: `src/discovery.ts` defines `WorkflowReference` and workflow root handling; workflow root settings come from `src/workflow/settings.ts`.
-- Settings: `src/workflow/settings.ts` defines workflow global/project settings parsing and persistence, including configured workflow roots.
+- Settings: `src/workflow/settings.ts` defines workflow global/project settings parsing and persistence, including configured workflow roots and child-agent extension/tool defaults.
 - Tools: `src/tools.ts` defines `WorkflowToolsOptions` and tool creation.
-- Pi bridge: `src/pi-agent.ts` defines `PiWorkflowAgentOptions`; session event filtering, token usage, and logged child-session persistence live in `src/session-events.ts`, `src/session-usage.ts`, and `src/agent-session-logs.ts`.
+- Pi bridge: `src/pi-agent.ts` defines `PiWorkflowAgentOptions`; `src/pi-agent-capabilities.ts` builds extension/tool catalogs and `src/pi-agent-capability-resolution.ts` owns typed access resolution; session event filtering, token usage, and logged child-session persistence live in `src/session-events.ts`, `src/session-usage.ts`, and `src/agent-session-logs.ts`.
 - Prompt templates: `src/prompts/*.txt` contains raw agent prompt copy; `src/prompt-templates.ts` binds typed data into those templates.
 - Authoring guide: `src/authoring-guide.ts` owns on-demand workflow design guidance returned by `workflow_design_guidance`; routing prompts should stay compact and point agents to the tool instead of embedding verbose examples.
 - Display: `src/display/` contains progress/message renderers plus the running-workflow widget, inspector, and visible-run UI lifecycle.
@@ -129,13 +130,13 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Run an existing workflow from a tool: start in `src/tools.ts`, then follow the same `src/workflow/start.ts` -> `src/workflow/background-runs.ts` -> `src/runtime/run.ts` path.
 - Parse named-command input: `src/input.ts` parses raw JSON/key-value/freeform command text; `src/workflow/input-contract.ts` reads workflow function/JSDoc contracts and validates normalized direct input.
 - Discover workflows and configured roots: `src/discovery.ts` plus `src/workflow/settings.ts`.
-- Save generated workflow drafts: `src/workflow/draft-save.ts` validates and saves complete draft directories; `src/workflow/drafts.ts` reads generated draft directories from the default draft root.
+- Save generated workflow drafts: `src/workflow/draft-save.ts` saves validated draft directories, `src/workflow/drafts.ts` reads them from the default draft root, and `src/workflow/agent-capability-validation.ts` rejects invalid child-agent capability selections before saving.
 - Understand runtime primitives: `src/runtime/globals.ts` registers primitives from `src/runtime/primitives/`; shared primitive context lives in `src/runtime/context.ts`.
 - Inspect active workflow status: data comes from `src/workflow/status.ts`, active records from `src/workflow/active-runs.ts`, snapshots from `src/workflow/active-run-snapshots.ts`, rendering from `src/display/workflow-status.ts`, slash command parsing from `extensions/commands/status.ts`, and tool wiring from `src/tools.ts`.
 - Inspect workflow UI: running widget lifecycle lives in `src/display/running-workflow-ui.ts`, command/tool visible-run startup in `src/display/visible-workflow-run.ts`, compact widget rendering in `src/display/workflow-widget.ts`, and detail inspector rendering in `src/display/workflow-inspector.ts`.
 - Inspect outputs and artifacts: `src/workflow/outputs.ts` writes final output, snapshots, manifests, child-agent prompts, child-agent output, and tool activity artifacts.
 - Inspect session logs and cost review: `src/session-logs.ts` writes workflow summaries, `src/agent-session-logs.ts` creates child-agent session logs, `src/session-events.ts` filters event metadata, `src/session-transcript.ts` reads session JSONL, `src/session-usage.ts` parses token usage, and `src/log-review.ts` builds `/workflow-review`.
-- Inspect pi child-agent integration: `src/pi-agent.ts` adapts pi sessions to `WorkflowAgent`, loads child-agent extension settings, reports progress, and re-exports log/session helpers.
+- Inspect pi child-agent integration: `src/pi-agent.ts` adapts pi sessions to `WorkflowAgent`, applies child-agent extension/tool selections, reports progress, and re-exports log/session helpers; catalogs live in `src/pi-agent-capabilities.ts` and typed ownership resolution lives in `src/pi-agent-capability-resolution.ts`.
 
 ## Repository map
 
@@ -148,7 +149,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - `src/runtime/types.ts`: runtime public type contracts.
 - `src/workflow/start.ts`: shared workflow lookup, input validation, settings, run id, initial snapshot, and background-start policy.
 - `src/workflow/background-runs.ts`: background run lifecycle, active-run record registration, final output/session summary persistence, and cleanup.
-- `src/workflow/source-analysis.ts`: shared workflow AST validation and module-edit analysis used by metadata parsing and sandbox compilation.
+- `src/workflow/source-analysis.ts`, `src/workflow/agent-capability-source.ts`: shared workflow AST validation plus static child-agent capability analysis.
 - `src/workflow/input-contract.ts`: default workflow function/JSDoc input contract extraction and normalized input validation.
 - `src/workflow/paths.ts`: workflow path/name/cwd helpers.
 - `src/workflow/sandbox.ts`: source transform and import/require restrictions.
@@ -160,6 +161,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - `src/discovery.ts`: local and configured workflow root discovery.
 - `src/workflow/settings.ts`: global `~/.pi/agent/settings.json` and project `.pi/settings.json` workflow settings.
 - `src/workflow/draft-save.ts`: generated workflow draft validation and saving.
+- `src/workflow/agent-capability-validation.ts`: proposal-time capability validation against real Pi extension/tool metadata.
 - `src/input.ts`: direct slash-command input parsing only.
 - `src/tools.ts`: `run_workflow`, `workflow_design_guidance`, and `propose_workflow` tool definitions.
 - `src/session-events.ts`, `src/session-usage.ts`, `src/agent-session-logs.ts`: child-agent session event filtering, token usage parsing, and persisted child-session setup.

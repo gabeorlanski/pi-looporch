@@ -2,7 +2,6 @@ import path from "node:path";
 import {
   AuthStorage,
   createAgentSession,
-  createCodingTools,
   DefaultResourceLoader,
   getAgentDir,
   ModelRegistry,
@@ -11,6 +10,17 @@ import {
   type CreateAgentSessionOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import {
+  availableBaseAgentToolNames,
+  availableAgentExtensions,
+  buildAgentCapabilityCatalog,
+  parseAgentCapabilitySelection,
+  resolveAgentCapabilities,
+  resolveAgentExtensionSelectors,
+  type AgentCapabilityCatalog,
+  type AgentCapabilityResolutionDiagnostic,
+  type AgentCapabilityCatalogProvider,
+} from "./pi-agent-capabilities.ts";
 import type { WorkflowAgent, WorkflowAgentReporter, WorkflowToolActivitySnapshot } from "./runtime/types.ts";
 import { createLoggedWorkflowAgentSession } from "./agent-session-logs.ts";
 import { agentTaskPrompt } from "./prompt-templates.ts";
@@ -22,6 +32,10 @@ export interface PiWorkflowAgentOptions {
   cwd: string;
   tools?: ToolDefinition[];
   session?: Partial<CreateAgentSessionOptions>;
+  /** Parent-session capability metadata; avoids initializing extension factories for discovery. */
+  agentCapabilityCatalog?: AgentCapabilityCatalogProvider;
+  /** External Pi SDK session factory; overridden only by deterministic adapter tests. */
+  createSession?: typeof createAgentSession;
 }
 
 export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): WorkflowAgent {
@@ -34,41 +48,92 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
     const effectiveCwd = resolveWorkflowAgentCwd(options.cwd, agentOptions.cwd) ?? projectCwd;
     const workflowSettings = await readWorkflowSettings(projectCwd, agentDir);
     const settingsManager = options.session?.settingsManager ?? SettingsManager.create(effectiveCwd, agentDir);
-    const resourceLoader =
-      options.session?.resourceLoader ??
-      new DefaultResourceLoader({
-        cwd: effectiveCwd,
+    const capabilitySettingsManager = SettingsManager.create(projectCwd, agentDir);
+    const customTools = options.session?.customTools ?? options.tools ?? [];
+    const extensionSelection = parseAgentCapabilitySelection(
+      agentOptions.extensions ?? workflowSettings.childAgentExtensions,
+      "extensions",
+    );
+    const toolSelection = parseAgentCapabilitySelection(agentOptions.tools ?? workflowSettings.childAgentTools, "tools");
+    const shapeDiagnostics = [
+      ...(extensionSelection.ok ? [] : extensionSelection.diagnostics),
+      ...(toolSelection.ok ? [] : toolSelection.diagnostics),
+    ];
+    if (!extensionSelection.ok || !toolSelection.ok) throw new Error(renderRuntimeCapabilityDiagnostics(shapeDiagnostics));
+    const capabilityExtensions = extensionSelection.selection;
+    const capabilityTools = toolSelection.selection;
+    const baseToolNames = availableBaseAgentToolNames(effectiveCwd);
+    const customToolNames = customTools.map((tool) => tool.name);
+    const explicitSelectors = capabilityExtensions === "all" ? [] : capabilityExtensions;
+    let catalog: AgentCapabilityCatalog | undefined = options.agentCapabilityCatalog
+      ? await options.agentCapabilityCatalog({ extensionSelectors: explicitSelectors })
+      : undefined;
+    if (!catalog) {
+      const resolvedSelectors = await resolveAgentExtensionSelectors({
+        cwd: projectCwd,
         agentDir,
-        settingsManager,
-        noExtensions: true,
-        additionalExtensionPaths: workflowSettings.childAgentExtensions.map((extensionPath) =>
-          extensionPath.startsWith("./") || extensionPath.startsWith("../") ? path.resolve(projectCwd, extensionPath) : extensionPath,
-        ),
+        settingsManager: capabilitySettingsManager,
+        selectors: explicitSelectors,
       });
-    if (!options.session?.resourceLoader) await resourceLoader.reload();
+      const knownToolNames = new Set([...baseToolNames, ...customToolNames]);
+      const loadAmbientExtensions =
+        capabilityExtensions === "all" || (capabilityTools !== "all" && capabilityTools.some((toolName) => !knownToolNames.has(toolName)));
+      const discoveryLoader =
+        options.session?.resourceLoader ??
+        new DefaultResourceLoader({
+          cwd: projectCwd,
+          agentDir,
+          settingsManager: capabilitySettingsManager,
+          noExtensions: !loadAmbientExtensions,
+          additionalExtensionPaths: resolvedSelectors.paths,
+        });
+      if (!options.session?.resourceLoader) await discoveryLoader.reload();
+      const discovered = discoveryLoader.getExtensions();
+      catalog = buildAgentCapabilityCatalog({
+        availableExtensions: availableAgentExtensions(discovered.extensions, resolvedSelectors.selectorsByPath),
+        baseToolNames,
+        customToolNames,
+        loadErrors: discovered.errors.map((error) => ({
+          ...error,
+          selectors: resolvedSelectors.selectorsByPath.get(error.path) ?? [],
+        })),
+      });
+    }
+    const resolvedCapabilities = resolveAgentCapabilities({
+      extensions: capabilityExtensions,
+      tools: capabilityTools,
+      catalog,
+    });
+    if (!resolvedCapabilities.ok) throw new Error(renderRuntimeCapabilityDiagnostics(resolvedCapabilities.diagnostics));
+    const resourceLoader = new DefaultResourceLoader({
+      cwd: projectCwd,
+      agentDir,
+      settingsManager: capabilitySettingsManager,
+      noExtensions: true,
+      additionalExtensionPaths: resolvedCapabilities.extensionPaths,
+    });
+    await resourceLoader.reload();
+    const loadErrors = resourceLoader.getExtensions().errors;
+    if (loadErrors.length > 0) {
+      throw new Error(`Child agent extensions failed to load:\n${loadErrors.map((error) => `- ${error.path}: ${error.error}`).join("\n")}`);
+    }
     const loggedSession = agentOptions.sessionLog
       ? await createLoggedWorkflowAgentSession(options.cwd, effectiveCwd, agentOptions.sessionLog)
       : undefined;
     const sessionManager = options.session?.sessionManager ?? loggedSession?.sessionManager;
-    const noTools = agentOptions.tools === false ? "all" : undefined;
-    const customTools = noTools
-      ? []
-      : (options.session?.customTools ?? options.tools ?? (createCodingTools(effectiveCwd) as ToolDefinition[]));
-    const toolAllowlist = noTools ? [] : options.session?.tools;
-    const { session } = await createAgentSession({
+    const { session } = await (options.createSession ?? createAgentSession)({
       cwd: effectiveCwd,
       agentDir,
       authStorage,
       modelRegistry,
       sessionManager: sessionManager ?? SessionManager.inMemory(effectiveCwd),
       settingsManager,
+      ...options.session,
       resourceLoader,
       customTools,
-      ...options.session,
       thinkingLevel: agentOptions.reasoning ?? options.session?.thinkingLevel,
       ...(model ? { model } : {}),
-      tools: toolAllowlist,
-      ...(noTools ? { noTools, tools: [], customTools: [] } : {}),
+      tools: resolvedCapabilities.toolNames,
     });
 
     const sessionModel = session.model
@@ -117,6 +182,17 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       session.dispose();
     }
   };
+}
+
+function renderRuntimeCapabilityDiagnostics(diagnostics: readonly AgentCapabilityResolutionDiagnostic[]): string {
+  return [
+    "Invalid child agent capabilities:",
+    ...diagnostics.map((diagnostic) => {
+      const index = diagnostic.index === undefined ? "" : `[${String(diagnostic.index)}]`;
+      const value = diagnostic.value === undefined ? "" : ` ${JSON.stringify(diagnostic.value)}`;
+      return `- ${diagnostic.capability}${index}${value}: ${diagnostic.reason}`;
+    }),
+  ].join("\n");
 }
 
 export { workflowAgentSessionLogDirectory } from "./session-logs.ts";

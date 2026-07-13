@@ -8,7 +8,7 @@ export const verifierPrimitive: WorkflowPrimitive<{ verifier: (options: Verifier
   docs: [
     {
       name: "verifier",
-      signature: "verifier({ criteria, criteriaPrompt, reducePrompt, ...context })",
+      signature: "verifier({ criteria, criteriaPrompt, reducePrompt, extensions?, tools?, ...context })",
       summary: "Runs criterion voter child agents followed by a reducer for adversarial review or validation workflows.",
     },
   ],
@@ -16,7 +16,17 @@ export const verifierPrimitive: WorkflowPrimitive<{ verifier: (options: Verifier
 };
 
 async function verifyWithAgents(runtime: ActiveWorkflowRuntime, options: VerifierOptions): Promise<unknown> {
-  const { criteria: rawCriteria, criteriaPrompt, reducePrompt, label: labelOption, model, reasoning, ...context } = options;
+  const {
+    criteria: rawCriteria,
+    criteriaPrompt,
+    reducePrompt,
+    label: labelOption,
+    model,
+    reasoning,
+    extensions,
+    tools,
+    ...context
+  } = options;
   const label = typeof labelOption === "string" && labelOption.trim() ? labelOption : "verifier";
   const criteria = normalizeVerifierCriteria(rawCriteria);
   const voterInputs = criteria.flatMap((criterion) =>
@@ -30,6 +40,8 @@ async function verifyWithAgents(runtime: ActiveWorkflowRuntime, options: Verifie
         label: `${label} ${criterion.name} voter ${String(voter)}`,
         model,
         reasoning,
+        extensions,
+        tools,
       }),
     `${label} voters`,
   );
@@ -37,6 +49,8 @@ async function verifyWithAgents(runtime: ActiveWorkflowRuntime, options: Verifie
     label: `${label} reduce`,
     model,
     reasoning,
+    extensions,
+    tools,
   });
 }
 

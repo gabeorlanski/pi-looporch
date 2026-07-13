@@ -44,6 +44,8 @@ void test("workflow_agent_schema_retries_and_returns_parsed_json", async () => {
 export default async function workflow() {
   return agent("Analyze the input", {
     label: "analysis",
+    extensions: ["./extensions/todo.ts"],
+    tools: ["read", "todo_write"],
     maxAttempts: 2,
     schema: {
       type: "object",
@@ -83,8 +85,12 @@ export default async function workflow() {
     [undefined, undefined],
   );
   assert.deepEqual(
-    optionsSeen.map((options) => (options as { tools?: unknown }).tools),
-    [undefined, false],
+    optionsSeen.map((options) => Array.from((options as { extensions?: string[] }).extensions ?? [])),
+    [["./extensions/todo.ts"], []],
+  );
+  assert.deepEqual(
+    optionsSeen.map((options) => Array.from((options as { tools?: string[] }).tools ?? [])),
+    [["read", "todo_write"], []],
   );
   assert.equal(result.snapshot.agents.length, 2);
   assert.deepEqual(result.snapshot.traces, [
@@ -156,7 +162,8 @@ export default async function workflow() {
   assert.equal(result.result, "done");
   assert.match(prompts[1] ?? "", /Original task context/);
   assert.match(prompts[1] ?? "", /Summarize the selected source/);
-  assert.equal((optionsSeen[1] as { tools?: unknown }).tools, false);
+  assert.deepEqual(Array.from((optionsSeen[1] as { extensions?: string[] }).extensions ?? []), []);
+  assert.deepEqual(Array.from((optionsSeen[1] as { tools?: string[] }).tools ?? []), []);
   assert.equal((result.snapshot.traces[0]?.value as { rejectedResponse?: unknown }).rejectedResponse, "undefined");
 });
 

@@ -4,6 +4,7 @@ import {
   readWorkflowSettings,
   writeGlobalWorkflowSettings,
   writeProjectWorkflowSettings,
+  type CapabilitySelection,
   type WorkflowSettings,
   type WorkflowSettingsPatch,
 } from "../../src/workflow/settings.ts";
@@ -54,7 +55,10 @@ function workflowSettingsSavedMessage(scope: "global" | "project", settings: Wor
     return `Workflow max parallel agents set to ${String(settings.maxParallelAgents)} in ${target}`;
   }
   if (settings.childAgentExtensions !== undefined) {
-    return `Workflow child agent extensions set to ${formatSettingList(settings.childAgentExtensions)} in ${target}`;
+    return `Workflow child agent extensions set to ${formatCapabilitySelection(settings.childAgentExtensions)} in ${target}`;
+  }
+  if (settings.childAgentTools !== undefined) {
+    return `Workflow child agent tools set to ${formatCapabilitySelection(settings.childAgentTools)} in ${target}`;
   }
   if (settings.workflowDirs !== undefined) {
     return `Workflow directories set to ${formatSettingList(settings.workflowDirs)} in ${target}`;
@@ -69,7 +73,8 @@ function workflowSettingsMessage(agentDir: string, settings: WorkflowSettings): 
     "",
     `- Workflow directories: ${formatSettingList(settings.workflowDirs)}`,
     `- Max parallel agents: ${String(settings.maxParallelAgents)}`,
-    `- Child agent extensions: ${formatSettingList(settings.childAgentExtensions)}`,
+    `- Child agent extensions: ${formatCapabilitySelection(settings.childAgentExtensions)}`,
+    `- Child agent tools: ${formatCapabilitySelection(settings.childAgentTools)}`,
     "",
     "Settings are merged from project settings over global settings.",
     "",
@@ -89,7 +94,9 @@ function parseWorkflowSetting(name: string, value: string): WorkflowSettingsPatc
     case "maxParallelAgents":
       return { maxParallelAgents: Number(value) };
     case "childAgentExtensions":
-      return { childAgentExtensions: parseSettingList(value) };
+      return { childAgentExtensions: parseCapabilitySelection(value) };
+    case "childAgentTools":
+      return { childAgentTools: parseCapabilitySelection(value) };
     case "workflowDirs":
       return { workflowDirs: parseSettingList(value) };
     default:
@@ -103,8 +110,16 @@ function parseSettingList(value: string): string[] {
   return trimmed.split(",").map((entry) => entry.trim());
 }
 
+function parseCapabilitySelection(value: string): CapabilitySelection {
+  return value.trim() === "all" ? "all" : parseSettingList(value);
+}
+
 function formatSettingList(values: string[]): string {
   return values.length ? values.join(", ") : "none";
+}
+
+function formatCapabilitySelection(selection: CapabilitySelection): string {
+  return selection === "all" ? "all" : formatSettingList(selection);
 }
 
 const workflowSettingExamples = [
@@ -112,9 +127,11 @@ const workflowSettingExamples = [
   "/workflow-settings --global maxParallelAgents=4",
   "/workflow-settings childAgentExtensions=pi-subagents,./extensions/todo.ts",
   "/workflow-settings --global childAgentExtensions=",
+  "/workflow-settings childAgentTools=read,bash",
+  "/workflow-settings --global childAgentTools=all",
   "/workflow-settings workflowDirs=../shared-workflows,.pi/team-workflows",
 ];
 
 function workflowSettingsUsage(): string {
-  return "Usage: /workflow-settings [--global] maxParallelAgents=<positive integer> | workflowDirs=<path>[,<path>...] | childAgentExtensions=<extension>[,<extension>...]";
+  return "Usage: /workflow-settings [--global] maxParallelAgents=<positive integer> | workflowDirs=<path>[,<path>...] | childAgentExtensions=all|<extension>[,<extension>...] | childAgentTools=all|<tool>[,<tool>...]";
 }

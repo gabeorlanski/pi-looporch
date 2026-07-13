@@ -4,6 +4,7 @@ import { errorMessage } from "../src/errors.ts";
 import { naturalLanguageRequestMessage, steerableInputResolutionMessage } from "../src/prompt-templates.ts";
 import { discoverWorkflows } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
+import { createParentAgentCapabilityCatalogProvider, type AgentCapabilityCatalogProvider } from "../src/pi-agent-capabilities.ts";
 import { parseWorkflowInput } from "../src/input.ts";
 import { startWorkflowMonitorWidget, stopWorkflowMonitorWidget } from "../src/display/workflow-monitor-widget.ts";
 import { openRunningWorkflowInspector, restoreRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
@@ -20,9 +21,18 @@ import { workflowStatusCommand } from "./commands/status.ts";
 /** Registers pi-workflow commands, tools, and TUI hooks with a Pi extension host. */
 export default function piWorkflow(pi: ExtensionAPI) {
   const aliases = new Set<string>();
+  const capabilityCatalogs = new Map<string, AgentCapabilityCatalogProvider>();
+  const capabilityCatalogForCwd = (cwd: string): AgentCapabilityCatalogProvider => {
+    const existing = capabilityCatalogs.get(cwd);
+    if (existing) return existing;
+    const catalog = createParentAgentCapabilityCatalogProvider({ cwd, getTools: () => pi.getAllTools() });
+    capabilityCatalogs.set(cwd, catalog);
+    return catalog;
+  };
 
   for (const tool of createWorkflowTools({
-    agentForContext: (ctx) => createPiWorkflowAgent({ cwd: ctx.cwd }),
+    agentForContext: (ctx) => createPiWorkflowAgent({ cwd: ctx.cwd, agentCapabilityCatalog: capabilityCatalogForCwd(ctx.cwd) }),
+    agentCapabilityCatalogForContext: (ctx) => capabilityCatalogForCwd(ctx.cwd),
     sendUserMessageForContext: () => (message, options) => pi.sendUserMessage(message, options),
   })) {
     pi.registerTool(tool);
@@ -31,7 +41,7 @@ export default function piWorkflow(pi: ExtensionAPI) {
   pi.registerCommand("workflow", {
     description: "Run or create a project workflow in the current session",
     getArgumentCompletions: (prefix) => workflowCompletions(process.cwd(), prefix),
-    handler: async (args, ctx) => steerWorkflowCommand(pi, ctx, undefined, args),
+    handler: async (args, ctx) => steerWorkflowCommand(pi, ctx, undefined, args, capabilityCatalogForCwd(ctx.cwd)),
   });
 
   pi.registerCommand("workflow-review", {
@@ -65,7 +75,8 @@ export default function piWorkflow(pi: ExtensionAPI) {
       aliases.add(command);
       pi.registerCommand(command, {
         description: workflow.metadata.description,
-        handler: async (args, commandCtx) => steerWorkflowCommand(pi, commandCtx, workflow.name, args),
+        handler: async (args, commandCtx) =>
+          steerWorkflowCommand(pi, commandCtx, workflow.name, args, capabilityCatalogForCwd(commandCtx.cwd)),
       });
     }
   });
@@ -81,9 +92,10 @@ async function steerWorkflowCommand(
   ctx: ExtensionCommandContext,
   fixedWorkflowName: string | undefined,
   args: string,
+  capabilityCatalog?: AgentCapabilityCatalogProvider,
 ): Promise<void> {
   if (fixedWorkflowName) {
-    await runExistingWorkflowCommand(pi, ctx, normalizeWorkflowName(fixedWorkflowName), args);
+    await runExistingWorkflowCommand(pi, ctx, normalizeWorkflowName(fixedWorkflowName), args, capabilityCatalog);
     return;
   }
 
@@ -97,7 +109,7 @@ async function steerWorkflowCommand(
 
   const [first, rest] = splitFirstWord(trimmed);
   if (names.includes(first)) {
-    await runExistingWorkflowCommand(pi, ctx, first, rest);
+    await runExistingWorkflowCommand(pi, ctx, first, rest, capabilityCatalog);
     return;
   }
 
@@ -110,6 +122,7 @@ async function runExistingWorkflowCommand(
   ctx: ExtensionCommandContext,
   workflowName: string,
   rawInput: string,
+  capabilityCatalog?: AgentCapabilityCatalogProvider,
 ): Promise<void> {
   const workflow = (await discoverWorkflows(ctx.cwd)).find((candidate) => candidate.name === workflowName);
   if (!workflow) {
@@ -134,7 +147,7 @@ async function runExistingWorkflowCommand(
       );
       return;
     }
-    const agent = createPiWorkflowAgent({ cwd: ctx.cwd });
+    const agent = createPiWorkflowAgent({ cwd: ctx.cwd, ...(capabilityCatalog ? { agentCapabilityCatalog: capabilityCatalog } : {}) });
     ctx.ui.notify(`Running workflow '${workflowName}' in the background`, "info");
     await startVisibleWorkflowRun({
       ctx,

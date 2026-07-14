@@ -1,8 +1,10 @@
+/** Provides sandbox behavior. */
 import vm from "node:vm";
 import { analyzeWorkflowSource, type SourceEdit } from "./source-analysis.ts";
 
 export type WorkflowFunction = (input: unknown) => unknown;
 
+/** Provides the compileWorkflow function contract. */
 export function compileWorkflow(
   source: string,
   filePath: string,

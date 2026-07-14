@@ -1,8 +1,10 @@
+/** Provides metadata behavior. */
 import type { WorkflowMetadata } from "../runtime/types.ts";
 import { analyzeWorkflowSource } from "./source-analysis.ts";
 import { preflightStaticWorkflowSchemas } from "./schema-preflight.ts";
 import { readStaticJsonLiteral } from "./static-literal.ts";
 
+/** Provides the parseWorkflowSourceMetadata function contract. */
 export function parseWorkflowSourceMetadata(source: string, workflowName: string, filePath = "workflow.js"): WorkflowMetadata {
   const { sourceFile, metadataExpression } = analyzeWorkflowSource(source, filePath);
   preflightStaticWorkflowSchemas(sourceFile);

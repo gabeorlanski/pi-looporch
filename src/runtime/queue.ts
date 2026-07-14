@@ -1,10 +1,13 @@
+/** Provides queue behavior. */
 import type { AgentLaunchQueue } from "./context.ts";
 
+/** Provides the normalizeMaxParallelAgents function contract. */
 export function normalizeMaxParallelAgents(value: number): number {
   if (!Number.isInteger(value) || value < 1) throw new Error("maxParallelAgents must be a positive integer");
   return value;
 }
 
+/** Provides the createAgentLaunchQueue function contract. */
 export function createAgentLaunchQueue(maxParallelAgents: number): AgentLaunchQueue {
   let activeAgents = 0;
   const waiting: {

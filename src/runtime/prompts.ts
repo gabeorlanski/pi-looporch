@@ -1,17 +1,21 @@
+/** Provides prompts behavior. */
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { resolveInsideRoot } from "../workflow/paths.ts";
 
+/** Provides the renderPromptTemplate function contract. */
 export function renderPromptTemplate(template: string, context: Record<string, unknown>): string {
   return template.replace(/{{\s*([A-Za-z_$][\w$]*)\s*}}/g, (_match, key: string) => promptTemplateValue(context[key]));
 }
 
+/** Provides the renderWorkflowPrompt function contract. */
 export function renderWorkflowPrompt(workflowDir: string, templatePath: string, values: unknown): string {
   if (typeof templatePath !== "string" || !templatePath.trim()) throw new Error("renderPrompt templatePath must be non-empty");
   if (typeof values !== "object" || values === null || Array.isArray(values)) throw new Error("renderPrompt values must be an object");
   return renderPromptTemplate(readWorkflowPromptTemplate(workflowDir, templatePath), values as Record<string, unknown>);
 }
 
+/** Provides the renderWorkflowAgentTask function contract. */
 export function renderWorkflowAgentTask(workflowDir: string, task: unknown): string {
   if (typeof task === "string") return task;
   if (typeof task !== "object" || task === null || Array.isArray(task))

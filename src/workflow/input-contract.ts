@@ -1,3 +1,4 @@
+/** Provides input contract behavior. */
 import * as ts from "typescript";
 
 /** User-facing input validation failure for direct workflow command/tool execution. */

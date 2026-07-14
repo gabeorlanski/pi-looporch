@@ -1,3 +1,4 @@
+/** Provides schema behavior. */
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { boundedJson, parseJsonResponse } from "./json-response.ts";
@@ -5,6 +6,7 @@ import { preflightJsonSchema, schemaValidationFailure } from "./schema-validatio
 
 export type JsonResponseResult = { ok: true; value: unknown } | { ok: false; error: string };
 
+/** Provides the normalizeAttemptCount function contract. */
 export function normalizeAttemptCount(maxAttempts: number | undefined, primitive: string): number {
   if (maxAttempts === undefined) return 3;
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1) throw new Error(`${primitive} maxAttempts must be a positive integer`);
@@ -13,6 +15,7 @@ export function normalizeAttemptCount(maxAttempts: number | undefined, primitive
 
 export { preflightJsonSchema };
 
+/** Provides the parseAndValidateJsonResponse function contract. */
 export function parseAndValidateJsonResponse(response: unknown, schema: unknown): JsonResponseResult {
   const parsed = parseJsonResponse(response);
   if (!parsed.ok) return parsed;
@@ -24,6 +27,7 @@ export function parseAndValidateJsonResponse(response: unknown, schema: unknown)
   return { ok: false, error: schemaValidationFailure(schema as TSchema | boolean, parsed.value) };
 }
 
+/** Provides the structuredTaskPrompt function contract. */
 export function structuredTaskPrompt(task: string, schema: unknown): string {
   return [
     "Complete the task, then return exactly one JSON value that validates against this JSON Schema. Do not include markdown fences, commentary, or extra text.",
@@ -32,6 +36,7 @@ export function structuredTaskPrompt(task: string, schema: unknown): string {
   ].join("\n\n");
 }
 
+/** Provides the jsonRepairPrompt function contract. */
 export function jsonRepairPrompt(
   schema: unknown,
   rejectedResponse: unknown,

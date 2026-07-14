@@ -1,3 +1,4 @@
+/** Provides static symbols behavior. */
 import * as ts from "typescript";
 
 /** Creates a TypeScript checker that resolves lexical bindings in one workflow source file. */

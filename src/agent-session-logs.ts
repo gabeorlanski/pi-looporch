@@ -1,3 +1,4 @@
+/** Provides agent session logs behavior. */
 import { appendFileSync } from "node:fs";
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -14,6 +15,7 @@ export interface LoggedWorkflowAgentSession {
   recordEvent: (event: unknown) => void;
 }
 
+/** Provides the createLoggedWorkflowAgentSession function contract. */
 export async function createLoggedWorkflowAgentSession(
   projectCwd: string,
   agentCwd: string,

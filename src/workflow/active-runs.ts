@@ -1,3 +1,4 @@
+/** Provides active runs behavior. */
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -14,6 +15,7 @@ export interface ActiveWorkflowRunRecord {
 
 export type NewActiveWorkflowRunRecord = Omit<ActiveWorkflowRunRecord, "ownerProcessId"> & { ownerProcessId?: number };
 
+/** Provides the readActiveWorkflowRuns function contract. */
 export async function readActiveWorkflowRuns(cwd: string, ownerSessionId?: string): Promise<ActiveWorkflowRunRecord[]> {
   try {
     const entries = await readdir(activeWorkflowRunsDir(cwd), { withFileTypes: true });
@@ -30,6 +32,7 @@ export async function readActiveWorkflowRuns(cwd: string, ownerSessionId?: strin
   }
 }
 
+/** Provides the registerActiveWorkflowRun function contract. */
 export async function registerActiveWorkflowRun(cwd: string, record: NewActiveWorkflowRunRecord): Promise<void> {
   const filePath = activeWorkflowRunPath(cwd, record.runId);
   const storedRecord: ActiveWorkflowRunRecord = { ...record, ownerProcessId: record.ownerProcessId ?? process.pid };
@@ -39,6 +42,7 @@ export async function registerActiveWorkflowRun(cwd: string, record: NewActiveWo
   await rename(temporaryPath, filePath);
 }
 
+/** Provides the removeActiveWorkflowRun function contract. */
 export async function removeActiveWorkflowRun(cwd: string, runId: string): Promise<void> {
   await rm(activeWorkflowRunPath(cwd, runId), { force: true });
 }

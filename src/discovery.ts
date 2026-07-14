@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+/** Provides discovery behavior. */
+import { existsSync, type Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { WorkflowMetadata } from "./runtime/types.ts";
@@ -13,6 +14,7 @@ export interface WorkflowReference {
   metadata: WorkflowMetadata;
 }
 
+/** Provides the workflowRootsForProject function contract. */
 export async function workflowRootsForProject(cwd: string): Promise<string[]> {
   const projectRoot = path.resolve(cwd);
   const localRoot = path.join(projectRoot, ".pi", "workflows");
@@ -21,6 +23,7 @@ export async function workflowRootsForProject(cwd: string): Promise<string[]> {
   return [...new Set([localRoot, ...configuredRoots])];
 }
 
+/** Provides the discoverWorkflows function contract. */
 export async function discoverWorkflows(cwd: string): Promise<WorkflowReference[]> {
   const roots = await workflowRootsForProject(cwd);
   const byName = new Map<string, WorkflowReference>();
@@ -66,7 +69,7 @@ async function readWorkflowReferenceIfValid(dir: string, name: string): Promise<
   }
 }
 
-async function readDirectoryEntries(directory: string) {
+async function readDirectoryEntries(directory: string): Promise<Dirent[]> {
   if (!existsSync(directory)) return [];
   return readdir(directory, { withFileTypes: true, encoding: "utf8" });
 }

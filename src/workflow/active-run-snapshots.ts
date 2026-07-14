@@ -1,3 +1,4 @@
+/** Provides active run snapshots behavior. */
 import { readActiveWorkflowRuns, removeActiveWorkflowRun, type ActiveWorkflowRunRecord } from "./active-runs.ts";
 import { readWorkflowOutputManifest, readWorkflowSnapshot } from "./outputs.ts";
 import type { WorkflowSnapshot } from "../runtime/types.ts";
@@ -8,6 +9,7 @@ export interface ActiveWorkflowSnapshot {
   snapshot: WorkflowSnapshot;
 }
 
+/** Provides the readActiveWorkflowSnapshots function contract. */
 export async function readActiveWorkflowSnapshots(cwd: string, ownerSessionId: string): Promise<ActiveWorkflowSnapshot[]> {
   const records = await readActiveWorkflowRuns(cwd, ownerSessionId);
   const snapshots = await Promise.all(records.map((record) => readActiveWorkflowSnapshot(cwd, record)));

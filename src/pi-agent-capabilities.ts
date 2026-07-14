@@ -1,3 +1,4 @@
+/** Provides pi agent capabilities behavior. */
 import {
   createCodingTools,
   createReadOnlyTools,

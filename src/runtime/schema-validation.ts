@@ -1,3 +1,4 @@
+/** Provides schema validation behavior. */
 import { IsSchema, type TSchema } from "typebox";
 import { Compile } from "typebox/compile";
 import { Value } from "typebox/value";
@@ -31,6 +32,7 @@ export function preflightJsonSchema(schema: unknown): asserts schema is TSchema 
   }
 }
 
+/** Provides the schemaValidationFailure function contract. */
 export function schemaValidationFailure(schema: TSchema | boolean, value: unknown): string {
   const errors = [...Value.Errors(schema as TSchema, value)].slice(0, 5).map((error) => {
     const params = error.params as Record<string, unknown>;

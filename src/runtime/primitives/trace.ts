@@ -1,3 +1,4 @@
+/** Provides trace behavior. */
 import type { WorkflowTraceSnapshot } from ".././types.ts";
 import type { ActiveWorkflowRuntime, WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
@@ -15,6 +16,7 @@ export const tracePrimitive: WorkflowPrimitive<{ trace: (label: string, value?: 
   globals: ({ runtime }) => ({ trace: (label: string, value?: unknown) => recordTrace(runtime, label, value) }),
 };
 
+/** Provides the recordTrace function contract. */
 export function recordTrace(runtime: ActiveWorkflowRuntime, label: string, value?: unknown): void {
   if (typeof label !== "string" || !label.trim()) throw new Error("trace label must be non-empty");
   const phase = runtime.snapshot.phases.at(-1);

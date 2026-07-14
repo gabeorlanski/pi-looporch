@@ -1,3 +1,4 @@
+/** Provides workflow inspector model behavior. */
 import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
 
 export type WorkflowUiStatus = "running" | "done" | "error";
@@ -43,6 +44,7 @@ export interface WorkflowUiWorkflow {
   phases: WorkflowUiPhase[];
 }
 
+/** Provides the WorkflowInspectorModel class contract. */
 export class WorkflowInspectorModel {
   private readonly startedAt: number;
   private snapshot: WorkflowSnapshot;

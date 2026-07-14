@@ -1,3 +1,4 @@
+/** Provides globals behavior. */
 import type { ActiveWorkflowRuntime, WorkflowPrimitive, WorkflowPrimitiveGlobalDoc } from "./context.ts";
 import { agentPrimitive } from "./primitives/agent.ts";
 import { coercePrimitive } from "./primitives/coerce.ts";
@@ -28,10 +29,12 @@ export interface WorkflowPrimitiveReference extends WorkflowPrimitiveGlobalDoc {
   primitive: string;
 }
 
+/** Provides the workflowPrimitiveReference function contract. */
 export function workflowPrimitiveReference(): WorkflowPrimitiveReference[] {
   return workflowPrimitives.flatMap((primitive) => primitive.docs.map((doc) => ({ primitive: primitive.name, ...doc })));
 }
 
+/** Provides the renderWorkflowPrimitiveReference function contract. */
 export function renderWorkflowPrimitiveReference(): string {
   return [
     "Supported workflow primitives (generated from the runtime registry):",
@@ -39,6 +42,7 @@ export function renderWorkflowPrimitiveReference(): string {
   ].join("\n");
 }
 
+/** Provides the workflowGlobals function contract. */
 export function workflowGlobals(runtime: ActiveWorkflowRuntime, workflowDir: string): Record<string, unknown> {
   const globals: Record<string, unknown> = {};
   for (const primitive of workflowPrimitives) Object.assign(globals, primitive.globals({ runtime, workflowDir }));

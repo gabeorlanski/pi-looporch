@@ -1,3 +1,4 @@
+/** Provides context behavior. */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ReasoningLevel, RunWorkflowOptions, WorkflowSnapshot } from "./types.ts";
 

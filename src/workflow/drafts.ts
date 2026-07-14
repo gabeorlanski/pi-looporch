@@ -1,3 +1,4 @@
+/** Provides drafts behavior. */
 import { readFile, readdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -60,10 +61,12 @@ async function listDraftFiles(root: string): Promise<string[]> {
   return files.sort((left, right) => left.localeCompare(right));
 }
 
+/** Provides the defaultWorkflowDraftRoot function contract. */
 export function defaultWorkflowDraftRoot(): string {
   return path.join(tmpdir(), "pi-workflow-drafts");
 }
 
+/** Provides the defaultWorkflowDraftDirectory function contract. */
 export function defaultWorkflowDraftDirectory(name: string): string {
   return path.join(defaultWorkflowDraftRoot(), name);
 }

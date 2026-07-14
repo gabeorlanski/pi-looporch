@@ -1,3 +1,4 @@
+/** Provides files behavior. */
 import path from "node:path";
 import { readWorkflowJson, readWorkflowText, writeWorkflowJson, writeWorkflowText } from "../../workflow/files.ts";
 import type { WorkflowPrimitive } from "../context.ts";

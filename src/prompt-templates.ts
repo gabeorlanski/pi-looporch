@@ -1,3 +1,4 @@
+/** Provides prompt templates behavior. */
 import { readFileSync } from "node:fs";
 import { defaultWorkflowDraftRoot } from "./workflow/drafts.ts";
 import type { WorkflowAgentOptions, WorkflowMetadata } from "./runtime/types.ts";
@@ -13,6 +14,7 @@ export interface SteerableInputResolutionOptions {
   contract: WorkflowInputContract;
 }
 
+/** Provides the steerableInputResolutionMessage function contract. */
 export function steerableInputResolutionMessage(options: SteerableInputResolutionOptions): string {
   return [
     `Resolve input for workflow '${options.workflowName}' in this normal conversation.`,
@@ -41,6 +43,7 @@ export function steerableInputResolutionMessage(options: SteerableInputResolutio
   ].join("\n");
 }
 
+/** Provides the naturalLanguageRequestMessage function contract. */
 export function naturalLanguageRequestMessage(request: string, availableWorkflowNames: string[]): string {
   return renderPromptTemplate(sessionRequestTemplate, {
     availableWorkflowNames: availableWorkflowNames.length ? availableWorkflowNames.join(", ") : "none",
@@ -49,6 +52,7 @@ export function naturalLanguageRequestMessage(request: string, availableWorkflow
   });
 }
 
+/** Provides the agentTaskPrompt function contract. */
 export function agentTaskPrompt(prompt: string, options: WorkflowAgentOptions): string {
   const context = [options.label ? `Workflow task label: ${options.label}` : "", options.taskFile ? `Task file: ${options.taskFile}` : ""]
     .filter(Boolean)

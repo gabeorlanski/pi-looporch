@@ -1,3 +1,4 @@
+/** Provides log review behavior. */
 import { existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -33,6 +34,7 @@ interface WorkflowLogReview {
   agents: WorkflowLogAgentReview[];
 }
 
+/** Provides the workflowLogReviewMessage function contract. */
 export async function workflowLogReviewMessage(options: WorkflowLogReviewOptions): Promise<string> {
   const logDir = await resolveWorkflowLogDirectory(options);
   const summary = readObject(await readFile(path.join(logDir, "workflow-summary.json"), "utf8"), "workflow-summary.json");

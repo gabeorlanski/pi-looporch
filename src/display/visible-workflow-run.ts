@@ -1,3 +1,4 @@
+/** Provides visible workflow run behavior. */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { BackgroundWorkflowRun } from "../workflow/background-runs.ts";
 import { errorMessage } from "../errors.ts";
@@ -35,6 +36,7 @@ interface TrackedVisibleWorkflowRun extends VisibleWorkflowRun {
 
 const visibleWorkflowRunsByScope = new Map<string, Map<string, TrackedVisibleWorkflowRun>>();
 
+/** Provides the startVisibleWorkflowRun function contract. */
 export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOptions): Promise<VisibleWorkflowRun> {
   const showRunningUi = options.ctx.mode === "tui";
   const ownerSessionId = options.ctx.sessionManager.getSessionId();
@@ -96,6 +98,7 @@ export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOp
   }
 }
 
+/** Provides the abortVisibleWorkflowRuns function contract. */
 export async function abortVisibleWorkflowRuns(ctx: ExtensionContext): Promise<void> {
   const runs = [...(visibleWorkflowRunsByScope.get(extensionSessionScope(ctx))?.values() ?? [])];
   for (const run of runs) run.markSessionClosing();

@@ -1,3 +1,4 @@
+/** Provides run behavior. */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { RunWorkflowOptions, WorkflowRunResult } from "./types.ts";
@@ -14,6 +15,7 @@ import { cloneSerializable, cloneSnapshot } from "./serialization.ts";
 import { errorMessage } from "../errors.ts";
 import { throwIfWorkflowAborted } from "./abort.ts";
 
+/** Provides the runWorkflowFromDirectory function contract. */
 export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Promise<WorkflowRunResult> {
   throwIfWorkflowAborted(options.signal);
   const workflowName = normalizeWorkflowName(options.workflowName);

@@ -25,6 +25,8 @@
 - Use absolute dates for any time-sensitive claim — relative time rots — "as of 2026-01" stays meaningful years later while "recently" or "currently" silently becomes false.
 <!-- rule:9 -->
 - Document contracts, boundary behavior, side effects, errors, and cleanup — that is the information code cannot self-describe — callers need to know what a function guarantees, mutates, and throws before they can use it safely.
+<!-- rule:17 -->
+- Begin every maintained TypeScript module with one concise JSDoc purpose, and put a leading JSDoc contract on every exported callable declaration — module ownership and API expectations must be visible at the point of use — ESLint enforces both requirements for `extensions/`, `src/`, and `scripts/`.
 <!-- rule:10 -->
 - Avoid comments that merely restate a name or narrate obvious code — such lines add noise, not information — they waste reader attention, drift out of date, and train readers to ignore comments entirely.
 <!-- rule:11 -->

@@ -1,3 +1,4 @@
+/** Provides verifier behavior. */
 import type { ActiveWorkflowRuntime, VerifierCriterion, VerifierOptions, WorkflowPrimitive } from "../context.ts";
 import { renderPromptTemplate } from "../prompts.ts";
 import { runAgent } from "./agent.ts";

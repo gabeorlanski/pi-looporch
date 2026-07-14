@@ -1,3 +1,4 @@
+/** Provides session logs behavior. */
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -13,6 +14,7 @@ export interface WorkflowSessionSummaryOptions {
   sessionsRoot?: string;
 }
 
+/** Provides the workflowAgentSessionLogParentDirectory function contract. */
 export function workflowAgentSessionLogParentDirectory(
   cwd: string,
   parentId: string,
@@ -21,6 +23,7 @@ export function workflowAgentSessionLogParentDirectory(
   return path.join(sessionsRoot, workflowProjectKey(cwd), parentId);
 }
 
+/** Provides the workflowAgentSessionLogDirectory function contract. */
 export function workflowAgentSessionLogDirectory(
   cwd: string,
   parentId: string,
@@ -30,6 +33,7 @@ export function workflowAgentSessionLogDirectory(
   return path.join(workflowAgentSessionLogParentDirectory(cwd, parentId, sessionsRoot), agentKey);
 }
 
+/** Provides the writeWorkflowSessionSummary function contract. */
 export async function writeWorkflowSessionSummary(options: WorkflowSessionSummaryOptions): Promise<string> {
   const runDir = workflowAgentSessionLogParentDirectory(options.cwd, options.parentId, options.sessionsRoot);
   await mkdir(runDir, { recursive: true });

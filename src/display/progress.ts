@@ -1,3 +1,4 @@
+/** Provides progress behavior. */
 import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
 import { fit, titleLine, trimFixed } from "./text.ts";
 
@@ -33,6 +34,7 @@ const plainTheme: ProgressTheme = {
   bold: (text) => text,
 };
 
+/** Provides the initialProgressDisplay function contract. */
 export function initialProgressDisplay(
   workflowName = "workflow",
   width = DEFAULT_WIDTH,
@@ -49,6 +51,7 @@ export function initialProgressDisplay(
   return { statusLine: `${workflowName}: STARTING · 0/0 agents · in 0 · out 0 · tools 0`, widgetLines, text: widgetLines.join("\n") };
 }
 
+/** Provides the progressDisplay function contract. */
 export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDTH, theme: ProgressTheme = plainTheme): ProgressDisplay {
   const safeWidth = Math.max(MIN_WIDTH, width);
   const stats = netStats(snapshot);
@@ -65,6 +68,7 @@ export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDT
   return { statusLine, widgetLines, text: widgetLines.join("\n") };
 }
 
+/** Provides the formatTokenCount function contract. */
 export function formatTokenCount(tokenCount: number): string {
   if (tokenCount === 1) return "1";
   if (tokenCount < 1000) return String(tokenCount);

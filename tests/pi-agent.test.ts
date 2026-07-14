@@ -9,7 +9,33 @@ import {
   parseSessionTokens,
   workflowAgentSessionLogDirectory,
   createWorkflowAgentProgressTracker,
+  workflowAgentFailureMessage,
 } from "../src/pi-agent.ts";
+
+void test("workflow_agent_surfaces_terminal_provider_errors", () => {
+  assert.equal(
+    workflowAgentFailureMessage(
+      [
+        { role: "user", content: [] },
+        {
+          role: "assistant",
+          content: [],
+          stopReason: "error",
+          errorMessage: "Codex error: Model not found gpt-5.6-luna-free-1p-codexswic-ev3",
+        },
+      ],
+      "review instructions",
+    ),
+    'Workflow child agent "review instructions" failed: Codex error: Model not found gpt-5.6-luna-free-1p-codexswic-ev3',
+  );
+});
+
+void test("workflow_agent_surfaces_provider_errors_without_details", () => {
+  assert.equal(
+    workflowAgentFailureMessage([{ role: "assistant", content: [], stopReason: "error" }]),
+    "Workflow child agent failed: provider returned an error response without details",
+  );
+});
 
 void test("workflow_agent_progress_tracker_reports_tool_start_arguments", () => {
   const progressReports: unknown[] = [];

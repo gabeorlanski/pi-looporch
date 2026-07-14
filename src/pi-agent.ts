@@ -175,6 +175,8 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
         ...(usage ? { inputTokenCount: usage.input, outputTokenCount: usage.output } : {}),
       });
       if (agentOptions.signal?.aborted) throw new Error("Workflow agent aborted");
+      const failure = workflowAgentFailureMessage(session.messages, agentOptions.label);
+      if (failure) throw new Error(failure);
       return lastAssistantText(session.messages);
     } finally {
       removeAbortListener?.();
@@ -265,9 +267,24 @@ function isEventObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && typeof (value as { type?: unknown }).type === "string";
 }
 
+/** Returns the actionable provider failure from a child session's final assistant response, when present. */
+export function workflowAgentFailureMessage(messages: unknown[], label?: string): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index] as AssistantMessageLike | undefined;
+    if (message?.role !== "assistant") continue;
+    if (message.stopReason !== "error") return undefined;
+    const prefix = label ? `Workflow child agent ${JSON.stringify(label)} failed` : "Workflow child agent failed";
+    const errorMessage = message.errorMessage?.trim() ?? "provider returned an error response without details";
+    return `${prefix}: ${errorMessage}`;
+  }
+  return undefined;
+}
+
 interface AssistantMessageLike {
   role?: string;
   content?: unknown;
+  stopReason?: string;
+  errorMessage?: string;
 }
 
 interface TextContentLike {

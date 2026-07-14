@@ -106,7 +106,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 ### Documentation
 
 - Update user-facing docs when commands, tools, workflow primitives, review behavior, sandbox rules, or storage layout change; staged behavior-surface changes must include a staged README/docs/agent_docs/AGENTS update.
-- Keep exported public API declarations covered by concise JSDoc contracts; `npm run docs:check` enforces the current public API module scope.
+- Begin every maintained TypeScript module with a concise purpose JSDoc and document every exported callable declaration with a leading JSDoc contract; ESLint enforces both requirements.
 - Keep `agent_docs/INDEX.md` as topic-grouped coding guidance, not a chronological work log.
 - Mirror durable guidance changes into relevant `AGENTS.md` files.
 

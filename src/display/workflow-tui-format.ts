@@ -1,3 +1,4 @@
+/** Provides workflow tui format behavior. */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 interface PiThemeLike {
@@ -30,6 +31,7 @@ export const plainWorkflowTuiTheme: WorkflowTuiTheme = {
   selected: (text) => text,
 };
 
+/** Provides the workflowTuiTheme function contract. */
 export function workflowTuiTheme(theme: PiThemeLike): WorkflowTuiTheme {
   return {
     accent: (text) => theme.fg("accent", text),
@@ -56,10 +58,12 @@ export const glyph = {
   mid: "·",
 };
 
+/** Provides the spinnerFrame function contract. */
 export function spinnerFrame(tick: number): string {
   return glyph.spinner[tick % glyph.spinner.length] ?? glyph.spinner[0];
 }
 
+/** Provides the fmtTokens function contract. */
 export function fmtTokens(tokenCount: number): string {
   if (tokenCount < 1000) return String(tokenCount);
   if (tokenCount < 1_000_000) return `${stripZero(tokenCount / 1000)}k`;
@@ -71,6 +75,7 @@ function stripZero(value: number): string {
   return rendered.endsWith(".0") ? rendered.slice(0, -2) : rendered;
 }
 
+/** Provides the fmtDuration function contract. */
 export function fmtDuration(totalSeconds: number, spaced = false): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -78,10 +83,12 @@ export function fmtDuration(totalSeconds: number, spaced = false): string {
   return spaced ? `${String(minutes)}m ${String(seconds)}s` : `${String(minutes)}m${String(seconds)}s`;
 }
 
+/** Provides the width function contract. */
 export function width(text: string): number {
   return visibleWidth(text);
 }
 
+/** Provides the padTo function contract. */
 export function padTo(text: string, targetWidth: number): string {
   const currentWidth = visibleWidth(text);
   if (currentWidth === targetWidth) return text;
@@ -89,6 +96,7 @@ export function padTo(text: string, targetWidth: number): string {
   return truncateToWidth(text, targetWidth, "");
 }
 
+/** Provides the truncEnd function contract. */
 export function truncEnd(text: string, maxWidth: number): string {
   if (maxWidth <= 0) return "";
   if (visibleWidth(text) <= maxWidth) return text;
@@ -96,6 +104,7 @@ export function truncEnd(text: string, maxWidth: number): string {
   return truncateToWidth(text, maxWidth, "…");
 }
 
+/** Provides the panel function contract. */
 export function panel(theme: WorkflowTuiTheme, title: string, body: string[], panelWidth: number, panelHeight: number): string[] {
   const innerWidth = Math.max(0, panelWidth - 2);
   const titleText = ` ${title} `;
@@ -109,6 +118,7 @@ export function panel(theme: WorkflowTuiTheme, title: string, body: string[], pa
   return lines;
 }
 
+/** Provides the joinColumns function contract. */
 export function joinColumns(left: string[], right: string[]): string[] {
   const height = Math.max(left.length, right.length);
   const lines: string[] = [];

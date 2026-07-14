@@ -127,7 +127,13 @@ export default async function workflow() {
   const agent: WorkflowAgent = (_prompt, options) => {
     launchedLabels.push(options.label);
     return new Promise((resolve) => {
-      options.signal?.addEventListener("abort", () => resolve("aborted"), { once: true });
+      options.signal?.addEventListener(
+        "abort",
+        () => {
+          resolve("aborted");
+        },
+        { once: true },
+      );
     });
   };
 

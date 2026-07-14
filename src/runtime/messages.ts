@@ -1,6 +1,8 @@
+/** Provides messages behavior. */
 import type { WorkflowRunMessageSnapshot } from "./types.ts";
 import type { ActiveWorkflowRuntime } from "./context.ts";
 
+/** Provides the appendRunMessage function contract. */
 export function appendRunMessage(runtime: ActiveWorkflowRuntime, message: WorkflowRunMessageSnapshot): void {
   runtime.snapshot.messages.push(message);
   if (runtime.snapshot.messages.length > 200) runtime.snapshot.messages.splice(0, runtime.snapshot.messages.length - 200);

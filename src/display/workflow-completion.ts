@@ -1,3 +1,4 @@
+/** Provides workflow completion behavior. */
 const PROMPT_RESULT_LIMIT = 16_000;
 
 export interface WorkflowCompletionInfo {
@@ -8,6 +9,7 @@ export interface WorkflowCompletionInfo {
   sessionLogDir?: string;
 }
 
+/** Provides the workflowCompletionReviewPrompt function contract. */
 export function workflowCompletionReviewPrompt(info: WorkflowCompletionInfo): string {
   return [
     `Automated workflow completion handoff: workflow '${info.workflowName}' completed.`,

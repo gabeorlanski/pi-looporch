@@ -1,3 +1,4 @@
+/** Provides tools behavior. */
 import { Type } from "typebox";
 import { defineTool, getAgentDir, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";

@@ -1,3 +1,4 @@
+/** Provides schema preflight behavior. */
 import * as ts from "typescript";
 import { preflightJsonSchema } from "../runtime/schema.ts";
 import { analyzeWorkflowPrimitiveCalls } from "./primitive-calls.ts";

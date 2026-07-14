@@ -1,3 +1,4 @@
+/** Provides session events behavior. */
 export function workflowAgentLogEvent(event: Record<string, unknown>): Record<string, unknown> | undefined {
   if (event.type === "message_update") return undefined;
   if (event.type === "message_start" || event.type === "message_end") {

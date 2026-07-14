@@ -1,7 +1,9 @@
+/** Provides session transcript behavior. */
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 
 const MAX_TRANSCRIPT_BYTES = 1_000_000;
 
+/** Provides the loadSessionMessages function contract. */
 export function loadSessionMessages(sessionFile: string): unknown[] {
   const text = readSessionTail(sessionFile);
   if (!text) return [];

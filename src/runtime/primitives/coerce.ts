@@ -1,3 +1,4 @@
+/** Provides coerce behavior. */
 import type { ActiveWorkflowRuntime, CoerceOptions, WorkflowPrimitive } from "../context.ts";
 import { runAgent } from "./agent.ts";
 
@@ -14,6 +15,7 @@ export const coercePrimitive: WorkflowPrimitive<{ coerce: (options: CoerceOption
   globals: ({ runtime }) => ({ coerce: (options: CoerceOptions) => coerceWithAgent(runtime, options) }),
 };
 
+/** Provides the coerceWithAgent function contract. */
 export async function coerceWithAgent(runtime: ActiveWorkflowRuntime, options: CoerceOptions): Promise<unknown> {
   if (typeof options.prompt !== "string" || !options.prompt.trim()) throw new Error("coerce prompt must be non-empty");
   return runAgent(runtime, options.prompt, {

@@ -1,12 +1,15 @@
+/** Provides paths behavior. */
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+/** Provides the normalizeWorkflowName function contract. */
 export function normalizeWorkflowName(workflowName: string): string {
   const normalized = workflowName.trim();
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(normalized)) throw new Error(`Invalid workflow name: ${workflowName}`);
   return normalized;
 }
 
+/** Provides the resolveWorkflowDirectory function contract. */
 export function resolveWorkflowDirectory(cwd: string, workflowName: string, workflowRoots: string[] | undefined): string {
   for (const root of workflowRoots?.length ? workflowRoots : [path.resolve(cwd, ".pi", "workflows")]) {
     const direct = path.resolve(root);
@@ -16,6 +19,7 @@ export function resolveWorkflowDirectory(cwd: string, workflowName: string, work
   throw new Error(`Workflow '${workflowName}' not found`);
 }
 
+/** Provides the resolveWorkflowReadPath function contract. */
 export function resolveWorkflowReadPath(cwd: string, workflowDir: string, filePath: string): string {
   if (typeof filePath !== "string" || !filePath.trim()) throw new Error("Workflow file path must be non-empty");
   if (filePath === "@workflow" || filePath.startsWith("@workflow/")) {
@@ -25,6 +29,7 @@ export function resolveWorkflowReadPath(cwd: string, workflowDir: string, filePa
   return path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(cwd, filePath);
 }
 
+/** Provides the resolveWorkflowAgentCwd function contract. */
 export function resolveWorkflowAgentCwd(cwd: string, agentCwd: unknown): string | undefined {
   if (agentCwd === undefined) return undefined;
   if (typeof agentCwd !== "string" || !agentCwd.trim()) throw new Error("agent cwd must be a non-empty string");
@@ -32,6 +37,7 @@ export function resolveWorkflowAgentCwd(cwd: string, agentCwd: unknown): string 
   return path.isAbsolute(requestedCwd) ? path.resolve(requestedCwd) : path.resolve(cwd, requestedCwd);
 }
 
+/** Provides the resolveInsideRoot function contract. */
 export function resolveInsideRoot(root: string, relativePath: string, escapeMessage: string): string {
   const target = path.resolve(root, relativePath.replace(/^@/, ""));
   const relative = path.relative(root, target);

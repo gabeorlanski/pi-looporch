@@ -1,3 +1,4 @@
+/** Provides pi agent behavior. */
 import path from "node:path";
 import {
   AuthStorage,
@@ -38,6 +39,7 @@ export interface PiWorkflowAgentOptions {
   createSession?: typeof createAgentSession;
 }
 
+/** Provides the createPiWorkflowAgent function contract. */
 export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): WorkflowAgent {
   return async (prompt, agentOptions, reporter) => {
     const agentDir = getAgentDir();
@@ -163,7 +165,7 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
     try {
       if (agentOptions.signal?.aborted) throw new Error("Workflow agent aborted");
       if (agentOptions.signal) {
-        const abortSession = () => void session.abort();
+        const abortSession = (): void => void session.abort();
         agentOptions.signal.addEventListener("abort", abortSession, { once: true });
         removeAbortListener = () => agentOptions.signal?.removeEventListener("abort", abortSession);
       }

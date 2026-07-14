@@ -1,6 +1,8 @@
+/** Provides workflow status behavior. */
 import type { SelectedWorkflowStatus, WorkflowRunStatus } from "../workflow/status.ts";
 import { fmtDuration, fmtTokens, glyph } from "./workflow-tui-format.ts";
 
+/** Provides the renderWorkflowStatus function contract. */
 export function renderWorkflowStatus(status: SelectedWorkflowStatus): string {
   if (status.status === "none") {
     const scopeLabel = status.scope === "project" ? "project" : "current session";
@@ -50,15 +52,18 @@ export function renderWorkflowStatus(status: SelectedWorkflowStatus): string {
   return lines.join("\n");
 }
 
+/** Provides the renderWorkflowStatusJson function contract. */
 export function renderWorkflowStatusJson(status: SelectedWorkflowStatus): string {
   return `${JSON.stringify(status, null, 2)}\n`;
 }
 
+/** Provides the renderWorkflowStatusList function contract. */
 export function renderWorkflowStatusList(statuses: WorkflowRunStatus[]): string {
   if (statuses.length === 0) return "No active workflows in this project.";
   return statuses.map(renderWorkflowStatus).join("\n\n");
 }
 
+/** Provides the workflowMonitorWidgetLines function contract. */
 export function workflowMonitorWidgetLines(statuses: WorkflowRunStatus[], ownerSessionId: string): string[] {
   const active = statuses.filter((status) => status.status === "running" && status.ownerSessionId !== ownerSessionId);
   if (active.length === 0) return [];

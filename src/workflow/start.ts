@@ -1,3 +1,4 @@
+/** Provides start behavior. */
 import { readFile } from "node:fs/promises";
 import { discoverWorkflows, type WorkflowReference, workflowRootsForProject } from "../discovery.ts";
 import type { WorkflowAgent, WorkflowSnapshot } from "../runtime/types.ts";
@@ -19,10 +20,12 @@ export interface PreparedWorkflowRun {
   initialSnapshot: WorkflowSnapshot;
 }
 
+/** Provides the readWorkflowInputContract function contract. */
 export async function readWorkflowInputContract(workflow: WorkflowReference): Promise<WorkflowInputContract> {
   return extractWorkflowInputContract(await readFile(workflow.entryFile, "utf8"));
 }
 
+/** Provides the prepareWorkflowRun function contract. */
 export async function prepareWorkflowRun(options: {
   cwd: string;
   workflowName: string;
@@ -47,6 +50,7 @@ export async function prepareWorkflowRun(options: {
   };
 }
 
+/** Provides the startPreparedWorkflowRun function contract. */
 export async function startPreparedWorkflowRun(options: {
   prepared: PreparedWorkflowRun;
   agent: WorkflowAgent;

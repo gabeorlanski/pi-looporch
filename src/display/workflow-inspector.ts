@@ -1,3 +1,4 @@
+/** Provides workflow inspector behavior. */
 import { readFileSync } from "node:fs";
 import { type Component, type Focusable, matchesKey, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { WorkflowUiAgent, WorkflowUiPhase, WorkflowInspectorModel } from "./workflow-inspector-model.ts";
@@ -8,6 +9,7 @@ type Level = "phases" | "detail";
 
 const LEFT_W = 26;
 
+/** Provides the WorkflowInspector class contract. */
 export class WorkflowInspector implements Component, Focusable {
   focused = false;
   onClose?: () => void;

@@ -1,17 +1,21 @@
+/** Provides files behavior. */
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { resolveWorkflowReadPath } from "./paths.ts";
 
+/** Provides the readWorkflowText function contract. */
 export function readWorkflowText(cwd: string, workflowDir: string, filePath: string): string {
   return readFileSync(resolveWorkflowReadPath(cwd, workflowDir, filePath), "utf8");
 }
 
+/** Provides the readWorkflowJson function contract. */
 export function readWorkflowJson(cwd: string, workflowDir: string, filePath: string): unknown {
   return JSON.parse(readWorkflowText(cwd, workflowDir, filePath)) as unknown;
 }
 
+/** Provides the writeWorkflowText function contract. */
 export function writeWorkflowText(cwd: string, workflowDir: string, filePath: string, content: string): string {
   if (typeof content !== "string") throw new Error("writeText content must be a string");
   const outputPath = resolveWorkflowReadPath(cwd, workflowDir, filePath);
@@ -19,14 +23,17 @@ export function writeWorkflowText(cwd: string, workflowDir: string, filePath: st
   return outputPath;
 }
 
+/** Provides the writeWorkflowJson function contract. */
 export function writeWorkflowJson(cwd: string, workflowDir: string, filePath: string, value: unknown): string {
   return writeWorkflowText(cwd, workflowDir, filePath, jsonFileText(value));
 }
 
+/** Provides the writeJsonFileAtomic function contract. */
 export async function writeJsonFileAtomic(filePath: string, value: unknown): Promise<void> {
   await writeTextFileAtomic(filePath, jsonFileText(value));
 }
 
+/** Provides the writeTextFileAtomic function contract. */
 export async function writeTextFileAtomic(filePath: string, content: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = temporaryFilePath(filePath);

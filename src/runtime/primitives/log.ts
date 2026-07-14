@@ -1,3 +1,4 @@
+/** Provides log behavior. */
 import { appendRunMessage } from "../messages.ts";
 import type { WorkflowPrimitive } from "../context.ts";
 

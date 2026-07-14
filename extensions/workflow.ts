@@ -1,3 +1,4 @@
+/** Provides workflow behavior. */
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../src/errors.ts";
@@ -19,7 +20,7 @@ import { workflowSettingsCommand } from "./commands/settings.ts";
 import { workflowStatusCommand } from "./commands/status.ts";
 
 /** Registers pi-workflow commands, tools, and TUI hooks with a Pi extension host. */
-export default function piWorkflow(pi: ExtensionAPI) {
+export default function piWorkflow(pi: ExtensionAPI): void {
   const aliases = new Set<string>();
   const capabilityCatalogs = new Map<string, AgentCapabilityCatalogProvider>();
   const capabilityCatalogForCwd = (cwd: string): AgentCapabilityCatalogProvider => {
@@ -33,7 +34,10 @@ export default function piWorkflow(pi: ExtensionAPI) {
   for (const tool of createWorkflowTools({
     agentForContext: (ctx) => createPiWorkflowAgent({ cwd: ctx.cwd, agentCapabilityCatalog: capabilityCatalogForCwd(ctx.cwd) }),
     agentCapabilityCatalogForContext: (ctx) => capabilityCatalogForCwd(ctx.cwd),
-    sendUserMessageForContext: () => (message, options) => pi.sendUserMessage(message, options),
+    sendUserMessageForContext:
+      () =>
+      (message, options): void =>
+        pi.sendUserMessage(message, options),
   })) {
     pi.registerTool(tool);
   }
@@ -132,7 +136,7 @@ async function runExistingWorkflowCommand(
   try {
     const inputContract = await readWorkflowInputContract(workflow);
     const parsedInput = parseWorkflowInput(rawInput);
-    const sendUserMessage = (message: string, options?: { deliverAs?: "followUp" }) => pi.sendUserMessage(message, options);
+    const sendUserMessage = (message: string, options?: { deliverAs?: "followUp" }): void => pi.sendUserMessage(message, options);
     if (parsedInput.action === "resolve") {
       ctx.ui.notify(`Workflow '${workflowName}' input resolution sent to current session`, "info");
       sendWorkflowUserMessage(

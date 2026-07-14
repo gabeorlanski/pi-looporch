@@ -71,11 +71,23 @@ void test("schema preflight accepts only object or boolean schemas and validates
   preflightJsonSchema(true);
   preflightJsonSchema(false);
   preflightJsonSchema({ type: ["string", "null"], unevaluatedProperties: false, vendorExtension: true });
-  assert.throws(() => preflightJsonSchema([]), /object or boolean/);
-  assert.throws(() => preflightJsonSchema("not-a-schema"), /object or boolean/);
-  assert.throws(() => preflightJsonSchema({ type: "not-a-type" }), /schema.type must name/);
-  assert.throws(() => preflightJsonSchema({ $ref: "#/$defs/missing", $defs: {} }), /unresolved local \$ref/);
-  assert.throws(() => preflightJsonSchema({ $ref: "https://example.test/schema" }), /unsupported external \$ref/);
+  assert.throws(() => {
+    preflightJsonSchema([]);
+  }, /object or boolean/);
+  assert.throws(() => {
+    preflightJsonSchema("not-a-schema");
+  }, /object or boolean/);
+  assert.throws(() => {
+    preflightJsonSchema({ type: "not-a-type" });
+  }, /schema.type must name/);
+  assert.throws(() => {
+    preflightJsonSchema({ $ref: "#/$defs/missing", $defs: {} });
+  }, /unresolved local \$ref/);
+  assert.throws(() => {
+    preflightJsonSchema({ $ref: "https://example.test/schema" });
+  }, /unsupported external \$ref/);
   preflightJsonSchema({ $ref: "#/$defs/value", $defs: { value: { type: "string" } } });
-  assert.throws(() => preflightJsonSchema({ type: "string", pattern: "[" }), /schema is invalid/);
+  assert.throws(() => {
+    preflightJsonSchema({ type: "string", pattern: "[" });
+  }, /schema is invalid/);
 });

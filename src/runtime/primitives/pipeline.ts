@@ -1,3 +1,4 @@
+/** Provides pipeline behavior. */
 import type { ActiveWorkflowRuntime, PipelineStage, WorkflowPrimitive } from "../context.ts";
 import { throwIfWorkflowAborted } from "../abort.ts";
 

@@ -1,3 +1,4 @@
+/** Provides status behavior. */
 import path from "node:path";
 import { readActiveWorkflowRuns, type ActiveWorkflowRunRecord } from "./active-runs.ts";
 import { readWorkflowOutputManifest, readWorkflowSnapshot } from "./outputs.ts";
@@ -72,6 +73,7 @@ export type SelectedWorkflowStatus =
       errors: string[];
     };
 
+/** Provides the readWorkflowStatusList function contract. */
 export async function readWorkflowStatusList(cwd: string, query: WorkflowStatusQuery): Promise<WorkflowRunStatus[]> {
   const records = await readActiveWorkflowRuns(cwd, query.scope === "current-session" ? query.ownerSessionId : undefined);
   const statuses = await Promise.all(records.map((record) => readWorkflowRunStatus(record, query)));
@@ -81,10 +83,12 @@ export async function readWorkflowStatusList(cwd: string, query: WorkflowStatusQ
     .sort((left, right) => right.startedAt - left.startedAt);
 }
 
+/** Provides the readSelectedWorkflowStatus function contract. */
 export async function readSelectedWorkflowStatus(cwd: string, query: WorkflowStatusQuery): Promise<SelectedWorkflowStatus> {
   return selectWorkflowStatus(cwd, await readWorkflowStatusList(cwd, query), query);
 }
 
+/** Provides the selectWorkflowStatus function contract. */
 export function selectWorkflowStatus(cwd: string, statuses: WorkflowRunStatus[], query: WorkflowStatusQuery): SelectedWorkflowStatus {
   const selected = query.ref === "latest" ? statuses[0] : statuses.find((status) => matchesWorkflowRef(cwd, status, query.ref));
   return (

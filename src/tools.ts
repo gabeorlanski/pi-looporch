@@ -11,6 +11,9 @@ import { readWorkflowDraft } from "./workflow/drafts.ts";
 import { normalizeWorkflowName } from "./workflow/paths.ts";
 import { renderWorkflowStatus, renderWorkflowStatusJson } from "./display/workflow-status.ts";
 import { readSelectedWorkflowStatus, type WorkflowStatusQuery } from "./workflow/status.ts";
+import { createAgentCapabilityCatalogProvider, type AgentCapabilityCatalogProvider } from "./pi-agent-capabilities.ts";
+import { validateWorkflowAgentCapabilities } from "./workflow/agent-capability-validation.ts";
+import { readWorkflowSettings } from "./workflow/settings.ts";
 
 /** Dependencies used to construct workflow tools for either an extension session or tests. */
 export interface WorkflowToolsOptions {
@@ -18,6 +21,8 @@ export interface WorkflowToolsOptions {
   agent?: WorkflowAgent;
   agentForContext?: (ctx: ExtensionContext) => WorkflowAgent;
   sendUserMessageForContext?: (ctx: ExtensionContext) => SendWorkflowUserMessage | undefined;
+  agentCapabilityCatalog?: AgentCapabilityCatalogProvider;
+  agentCapabilityCatalogForContext?: (ctx: ExtensionContext) => AgentCapabilityCatalogProvider;
 }
 
 /** Builds the public tool surface for running, authoring guidance, and proposing workflows. */
@@ -183,6 +188,17 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
         name,
         draftDir: params.draftDir,
         toolName: "propose_workflow",
+      });
+      const settings = await readWorkflowSettings(cwd, getAgentDir());
+      await validateWorkflowAgentCapabilities({
+        source: draft.source,
+        workflowName: name,
+        defaultExtensions: settings.childAgentExtensions,
+        defaultTools: settings.childAgentTools,
+        catalogProvider:
+          options.agentCapabilityCatalog ??
+          options.agentCapabilityCatalogForContext?.(ctx) ??
+          createAgentCapabilityCatalogProvider({ cwd }),
       });
       await saveWorkflowDraft({ cwd, draft });
       return {

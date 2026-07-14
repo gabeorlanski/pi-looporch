@@ -34,7 +34,7 @@ export const agentPrimitive: WorkflowPrimitive<{
       name: "agent",
       signature: "agent(task, options?)",
       summary:
-        "Launches a child agent from inline task text or a workflow-owned { template, values } task; options include label, cwd, taskFile, tools, model, reasoning, schema, and maxAttempts.",
+        "Launches a child agent from inline task text or a workflow-owned { template, values } task; options include label, cwd, taskFile, extensions, tools, model, reasoning, schema, and maxAttempts.",
     },
   ],
   globals: ({ runtime, workflowDir }) => ({
@@ -64,7 +64,7 @@ export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, a
         : structuredTaskPrompt(prompt, schema),
       {
         ...launchOptions,
-        ...(isRepair ? { label: `${launchOptions.label ?? "agent"} repair ${String(attempt)}`, tools: false } : {}),
+        ...(isRepair ? { label: `${launchOptions.label ?? "agent"} repair ${String(attempt)}`, extensions: [], tools: [] } : {}),
       },
     );
     const validation = parseAndValidateJsonResponse(result, schema);

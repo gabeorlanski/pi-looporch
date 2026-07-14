@@ -419,6 +419,48 @@ export default async function workflow({ prompt }) {
   );
 });
 
+void test("propose workflow rejects an unknown child agent tool before replacing a workflow", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
+  const draftDir = path.join(project, ".pi", "workflow-drafts", "summarize");
+  const published = path.join(project, ".pi", "workflows", "summarize", "workflow.js");
+  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return agent("work", { tools: ["reed"] });
+}`;
+  await mkdir(path.dirname(published), { recursive: true });
+  await writeFile(published, "published workflow", "utf8");
+  await mkdir(draftDir, { recursive: true });
+  await writeFile(path.join(draftDir, "workflow.js"), source, "utf8");
+  const tool = createWorkflowTools({
+    cwd: project,
+    agentCapabilityCatalog: () =>
+      Promise.resolve({
+        availableExtensions: [],
+        baseToolNames: ["bash", "read"],
+        loadErrors: [],
+      }),
+  }).find((candidate) => candidate.name === "propose_workflow");
+  assert.ok(tool);
+
+  await assert.rejects(
+    tool.execute(
+      "call-invalid-tools",
+      { name: "summarize", draftDir: path.relative(project, draftDir) },
+      undefined,
+      undefined,
+      {} as never,
+    ),
+    (error: unknown) => {
+      assert.match(String(error), /propose_workflow rejected workflow 'summarize': invalid child-agent capabilities/);
+      assert.match(String(error), /workflow\.js:\d+:\d+ agent tools\[0\] "reed"/);
+      assert.match(String(error), /Unknown tool\. Available tools: bash, read/);
+      assert.match(String(error), /No workflow files were saved\./);
+      return true;
+    },
+  );
+  assert.equal(await readFile(published, "utf8"), "published workflow");
+});
+
 void test("propose workflow rejects invalid literal schemas before replacing a workflow", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
   const draftDir = path.join(project, ".pi", "workflow-drafts", "summarize");

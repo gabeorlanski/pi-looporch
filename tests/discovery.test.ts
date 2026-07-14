@@ -52,7 +52,7 @@ export default async function workflow() {
   assert.deepEqual(await discoverWorkflows(project), []);
 });
 
-void test("discovery skips static agent checks when agent is rebound anywhere", async () => {
+void test("discovery validates a global agent outside a nested shadow", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-discovery-"));
   await writeWorkflow(
     project,
@@ -64,10 +64,7 @@ export default async function workflow() {
   return agent("work", { schema: { type: "string", pattern: "[" } });
 }`,
   );
-  assert.deepEqual(
-    (await discoverWorkflows(project)).map((workflow) => workflow.name),
-    ["nested-shadow"],
-  );
+  assert.deepEqual(await discoverWorkflows(project), []);
 });
 
 void test("discovery accepts static boolean schemas", async () => {

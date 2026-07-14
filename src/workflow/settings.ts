@@ -2,20 +2,23 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isMissingFileError } from "../errors.ts";
 
+export type CapabilitySelection = "all" | string[];
+
 export interface WorkflowSettings {
   workflowDirs: string[];
   maxParallelAgents: number;
-  childAgentExtensions: string[];
+  childAgentExtensions: CapabilitySelection;
+  childAgentTools: CapabilitySelection;
 }
 
 export interface WorkflowSettingsPatch {
   workflowDirs?: string[];
   maxParallelAgents?: number;
-  childAgentExtensions?: string[];
+  childAgentExtensions?: CapabilitySelection;
+  childAgentTools?: CapabilitySelection;
 }
 
 export const DEFAULT_MAX_PARALLEL_AGENTS = 4;
-const DEFAULT_CHILD_AGENT_EXTENSIONS: string[] = [];
 const DEFAULT_WORKFLOW_DIRS: string[] = [];
 
 function globalSettingsPath(agentDir: string): string {
@@ -50,17 +53,17 @@ function normalizeMaxParallelAgents(value: unknown): number {
   return value;
 }
 
-function normalizeChildAgentExtensions(value: unknown): string[] {
-  if (value === undefined) return [...DEFAULT_CHILD_AGENT_EXTENSIONS];
-  if (!Array.isArray(value)) throw new Error("workflow.childAgentExtensions must be an array of non-empty strings");
-  const extensions: string[] = [];
+function normalizeCapabilitySelection(value: unknown, field: "childAgentExtensions" | "childAgentTools"): CapabilitySelection {
+  if (value === undefined || value === "all") return "all";
+  if (!Array.isArray(value)) throw new Error(`workflow.${field} must be "all" or an array of non-empty strings`);
+  const capabilities: string[] = [];
   for (const entry of value) {
     if (typeof entry !== "string" || !entry.trim()) {
-      throw new Error("workflow.childAgentExtensions must be an array of non-empty strings");
+      throw new Error(`workflow.${field} must be "all" or an array of non-empty strings`);
     }
-    extensions.push(entry.trim());
+    capabilities.push(entry.trim());
   }
-  return extensions;
+  return capabilities;
 }
 
 function normalizeWorkflowDirs(value: unknown): string[] {
@@ -95,7 +98,8 @@ function normalizeWorkflowSettings(workflow: Record<string, unknown>): WorkflowS
   return {
     workflowDirs: normalizeWorkflowDirs(workflow.workflowDirs),
     maxParallelAgents: normalizeMaxParallelAgents(workflow.maxParallelAgents ?? DEFAULT_MAX_PARALLEL_AGENTS),
-    childAgentExtensions: normalizeChildAgentExtensions(workflow.childAgentExtensions),
+    childAgentExtensions: normalizeCapabilitySelection(workflow.childAgentExtensions, "childAgentExtensions"),
+    childAgentTools: normalizeCapabilitySelection(workflow.childAgentTools, "childAgentTools"),
   };
 }
 
@@ -120,7 +124,9 @@ function normalizeWorkflowSettingsPatch(settings: WorkflowSettingsPatch): Workfl
   if (settings.workflowDirs !== undefined) patch.workflowDirs = normalizeWorkflowDirs(settings.workflowDirs);
   if (settings.maxParallelAgents !== undefined) patch.maxParallelAgents = normalizeMaxParallelAgents(settings.maxParallelAgents);
   if (settings.childAgentExtensions !== undefined)
-    patch.childAgentExtensions = normalizeChildAgentExtensions(settings.childAgentExtensions);
+    patch.childAgentExtensions = normalizeCapabilitySelection(settings.childAgentExtensions, "childAgentExtensions");
+  if (settings.childAgentTools !== undefined)
+    patch.childAgentTools = normalizeCapabilitySelection(settings.childAgentTools, "childAgentTools");
   return patch;
 }
 

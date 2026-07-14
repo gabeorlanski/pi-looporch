@@ -9,7 +9,7 @@ export const mapReducePrimitive: WorkflowPrimitive<{ mapreduce: (options: MapRed
   docs: [
     {
       name: "mapreduce",
-      signature: "mapreduce({ inputPrompt, mapPrompt, reducePrompt, ...context })",
+      signature: "mapreduce({ inputPrompt, mapPrompt, reducePrompt, extensions?, tools?, ...context })",
       summary: "Coerces items, maps them through bounded child-agent fan-out, then reduces mapped outputs with one child agent.",
     },
   ],
@@ -17,7 +17,18 @@ export const mapReducePrimitive: WorkflowPrimitive<{ mapreduce: (options: MapRed
 };
 
 async function mapReduceWithAgents(runtime: ActiveWorkflowRuntime, options: MapReduceOptions): Promise<unknown> {
-  const { inputPrompt, mapPrompt, reducePrompt, label: labelOption, model, reasoning, maxAttempts, ...context } = options;
+  const {
+    inputPrompt,
+    mapPrompt,
+    reducePrompt,
+    label: labelOption,
+    model,
+    reasoning,
+    maxAttempts,
+    extensions,
+    tools,
+    ...context
+  } = options;
   const label = typeof labelOption === "string" && labelOption.trim() ? labelOption : "mapreduce";
   const input = await coerceWithAgent(runtime, {
     schema: mapReduceInputSchema,
@@ -26,6 +37,8 @@ async function mapReduceWithAgents(runtime: ActiveWorkflowRuntime, options: MapR
     model,
     reasoning,
     maxAttempts,
+    extensions,
+    tools,
   });
   const items = (input as { items: unknown[] }).items;
   const mapped = await runParallel(
@@ -36,6 +49,8 @@ async function mapReduceWithAgents(runtime: ActiveWorkflowRuntime, options: MapR
         label: `${label} map ${String(index + 1)}`,
         model,
         reasoning,
+        extensions,
+        tools,
       }),
     `${label} map`,
   );
@@ -43,6 +58,8 @@ async function mapReduceWithAgents(runtime: ActiveWorkflowRuntime, options: MapR
     label: `${label} reduce`,
     model,
     reasoning,
+    extensions,
+    tools,
   });
 }
 

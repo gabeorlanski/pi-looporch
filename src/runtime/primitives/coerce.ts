@@ -6,9 +6,9 @@ export const coercePrimitive: WorkflowPrimitive<{ coerce: (options: CoerceOption
   docs: [
     {
       name: "coerce",
-      signature: "coerce({ schema, prompt, label?, model?, reasoning?, maxAttempts? })",
+      signature: "coerce({ schema, prompt, label?, model?, reasoning?, maxAttempts?, extensions?, tools? })",
       summary:
-        "Uses a no-tools child agent with strict JSON Schema validation and focused no-tools repair attempts for compact extraction or normalization.",
+        "Uses a child agent with strict JSON Schema validation and focused isolated repair attempts for compact extraction or normalization.",
     },
   ],
   globals: ({ runtime }) => ({ coerce: (options: CoerceOptions) => coerceWithAgent(runtime, options) }),
@@ -22,6 +22,7 @@ export async function coerceWithAgent(runtime: ActiveWorkflowRuntime, options: C
     reasoning: options.reasoning,
     schema: options.schema,
     maxAttempts: options.maxAttempts,
-    tools: false,
+    extensions: options.extensions,
+    tools: options.tools,
   });
 }

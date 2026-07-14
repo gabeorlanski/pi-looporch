@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ToolDefinition, ToolInfo } from "@earendil-works/pi-coding-agent";
 import piWorkflow from "../extensions/workflow.ts";
 
 interface RegisteredTestCommand {
@@ -50,6 +50,7 @@ export interface ExtensionHarnessOptions {
   editorText?: string;
   sendMessage?: (message: SentMessage, options?: unknown) => void;
   sendUserMessage?: (message: unknown, options?: unknown) => void;
+  parentTools?: ToolInfo[];
 }
 
 export interface ExtensionHarness {
@@ -122,6 +123,9 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
         return;
       }
       sentUserMessages.push({ message, options: sendOptions });
+    },
+    getAllTools(): ToolInfo[] {
+      return options.parentTools ?? [];
     },
   } as unknown as ExtensionAPI;
   piWorkflow(pi);
@@ -278,8 +282,8 @@ export async function writeProjectWorkflow(project: string, name: string, source
   await writeFile(path.join(workflowDir, "workflow.js"), source, "utf8");
 }
 
-export async function waitForCondition(condition: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 50; attempt++) {
+export async function waitForCondition(condition: () => boolean, attempts = 50): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     if (condition()) return;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }

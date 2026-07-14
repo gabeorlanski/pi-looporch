@@ -35,7 +35,8 @@ export interface WorkflowAgentOptions {
   maxAttempts?: number;
   signal?: AbortSignal;
   sessionLog?: WorkflowAgentSessionLog;
-  tools?: boolean;
+  extensions?: string[];
+  tools?: string[];
 }
 
 /** Persistent session-log identity attached to each child-agent SDK session. */

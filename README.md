@@ -94,11 +94,17 @@ Reusable child prompts live in `prompts/*.txt` and launch through
 `agent({ template, values }, options)`; `renderPrompt` remains available for
 exceptional composition.
 
+`agent`, `coerce`, `mapreduce`, and `verifier` accept `extensions` and `tools`
+string lists. Omit either list to inherit workflow settings; use `[]` for none.
+Naming an extension-owned tool loads its extension while keeping the tool list
+exact.
+
 Agents can call `workflow_design_guidance` for focused authoring help. Its
 primitive reference is generated from the runtime primitive registry so supported
 globals stay synchronized with implementation. Agents call `propose_workflow` to
 save complete generated workflow draft directories and `workflow_status` to check
-active project workflow progress.
+active project workflow progress. `propose_workflow` validates child-agent
+capabilities against Pi's installed extensions and tools before saving.
 
 ## Settings
 
@@ -110,16 +116,23 @@ Project settings live in `.pi/settings.json`; global settings can live in
   "workflow": {
     "workflowDirs": ["../shared-workflows"],
     "maxParallelAgents": 4,
-    "childAgentExtensions": ["pi-subagents", "./extensions/todo.ts"]
+    "childAgentExtensions": ["pi-subagents", "./extensions/todo.ts"],
+    "childAgentTools": ["read", "bash", "todo_read"]
   }
 }
 ```
+
+Missing capability settings default to `all`; an explicit empty list means
+none. Per-agent lists override these defaults.
 
 ```text
 /workflow-settings
 /workflow-settings workflowDirs=../shared-workflows
 /workflow-settings maxParallelAgents=8
 /workflow-settings childAgentExtensions=pi-subagents,./extensions/todo.ts
+/workflow-settings childAgentTools=read,bash,todo_read
+/workflow-settings childAgentExtensions=all
+/workflow-settings childAgentTools=
 /workflow-settings --global maxParallelAgents=4
 ```
 

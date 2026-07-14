@@ -23,6 +23,8 @@ export default async function workflow() {
     },
     prompt: "Extract a title and score",
     label: "extract result",
+    extensions: ["./extensions/extract.ts"],
+    tools: ["read", "extract_fields"],
     maxAttempts: 2,
   });
 }`,
@@ -42,8 +44,12 @@ export default async function workflow() {
   assert.match(prompts[1], /Repair the rejected response/);
   assert.match(prompts[1], /not json/);
   assert.deepEqual(
-    agentOptions.map((options) => (options as { tools?: unknown }).tools),
-    [false, false],
+    agentOptions.map((options) => Array.from((options as { extensions?: string[] }).extensions ?? [])),
+    [["./extensions/extract.ts"], []],
+  );
+  assert.deepEqual(
+    agentOptions.map((options) => Array.from((options as { tools?: string[] }).tools ?? [])),
+    [["read", "extract_fields"], []],
   );
   assert.equal(result.snapshot.agents.length, 2);
   assert.deepEqual(
@@ -65,13 +71,17 @@ export default async function workflow() {
     reducePrompt: "Reduce {{results}} for {{topic}}",
     topic: "letters",
     label: "letter work",
+    extensions: ["./extensions/letters.ts"],
+    tools: ["read", "letter_lookup"],
     maxAttempts: 1,
   });
 }`,
   );
   const prompts: string[] = [];
-  const agent: WorkflowAgent = (prompt) => {
+  const agentOptions: unknown[] = [];
+  const agent: WorkflowAgent = (prompt, options) => {
     prompts.push(prompt);
+    agentOptions.push(options);
     if (prompt.includes("Split letters into items")) return Promise.resolve('{"items":["alpha","beta"]}');
     if (prompt === "Map alpha for letters at 0") return Promise.resolve("mapped alpha");
     if (prompt === "Map beta for letters at 1") return Promise.resolve("mapped beta");
@@ -83,6 +93,14 @@ export default async function workflow() {
 
   assert.equal(result.result, "reduced letters");
   assert.equal(prompts.length, 4);
+  assert.deepEqual(
+    agentOptions.map((options) => Array.from((options as { extensions?: string[] }).extensions ?? [])),
+    Array.from({ length: 4 }, () => ["./extensions/letters.ts"]),
+  );
+  assert.deepEqual(
+    agentOptions.map((options) => Array.from((options as { tools?: string[] }).tools ?? [])),
+    Array.from({ length: 4 }, () => ["read", "letter_lookup"]),
+  );
   assert.deepEqual(
     result.snapshot.agents.map((agentSnapshot) => agentSnapshot.label),
     ["letter work input", "letter work map 1", "letter work map 2", "letter work reduce"],
@@ -106,12 +124,16 @@ export default async function workflow() {
     reducePrompt: "Reduce {{votes}} for {{artifact}}",
     artifact: "draft",
     label: "rubric",
+    extensions: ["./extensions/review.ts"],
+    tools: ["read", "review_evidence"],
   });
 }`,
   );
   const prompts: string[] = [];
-  const agent: WorkflowAgent = (prompt) => {
+  const agentOptions: unknown[] = [];
+  const agent: WorkflowAgent = (prompt, options) => {
     prompts.push(prompt);
+    agentOptions.push(options);
     if (prompt.startsWith("Reduce ")) return Promise.resolve("verified");
     return Promise.resolve(`vote: ${prompt}`);
   };
@@ -119,6 +141,14 @@ export default async function workflow() {
   const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "verifier", input: {}, agent });
 
   assert.equal(result.result, "verified");
+  assert.deepEqual(
+    agentOptions.map((options) => Array.from((options as { extensions?: string[] }).extensions ?? [])),
+    Array.from({ length: 4 }, () => ["./extensions/review.ts"]),
+  );
+  assert.deepEqual(
+    agentOptions.map((options) => Array.from((options as { tools?: string[] }).tools ?? [])),
+    Array.from({ length: 4 }, () => ["read", "review_evidence"]),
+  );
   assert.deepEqual(prompts.slice(0, 3), [
     "Vote 1 on accuracy: Check facts / No hallucinations / quote evidence for draft",
     "Vote 2 on accuracy: Check facts / No hallucinations / quote evidence for draft",

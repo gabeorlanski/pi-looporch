@@ -1,0 +1,4 @@
+<workflow_handoff event="failed">
+<workflow_name>{{workflowName}}</workflow_name>
+<workflow_failure>{{failure}}</workflow_failure>
+</workflow_handoff>

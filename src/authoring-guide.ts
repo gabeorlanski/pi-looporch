@@ -9,6 +9,8 @@ interface DesignTopic {
   promptFile: string;
 }
 
+const workflowDesignIndexTemplate = readFileSync(new URL("./prompts/workflow-design/index.txt", import.meta.url), "utf8").trim();
+
 const designTopics: DesignTopic[] = [
   { name: "overview", summary: "Shortest path for deciding whether and how to author a workflow.", promptFile: "overview.txt" },
   { name: "workflow-api", summary: "Sandbox globals and metadata contract for workflow.js.", promptFile: "workflow-api.txt" },
@@ -25,7 +27,7 @@ const designTopics: DesignTopic[] = [
   },
   {
     name: "structured-outputs",
-    summary: "How to require compact JSON without filling the route prompt with schemas.",
+    summary: "How to require terminal structured fields without parsing assistant text.",
     promptFile: "structured-outputs.txt",
   },
   { name: "fanout", summary: "How to use parallelism without launching unbounded agents.", promptFile: "fanout.txt" },
@@ -42,14 +44,9 @@ export function workflowDesignGuidance(topic?: string): string {
 }
 
 function workflowDesignTopicIndex(): string {
-  return [
-    "Workflow design guidance. Call with a topic for concise, task-specific help while authoring workflows.",
-    "Start with topic: overview. Use topic: workflow-api for primitive syntax and sandbox rules.",
-    "Topics:",
-    ...designTopics.map((topic) => `- ${topic.name}: ${topic.summary}`),
-    "",
-    renderWorkflowPrimitiveReference(),
-  ].join("\n");
+  return workflowDesignIndexTemplate
+    .replaceAll("{{topicList}}", designTopics.map((topic) => `<topic name="${topic.name}">${topic.summary}</topic>`).join("\n"))
+    .replaceAll("{{primitiveReference}}", renderWorkflowPrimitiveReference());
 }
 
 function renderDesignTopic(topic: DesignTopic): string {

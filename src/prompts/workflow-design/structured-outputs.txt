@@ -1,23 +1,23 @@
-Workflow design guidance: structured-outputs
-How to require compact JSON without filling the route prompt with schemas.
-
-Guidance:
-- Prefer agent({ template, values }, { schema, maxAttempts }) when a child agent must do tool work and return typed data.
-- Use coerce(...) for extraction/normalization tasks and give it the same extensions/tools selection you would give agent(...).
-- Keep prompts and schemas aligned: name the exact same keys and include a tiny valid JSON skeleton in the prompt. Ask for exactly one JSON value with no prose or fences.
-- Keep schemas shallow and small: required fields, short keys, enums/booleans, and additionalProperties: false. Add maxLength or maxItems only when a real downstream limit requires them.
-- The first schema-enabled agent performs the task; invalid output is retained and later maxAttempts are JSON-only repairs with extensions: [] and tools: []. Do not increase attempts to repeat tool work.
-- Use JSON as the control surface only: status, decision, IDs, counts, short summary, artifactPaths, evidence paths, and line references.
-- Route large reasoning, transcripts, diffs, reports, and generated artifacts to named files; return their paths and a compact manifest.
-- For large lists, prefer capped summaries or JSONL/artifact files over one giant nested JSON object.
-- Stage expansion: first return a compact selector/manifest, then launch follow-up agents only for selected items that need detail.
-- Use stable IDs and lookup tables instead of repeating long strings across every finding.
-
-Examples:
+<workflow_guidance topic="structured-outputs">
+<purpose>Require semantic structured results without parsing assistant text.</purpose>
+<rules>
+<rule>Use agent({ template, values }, { schema }) when a child must return structured fields.</rule>
+<rule>The schema is prepended to the child prompt in a &lt;structured_output_schema&gt; section and becomes the terminal StructuredOutput tool parameter contract. Describe each field's meaning inline with JSON Schema descriptions.</rule>
+<rule>StructuredOutput validates its keyword arguments, captures them, and ends the child session. A schema-enabled child that does not call it fails.</rule>
+<rule>The agent result always includes message, name, steps, and usage. message is null when a terminal call omits it; name, steps, and usage are runtime-owned and cannot be schema properties.</rule>
+<rule>Keep schemas shallow and semantic: required fields, useful descriptions, enums/booleans, and additionalProperties: false. Add bounds only for real downstream limits.</rule>
+<rule>Use JSON as the control surface only: status, decision, IDs, counts, short summary, artifactPaths, evidence paths, and line references.</rule>
+<rule>Route large reasoning, transcripts, diffs, reports, and generated artifacts to named files; return their paths and a compact manifest.</rule>
+<rule>For large lists, prefer capped summaries or JSONL/artifact files over one giant nested JSON object.</rule>
+<rule>Stage expansion: first return a compact selector/manifest, then launch follow-up agents only for selected items that need detail.</rule>
+<rule>Use stable IDs and lookup tables instead of repeating long strings across every finding.</rule>
+</rules>
+<example>
 const schema = {
   type: "object",
   properties: { status: { type: "string", enum: ["pass", "fail"] }, summary: { type: "string" } },
   required: ["status", "summary"],
   additionalProperties: false,
 };
-// Prompt skeleton: {"status":"pass","summary":"short result"}
+</example>
+</workflow_guidance>

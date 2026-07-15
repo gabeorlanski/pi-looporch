@@ -1,4 +1,6 @@
 /** Provides workflow completion behavior. */
+import { workflowCompletionHandoffPrompt } from "../prompt-templates.ts";
+
 const PROMPT_RESULT_LIMIT = 16_000;
 
 export interface WorkflowCompletionInfo {
@@ -11,16 +13,11 @@ export interface WorkflowCompletionInfo {
 
 /** Provides the workflowCompletionReviewPrompt function contract. */
 export function workflowCompletionReviewPrompt(info: WorkflowCompletionInfo): string {
-  return [
-    `Automated workflow completion handoff: workflow '${info.workflowName}' completed.`,
-    "",
-    "Review and summarize the workflow result for the user. If the result is a report, surface the report directly and add only the brief orientation needed to make it useful. If it is structured data, summarize the key outcomes, decisions, errors, and next actions. Read the output paths only if the preview is insufficient.",
-    "",
+  return workflowCompletionHandoffPrompt(
+    { workflowName: info.workflowName, resultPath: info.resultPath, outputsDir: info.outputsDir, sessionLogDir: info.sessionLogDir },
     renderWorkflowResultSection(info.result, PROMPT_RESULT_LIMIT, info.resultPath),
-    "",
-    "Paths:",
-    ...workflowCompletionLocations(info),
-  ].join("\n");
+    workflowCompletionLocations(info).join("\n"),
+  );
 }
 
 function workflowCompletionLocations(info: WorkflowCompletionInfo): string[] {

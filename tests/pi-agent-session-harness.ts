@@ -88,6 +88,7 @@ function completedSession(): AgentSession {
     messages: [],
     subscribe: () => () => undefined,
     prompt: () => Promise.resolve(),
+    getSessionStats: () => ({ tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }),
     dispose: () => undefined,
   } as unknown as AgentSession;
 }

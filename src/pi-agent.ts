@@ -26,6 +26,7 @@ import type { WorkflowAgent, WorkflowAgentReporter, WorkflowToolActivitySnapshot
 import { createLoggedWorkflowAgentSession } from "./agent-session-logs.ts";
 import { agentTaskPrompt } from "./prompt-templates.ts";
 import { parseSessionTokens, workflowTokenUsageFromMessage } from "./session-usage.ts";
+import { createStructuredOutput } from "./structured-output.ts";
 import { resolveWorkflowAgentCwd } from "./workflow/paths.ts";
 import { readWorkflowSettings } from "./workflow/settings.ts";
 
@@ -51,7 +52,11 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
     const workflowSettings = await readWorkflowSettings(projectCwd, agentDir);
     const settingsManager = options.session?.settingsManager ?? SettingsManager.create(effectiveCwd, agentDir);
     const capabilitySettingsManager = SettingsManager.create(projectCwd, agentDir);
-    const customTools = options.session?.customTools ?? options.tools ?? [];
+    const structuredOutput = agentOptions.schema === undefined ? undefined : createStructuredOutput(agentOptions.schema);
+    const customTools = [
+      ...(options.session?.customTools ?? options.tools ?? []),
+      ...(structuredOutput === undefined ? [] : [structuredOutput.tool]),
+    ];
     const extensionSelection = parseAgentCapabilitySelection(
       agentOptions.extensions ?? workflowSettings.childAgentExtensions,
       "extensions",
@@ -135,7 +140,10 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       customTools,
       thinkingLevel: agentOptions.reasoning ?? options.session?.thinkingLevel,
       ...(model ? { model } : {}),
-      tools: resolvedCapabilities.toolNames,
+      tools:
+        structuredOutput === undefined || resolvedCapabilities.toolNames === undefined
+          ? resolvedCapabilities.toolNames
+          : [...new Set([...resolvedCapabilities.toolNames, structuredOutput.tool.name])],
     });
 
     const sessionModel = session.model
@@ -171,15 +179,30 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       }
 
       await session.prompt(sessionPrompt);
-      const usage = loggedSession ? parseSessionTokens(loggedSession.sessionManager.getSessionDir()) : null;
+      const loggedUsage = loggedSession ? parseSessionTokens(loggedSession.sessionManager.getSessionDir()) : null;
       reporter.progress({
         statusMessage: "done",
-        ...(usage ? { inputTokenCount: usage.input, outputTokenCount: usage.output } : {}),
+        ...(loggedUsage ? { inputTokenCount: loggedUsage.input, outputTokenCount: loggedUsage.output } : {}),
       });
       if (agentOptions.signal?.aborted) throw new Error("Workflow agent aborted");
       const failure = workflowAgentFailureMessage(session.messages, agentOptions.label);
       if (failure) throw new Error(failure);
-      return lastAssistantText(session.messages);
+      const result = structuredOutput?.result();
+      if (agentOptions.schema !== undefined && result === undefined)
+        throw new Error("Schema-enabled workflow child agents must finish by calling StructuredOutput");
+      const usage = session.getSessionStats().tokens;
+      return {
+        ...(result ?? {}),
+        message:
+          typeof result?.message === "string"
+            ? result.message
+            : agentOptions.schema === undefined
+              ? lastAssistantText(session.messages)
+              : null,
+        name: agentOptions.label ?? "agent",
+        steps: progress.steps(),
+        usage,
+      };
     } finally {
       removeAbortListener?.();
       unsubscribe();
@@ -214,6 +237,8 @@ function resolveModel(modelRegistry: ModelRegistry, spec: string): ReturnType<Mo
 export interface WorkflowAgentProgressTracker {
   /** Applies one Pi session event and emits progress when it changes child-agent runtime state. */
   handleEvent(event: unknown): void;
+  /** Number of completed model turns observed in this session. */
+  steps(): number;
 }
 
 /** Creates a deterministic Pi session event tracker that reports workflow child-agent progress snapshots. */
@@ -255,6 +280,7 @@ export function createWorkflowAgentProgressTracker(reporter: WorkflowAgentReport
         report("waiting");
       }
     },
+    steps: () => stepCount,
   };
 }
 

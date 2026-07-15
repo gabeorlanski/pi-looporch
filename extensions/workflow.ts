@@ -2,7 +2,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../src/errors.ts";
-import { naturalLanguageRequestMessage, steerableInputResolutionMessage } from "../src/prompt-templates.ts";
+import { naturalLanguageRequestMessage, steerableInputResolutionMessage, workflowFailureHandoffPrompt } from "../src/prompt-templates.ts";
 import { discoverWorkflows } from "../src/discovery.ts";
 import { createPiWorkflowAgent } from "../src/pi-agent.ts";
 import { createParentAgentCapabilityCatalogProvider, type AgentCapabilityCatalogProvider } from "../src/pi-agent-capabilities.ts";
@@ -166,7 +166,11 @@ async function runExistingWorkflowCommand(
   } catch (error) {
     const message = error instanceof WorkflowInputError ? error.message : `Workflow '${workflowName}' failed: ${errorMessage(error)}`;
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
-    sendWorkflowUserMessage(ctx, (content, options) => pi.sendUserMessage(content, options), message);
+    sendWorkflowUserMessage(
+      ctx,
+      (content, options) => pi.sendUserMessage(content, options),
+      workflowFailureHandoffPrompt(workflowName, message),
+    );
   }
 }
 

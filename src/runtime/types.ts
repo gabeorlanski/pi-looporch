@@ -32,7 +32,6 @@ export interface WorkflowAgentOptions {
   taskFile?: string;
   cwd?: string;
   schema?: unknown;
-  maxAttempts?: number;
   signal?: AbortSignal;
   sessionLog?: WorkflowAgentSessionLog;
   extensions?: string[];

@@ -1,17 +1,18 @@
-Workflow design guidance: draft-directory
-How to stage generated workflows with resources for saving.
-
-Guidance:
-- Create a complete draft directory with workflow.js plus workflow-owned prompts, schemas, fixtures, or examples before proposing.
-- Use {{draftRoot}}/<workflow-name>/ by default so workflow authoring does not dirty the worktree.
-- Call propose_workflow with the workflow name. Omit draftDir when using the default draft directory; otherwise set draftDir to the directory path, not the workflow.js file path.
-- Before saving, propose_workflow validates inline and top-level const agent capability lists plus inherited childAgentExtensions/childAgentTools against real Pi metadata, reports all source-located failures, and leaves published files unchanged on error.
-- Drafts copy to .pi/workflows/<name>/ so workflow.js and resources land together.
-
-Examples:
+<workflow_guidance topic="draft-directory">
+<purpose>Stage generated workflow directories for validation and saving.</purpose>
+<rules>
+<rule>Create a complete draft directory with workflow.js plus workflow-owned prompts, schemas, fixtures, or examples before proposing.</rule>
+<rule>Use {{draftRoot}}/&lt;workflow-name&gt;/ by default so workflow authoring does not dirty the worktree.</rule>
+<rule>Call propose_workflow with the workflow name. Omit draftDir when using the default draft directory; otherwise set draftDir to the directory path, not the workflow.js file path.</rule>
+<rule>Before saving, propose_workflow validates inline and top-level const agent capability lists plus inherited childAgentExtensions/childAgentTools against real Pi metadata, reports all source-located failures, and leaves published files unchanged on error.</rule>
+<rule>Drafts copy to .pi/workflows/&lt;name&gt;/ so workflow.js and resources land together.</rule>
+</rules>
+<example>
 {{draftRoot}}/review/
   workflow.js
   prompts/review.txt
   prompts/synthesize.txt
   schemas/finding.schema.json
 propose_workflow({ name: "review" })
+</example>
+</workflow_guidance>

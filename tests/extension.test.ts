@@ -109,9 +109,10 @@ export default async function workflow(input) {
   const handoff = await waitForOnlyUserTextMessage(harness);
 
   assert.deepEqual(handoff.options, undefined);
-  assert.match(handoff.text, /Automated workflow completion handoff: workflow 'echo' completed/);
-  assert.ok(handoff.text.includes('Result:\n\n```json\n{\n  "message": "hello"\n}'));
-  assert.match(handoff.text, /Paths:\n- Workflow result: .*final\.json/);
+  assert.match(handoff.text, /<workflow_handoff event="completed">/);
+  assert.match(handoff.text, /<workflow_metadata>\n\{"workflowName":"echo"/);
+  assert.ok(handoff.text.includes('<workflow_result>\nResult:\n\n```json\n{\n  "message": "hello"\n}'));
+  assert.match(handoff.text, /<workflow_paths>\n- Workflow result: .*final\.json/);
   assert.ok(harness.notifications.some((entry) => entry.message === "Workflow 'echo' complete." && entry.type === "info"));
   assert.deepEqual(JSON.parse(await readFile(workflowResultPathFrom(handoff.text), "utf8")), { message: "hello" });
 });
@@ -132,7 +133,7 @@ export default async function workflow() {
   const handoff = await waitForOnlyUserTextMessage(harness);
 
   assert.deepEqual(handoff.options, { deliverAs: "followUp" });
-  assert.match(handoff.text, /Automated workflow completion handoff/);
+  assert.match(handoff.text, /<workflow_handoff event="completed">/);
 });
 
 void test("registered_run_workflow_tool_shows_running_tui_widget", async () => {
@@ -165,10 +166,7 @@ export default async function workflow(input) {
   assert.equal(harness.sentMessages.length, 0);
   const handoff = harness.sentUserMessages[0];
   assert.deepEqual(handoff.options, undefined);
-  assert.match(
-    typeof handoff.message === "string" ? handoff.message : "",
-    /Automated workflow completion handoff: workflow 'tool-echo' completed/,
-  );
+  assert.match(typeof handoff.message === "string" ? handoff.message : "", /<workflow_handoff event="completed">/);
   assert.match(typeof handoff.message === "string" ? handoff.message : "", /"message": "hello"/);
 });
 
@@ -556,7 +554,11 @@ export default async function workflow() {
 
   assert.deepEqual(harness.notifications.at(-1), { message: "Workflow 'fail' failed: workflow exploded", type: "error" });
   assert.deepEqual(harness.sentMessages, []);
-  assert.deepEqual(harness.sentUserMessages[0], { message: "Workflow 'fail' failed: workflow exploded", options: undefined });
+  assert.deepEqual(harness.sentUserMessages[0], {
+    message:
+      "<workflow_handoff event=\"failed\">\n<workflow_name>fail</workflow_name>\n<workflow_failure>Workflow 'fail' failed: workflow exploded</workflow_failure>\n</workflow_handoff>",
+    options: undefined,
+  });
   assert.equal(harness.widgetUpdates.at(-1), undefined);
 });
 
@@ -684,10 +686,12 @@ export default async function workflow({ message }) {
 
   assert.deepEqual(promptMessage.options, { deliverAs: "followUp" });
   const prompt = promptMessage.text;
-  assert.match(prompt, /Resolve input for workflow 'echo'/);
+  assert.match(prompt, /<workflow_instructions>/);
+  assert.match(prompt, /<workflow_metadata>\n\{"name":"echo"/);
+  assert.match(prompt, /<user_request>\nhello from natural language\n<\/user_request>/);
   assert.match(prompt, /call run_workflow/);
-  assert.match(prompt, /MUST try to resolve clear ambiguities/);
-  assert.match(prompt, /Ask a concise clarification question only when required input remains unknowable/);
+  assert.match(prompt, /Resolve clear ambiguities/);
+  assert.match(prompt, /Ask a concise clarification only when required input remains unknowable/);
   assert.match(prompt, /Treat bare text as the message field/);
   assert.match(prompt, /input\.message/);
   assert.doesNotMatch(prompt, /workflow\.js, for secondary context only/);
@@ -723,9 +727,13 @@ export default async function workflow({ repo, problem, mode = "fast" }) {
   assert.equal(harness.sentUserMessages.length, 1);
   assert.match(
     typeof harness.sentUserMessages[0].message === "string" ? harness.sentUserMessages[0].message : "",
+    /<workflow_handoff event="failed">/,
+  );
+  assert.match(
+    typeof harness.sentUserMessages[0].message === "string" ? harness.sentUserMessages[0].message : "",
     /missing required input: problem/,
   );
-  assert.match(typeof harness.sentUserMessages[0].message === "string" ? harness.sentUserMessages[0].message : "", /problem=<value>/);
+  assert.match(typeof harness.sentUserMessages[0].message === "string" ? harness.sentUserMessages[0].message : "", /problem=&lt;value&gt;/);
   assert.equal(harness.notifications.at(-1)?.type, "warning");
 });
 

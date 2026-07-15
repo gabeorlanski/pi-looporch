@@ -35,7 +35,7 @@ export default async function workflow() {
   assert.equal(result.snapshot.agents[0]?.cwd, scratch);
 });
 
-void test("workflow_agent_schema_retries_and_returns_parsed_json", async () => {
+void test("schema agent forwards its raw task and schema to the adapter", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
@@ -46,7 +46,6 @@ export default async function workflow() {
     label: "analysis",
     extensions: ["./extensions/todo.ts"],
     tools: ["read", "todo_write"],
-    maxAttempts: 2,
     schema: {
       type: "object",
       properties: { ok: { type: "boolean" }, summary: { type: "string" } },
@@ -57,11 +56,18 @@ export default async function workflow() {
 }`,
   );
   const prompts: string[] = [];
-  const optionsSeen: unknown[] = [];
+  const schemas: unknown[] = [];
   const agent: WorkflowAgent = (prompt, options) => {
     prompts.push(prompt);
-    optionsSeen.push(options);
-    return Promise.resolve(prompts.length === 1 ? '{"ok":"yes"}' : '{"ok":true,"summary":"done"}');
+    schemas.push(options.schema);
+    return Promise.resolve({
+      message: null,
+      name: "analysis",
+      steps: 1,
+      usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, total: 12 },
+      ok: true,
+      summary: "done",
+    });
   };
 
   const result = await runWorkflowFromDirectory({
@@ -72,125 +78,29 @@ export default async function workflow() {
     agent,
   });
 
-  assert.deepEqual(result.result, { ok: true, summary: "done" });
-  assert.equal(prompts.length, 2);
-  assert.match(prompts[0], /return exactly one JSON value that validates/);
-  assert.match(prompts[0], /Analyze the input/);
-  assert.match(prompts[1], /Repair the rejected response/);
-  assert.match(prompts[1], /\{"ok":"yes"\}/);
-  assert.doesNotMatch(prompts[1], /Schema-conforming example/);
-  assert.doesNotMatch(prompts[1], /Task:\nAnalyze the input/);
-  assert.deepEqual(
-    optionsSeen.map((options) => (options as { schema?: unknown; tools?: unknown }).schema),
-    [undefined, undefined],
-  );
-  assert.deepEqual(
-    optionsSeen.map((options) => Array.from((options as { extensions?: string[] }).extensions ?? [])),
-    [["./extensions/todo.ts"], []],
-  );
-  assert.deepEqual(
-    optionsSeen.map((options) => Array.from((options as { tools?: string[] }).tools ?? [])),
-    [["read", "todo_write"], []],
-  );
-  assert.equal(result.snapshot.agents.length, 2);
-  assert.deepEqual(result.snapshot.traces, [
-    {
-      label: "analysis schema validation failed",
-      phaseIndex: 0,
-      value: {
-        attempt: 1,
-        error:
-          'schema validation failed: / is missing required properties ["summary"]; received {"ok":"yes"}; /ok must be boolean; received "yes"',
-        rejectedResponse: '"{\\"ok\\":\\"yes\\"}"',
-      },
-    },
-  ]);
-});
-
-void test("structured agent preflights dynamic schemas before launching a child", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
-  await writeWorkflow(
-    project,
-    "invalid-dynamic-schema",
-    `export const metadata = { name: "invalid-dynamic-schema", description: "Invalid schema", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  const schema = { type: "string", pattern: "[" };
-  return agent("work", { schema });
-}`,
-  );
-  let launches = 0;
-  await assert.rejects(
-    runWorkflowFromDirectory({
-      maxParallelAgents: 4,
-      cwd: project,
-      workflowName: "invalid-dynamic-schema",
-      input: {},
-      agent: () => {
-        launches++;
-        return Promise.resolve("unused");
-      },
-    }),
-    /schema is invalid/,
-  );
-  assert.equal(launches, 0);
-});
-
-void test("structured repair receives bounded task context when the first response is empty", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
-  await writeWorkflow(
-    project,
-    "empty-structured-agent",
-    `export const metadata = { name: "empty-structured-agent", description: "Empty response", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return agent("Summarize the selected source without rerunning analysis.", { label: "summary", maxAttempts: 2, schema: { type: "string" } });
-}`,
-  );
-  const prompts: string[] = [];
-  const optionsSeen: unknown[] = [];
-  const result = await runWorkflowFromDirectory({
-    maxParallelAgents: 4,
-    cwd: project,
-    workflowName: "empty-structured-agent",
-    input: {},
-    agent: (prompt, options) => {
-      prompts.push(prompt);
-      optionsSeen.push(options);
-      return Promise.resolve(prompts.length === 1 ? undefined : '"done"');
-    },
+  assert.deepEqual(result.result, {
+    message: null,
+    name: "analysis",
+    steps: 1,
+    usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, total: 12 },
+    ok: true,
+    summary: "done",
   });
-
-  assert.equal(result.result, "done");
-  assert.match(prompts[1] ?? "", /Original task context/);
-  assert.match(prompts[1] ?? "", /Summarize the selected source/);
-  assert.deepEqual(Array.from((optionsSeen[1] as { extensions?: string[] }).extensions ?? []), []);
-  assert.deepEqual(Array.from((optionsSeen[1] as { tools?: string[] }).tools ?? []), []);
-  assert.equal((result.snapshot.traces[0]?.value as { rejectedResponse?: unknown }).rejectedResponse, "undefined");
-});
-
-void test("structured agent retains rejected output artifacts", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
-  const outputsDir = path.join(project, "outputs");
-  await writeWorkflow(
-    project,
-    "structured-artifacts",
-    `export const metadata = { name: "structured-artifacts", description: "Artifacts", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return agent("work", { label: "writer", maxAttempts: 2, schema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false } });
-}`,
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0], "Analyze the input");
+  assert.equal(
+    JSON.stringify(schemas),
+    JSON.stringify([
+      {
+        type: "object",
+        properties: { ok: { type: "boolean" }, summary: { type: "string" } },
+        required: ["ok", "summary"],
+        additionalProperties: false,
+      },
+    ]),
   );
-  const result = await runWorkflowFromDirectory({
-    maxParallelAgents: 4,
-    cwd: project,
-    workflowName: "structured-artifacts",
-    input: {},
-    outputsDir,
-    agent: () => Promise.resolve('{"ok":"no"}'),
-  }).catch((error: unknown) => error);
-  assert.match(String(result), /schema validation/);
-  const firstOutput = path.join(outputsDir, "outputs", "agent-001-writer.json");
-  const secondOutput = path.join(outputsDir, "outputs", "agent-002-writer-repair-2.json");
-  assert.equal(await readFile(firstOutput, "utf8"), '"{\\"ok\\":\\"no\\"}"\n');
-  assert.equal(await readFile(secondOutput, "utf8"), '"{\\"ok\\":\\"no\\"}"\n');
+  assert.equal(result.snapshot.agents.length, 1);
+  assert.deepEqual(result.snapshot.traces, []);
 });
 
 void test("workflow_emits_heartbeat_snapshots_while_agent_is_running", async () => {

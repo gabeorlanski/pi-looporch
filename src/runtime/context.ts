@@ -5,18 +5,6 @@ import type { ReasoningLevel, RunWorkflowOptions, WorkflowSnapshot } from "./typ
 /** A pipeline stage transforms one item. */
 export type PipelineStage<T> = (item: T, index: number) => Promise<T> | T;
 
-/** Options for child-agent coercion of text or context into schema-valid JSON. */
-export interface CoerceOptions {
-  schema: unknown;
-  prompt: string;
-  label?: string;
-  reasoning?: ReasoningLevel;
-  model?: string;
-  maxAttempts?: number;
-  extensions?: string[];
-  tools?: string[];
-}
-
 /** Options for splitting source context, mapping each item through agents, and reducing the mapped outputs. */
 export interface MapReduceOptions extends Record<string, unknown> {
   inputPrompt: string;
@@ -25,7 +13,6 @@ export interface MapReduceOptions extends Record<string, unknown> {
   label?: string;
   reasoning?: ReasoningLevel;
   model?: string;
-  maxAttempts?: number;
   extensions?: string[];
   tools?: string[];
 }

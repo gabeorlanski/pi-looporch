@@ -33,7 +33,7 @@ void test("guidance tool returns index and focused guidance", async () => {
 
   const all = await tool.execute("call-1", {}, undefined, undefined, {} as never);
   const allText = all.content[0]?.type === "text" ? all.content[0].text : "";
-  assert.match(allText, /Workflow design guidance/);
+  assert.match(allText, /<workflow_guidance/);
   assert.match(allText, /overview/);
   assert.match(allText, /workflow-api/);
   assert.match(allText, /prompt-files/);
@@ -43,7 +43,7 @@ void test("guidance tool returns index and focused guidance", async () => {
 
   const overview = await tool.execute("call-2", { topic: "overview" }, undefined, undefined, {} as never);
   const overviewText = overview.content[0]?.type === "text" ? overview.content[0].text : "";
-  assert.match(overviewText, /workflow_design_guidance: overview|Workflow design guidance: overview/);
+  assert.match(overviewText, /<workflow_guidance topic="overview">/);
   assert.match(overviewText, new RegExp(escapeRegExp(defaultWorkflowDraftRoot())));
   assert.match(overviewText, /prompts\/\*\.txt/);
   assertPrimitiveReferenceIsRendered(overviewText);
@@ -56,10 +56,10 @@ void test("guidance tool returns index and focused guidance", async () => {
 
   const promptFiles = await tool.execute("call-4", { topic: "prompt-files" }, undefined, undefined, {} as never);
   const promptFilesText = promptFiles.content[0]?.type === "text" ? promptFiles.content[0].text : "";
-  assert.match(promptFilesText, /stable Purpose, Definitions, Rules, and Output sections/);
-  assert.match(promptFilesText, /final Task instance or Inputs section/);
+  assert.match(promptFilesText, /&lt;workflow_instructions&gt;/);
+  assert.match(promptFilesText, /final typed sections/);
   assert.match(promptFilesText, /more than five distinct non-verifier prompts/);
-  assert.match(promptFilesText, /Keep the dynamic Task instance intentionally small/);
+  assert.match(promptFilesText, /Keep dynamic sections small/);
   assert.match(promptFilesText, /not every workflow input or global/);
   assert.match(promptFilesText, /\{\{file\}\}/);
   assert.match(promptFilesText, /Do not write JS template variables/);
@@ -67,10 +67,10 @@ void test("guidance tool returns index and focused guidance", async () => {
 
   const structured = await tool.execute("call-5", { topic: "structured-outputs" }, undefined, undefined, {} as never);
   const structuredText = structured.content[0]?.type === "text" ? structured.content[0].text : "";
-  assert.match(structuredText, /agent\(\{ template, values \}, \{ schema, maxAttempts \}\)/);
-  assert.match(structuredText, /maxLength/);
-  assert.match(structuredText, /same keys/);
-  assert.match(structuredText, /JSON-only repairs/);
+  assert.match(structuredText, /StructuredOutput/);
+  assert.match(structuredText, /prepended/);
+  assert.match(structuredText, /semantic/);
+  assert.match(structuredText, /does not call it fails/);
   assert.match(structuredText, /control surface/);
   assert.match(structuredText, /JSONL\/artifact files/);
   assert.doesNotMatch(structuredText, /verifier\(/);
@@ -89,7 +89,7 @@ void test("every workflow guidance topic loads its prompt file", () => {
     "artifacts",
   ]) {
     const guidance = workflowDesignGuidance(topic);
-    assert.match(guidance, new RegExp(`Workflow design guidance: ${topic}`));
+    assert.match(guidance, new RegExp(`<workflow_guidance topic="${topic}">`));
     assert.doesNotMatch(guidance, /\{\{(?:draftRoot|primitiveReference)\}\}/);
   }
   assertPrimitiveReferenceIsRendered(workflowDesignGuidance("overview"));
@@ -149,8 +149,9 @@ export default async function workflow(input) {
   assert.deepEqual(sentUserMessages[0]?.options, undefined);
   assert.deepEqual(notifications, ["Workflow 'echo' complete."]);
   const completionHandoff = sentUserMessages[0]?.message ?? "";
-  assert.match(completionHandoff, /Automated workflow completion handoff: workflow 'echo' completed/);
-  assert.match(completionHandoff, /Result:\n\n```json/);
+  assert.match(completionHandoff, /<workflow_handoff event="completed">/);
+  assert.match(completionHandoff, /<workflow_metadata>\n\{"workflowName":"echo"/);
+  assert.match(completionHandoff, /<workflow_result>\nResult:\n\n```json/);
   assert.match(completionHandoff, /helper:say hi/);
   assert.match(completionHandoff, /- Workflow result: .*final\.json/);
   assert.match(completionHandoff, /- Workflow outputs: /);
@@ -195,7 +196,13 @@ export default async function workflow() {
   await waitForCondition(() => notifications.some((notification) => notification.type === "error"));
 
   assert.deepEqual(notifications, [{ message: "Workflow 'fail' failed: tool exploded", type: "error" }]);
-  assert.deepEqual(sentUserMessages, [{ message: "Workflow 'fail' failed: tool exploded", options: undefined }]);
+  assert.deepEqual(sentUserMessages, [
+    {
+      message:
+        "<workflow_handoff event=\"failed\">\n<workflow_name>fail</workflow_name>\n<workflow_failure>Workflow 'fail' failed: tool exploded</workflow_failure>\n</workflow_handoff>",
+      options: undefined,
+    },
+  ]);
 });
 
 void test("run tool skips notifications after shutdown", async () => {
@@ -457,28 +464,6 @@ export default async function workflow() {
       assert.match(String(error), /No workflow files were saved\./);
       return true;
     },
-  );
-  assert.equal(await readFile(published, "utf8"), "published workflow");
-});
-
-void test("propose workflow rejects invalid literal schemas before replacing a workflow", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
-  const draftDir = path.join(project, ".pi", "workflow-drafts", "summarize");
-  const published = path.join(project, ".pi", "workflows", "summarize", "workflow.js");
-  await mkdir(path.dirname(published), { recursive: true });
-  await writeFile(published, "published workflow", "utf8");
-  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return agent("work", { schema: { type: "string", pattern: "[" } });
-}`;
-  await mkdir(draftDir, { recursive: true });
-  await writeFile(path.join(draftDir, "workflow.js"), source, "utf8");
-  const tool = createWorkflowTools({ cwd: project }).find((candidate) => candidate.name === "propose_workflow");
-  assert.ok(tool);
-
-  await assert.rejects(
-    tool.execute("call-invalid", { name: "summarize", draftDir: path.relative(project, draftDir) }, undefined, undefined, {} as never),
-    /agent schema.*schema is invalid/,
   );
   assert.equal(await readFile(published, "utf8"), "published workflow");
 });

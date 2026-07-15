@@ -89,15 +89,24 @@ A workflow directory contains `workflow.js` and optional prompt files:
 
 `workflow.js` exports static `metadata` and a default async function. Workflow
 code runs in a sandbox with globals such as `agent`, `parallel`, `pipeline`,
-`coerce`, `mapreduce`, `verifier`, `phase`, `log`, `trace`, and file helpers.
+`mapreduce`, `verifier`, `phase`, `log`, `trace`, and file helpers.
 Reusable child prompts live in `prompts/*.txt` and launch through
 `agent({ template, values }, options)`; `renderPrompt` remains available for
-exceptional composition.
+exceptional composition. Use a stable `<workflow_instructions>` prefix and put
+workflow-supplied task data in final typed sections such as `<workflow_task>`
+or `<workflow_inputs>`; this distinguishes it from user text and improves prompt
+cache reuse.
 
-`agent`, `coerce`, `mapreduce`, and `verifier` accept `extensions` and `tools`
+`agent`, `mapreduce`, and `verifier` accept `extensions` and `tools`
 string lists. Omit either list to inherit workflow settings; use `[]` for none.
 Naming an extension-owned tool loads its extension while keeping the tool list
 exact.
+
+Pass an object JSON Schema as `agent(..., { schema })` when a child must return
+structured fields. The runtime prepends the schema and exposes a terminal
+`StructuredOutput` tool whose keyword arguments are validated by Pi. Calling it
+ends the child; results always include `message`, `name`, `steps`, and standard
+token `usage` metadata.
 
 Agents can call `workflow_design_guidance` for focused authoring help. Its
 primitive reference is generated from the runtime primitive registry so supported

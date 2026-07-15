@@ -3,6 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { createPiWorkflowAgent } from "../src/pi-agent.ts";
 import type { WorkflowAgentProgress, WorkflowAgentReporter } from "../src/runtime/types.ts";
 import {
   workflowAgentLogEvent,
@@ -11,6 +12,221 @@ import {
   createWorkflowAgentProgressTracker,
   workflowAgentFailureMessage,
 } from "../src/pi-agent.ts";
+
+void test("schema agents validate and return terminal output", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
+  let terminalTool:
+    | {
+        execute: (
+          toolCallId: string,
+          params: unknown,
+          signal: AbortSignal | undefined,
+          onUpdate: unknown,
+          context: { abort(): void },
+        ) => Promise<unknown>;
+        parameters: unknown;
+      }
+    | undefined;
+  let sessionTools: string[] | undefined;
+  let aborted = false;
+  const agent = createPiWorkflowAgent({
+    cwd: project,
+    tools: [],
+    createSession: (options) => {
+      if (!options) throw new Error("Expected session options");
+      sessionTools = options.tools;
+      terminalTool = options.customTools?.find((tool) => tool.name === "StructuredOutput") as typeof terminalTool;
+      return {
+        session: {
+          model: undefined,
+          messages: [],
+          subscribe: () => () => undefined,
+          prompt: async () => {
+            if (!terminalTool) throw new Error("Expected StructuredOutput");
+            await assert.rejects(
+              terminalTool.execute("output-invalid", { status: 42 }, undefined, undefined, {
+                abort: () => (aborted = true),
+              }),
+              /arguments do not match its schema/,
+            );
+            await assert.rejects(
+              terminalTool.execute("output-runtime", { name: "forged", status: "pass" }, undefined, undefined, {
+                abort: () => (aborted = true),
+              }),
+              /arguments do not match its schema/,
+            );
+            assert.equal(aborted, false);
+            await terminalTool.execute("output-1", { message: "Completed", status: "pass" }, undefined, undefined, {
+              abort: () => (aborted = true),
+            });
+          },
+          getSessionStats: () => ({
+            tokens: { input: 10, output: 2, cacheRead: 4, cacheWrite: 1, total: 17 },
+          }),
+          dispose: () => undefined,
+        },
+        extensionsResult: options.resourceLoader?.getExtensions(),
+      } as never;
+    },
+  });
+
+  const result = await agent(
+    "work",
+    {
+      label: "analysis",
+      schema: {
+        type: "object",
+        properties: { status: { type: "string", description: "The final outcome." } },
+        required: ["status"],
+        additionalProperties: true,
+      },
+      extensions: [],
+      tools: [],
+    },
+    {
+      launched(): void {
+        return undefined;
+      },
+      progress(): void {
+        return undefined;
+      },
+    },
+  );
+
+  assert.deepEqual(sessionTools, ["StructuredOutput"]);
+  assert.ok(terminalTool);
+  assert.match(JSON.stringify(terminalTool.parameters), /"message"/);
+  assert.match(JSON.stringify(terminalTool.parameters), /"status"/);
+  assert.equal(aborted, true);
+  assert.deepEqual(result, {
+    message: "Completed",
+    name: "analysis",
+    steps: 0,
+    usage: { input: 10, output: 2, cacheRead: 4, cacheWrite: 1, total: 17 },
+    status: "pass",
+  });
+});
+
+void test("schema agents preserve unrestricted tools", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
+  let sessionTools: string[] | undefined;
+  const agent = createPiWorkflowAgent({
+    cwd: project,
+    tools: [],
+    agentCapabilityCatalog: () => Promise.resolve({ availableExtensions: [], baseToolNames: [], customToolNames: [], loadErrors: [] }),
+    createSession: (options) => {
+      if (!options) throw new Error("Expected session options");
+      sessionTools = options.tools;
+      return {
+        session: {
+          model: undefined,
+          messages: [],
+          subscribe: () => () => undefined,
+          prompt: () => Promise.resolve(),
+          getSessionStats: () => ({ tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, total: 2 } }),
+          dispose: () => undefined,
+        },
+        extensionsResult: options.resourceLoader?.getExtensions(),
+      } as never;
+    },
+  });
+
+  await assert.rejects(
+    agent(
+      "work",
+      { schema: { type: "object", properties: { status: { type: "string" } }, required: ["status"] } },
+      {
+        launched(): void {
+          return undefined;
+        },
+        progress(): void {
+          return undefined;
+        },
+      },
+    ),
+    /must finish by calling StructuredOutput/,
+  );
+  assert.equal(sessionTools, undefined);
+});
+
+void test("schema-less agents return final assistant text without StructuredOutput", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
+  let sessionTools: string[] | undefined;
+  let customToolNames: string[] | undefined;
+  const agent = createPiWorkflowAgent({
+    cwd: project,
+    tools: [],
+    createSession: (options) => {
+      if (!options) throw new Error("Expected session options");
+      sessionTools = options.tools;
+      customToolNames = options.customTools?.map((tool) => tool.name);
+      return {
+        session: {
+          model: undefined,
+          messages: [{ role: "assistant", content: [{ type: "text", text: "Plain completion" }] }],
+          subscribe: () => () => undefined,
+          prompt: () => Promise.resolve(),
+          getSessionStats: () => ({
+            tokens: { input: 10, output: 2, cacheRead: 4, cacheWrite: 1, total: 17 },
+          }),
+          dispose: () => undefined,
+        },
+        extensionsResult: options.resourceLoader?.getExtensions(),
+      } as never;
+    },
+  });
+
+  const result = await agent(
+    "work",
+    { label: "analysis", extensions: [], tools: [] },
+    {
+      launched(): void {
+        return undefined;
+      },
+      progress(): void {
+        return undefined;
+      },
+    },
+  );
+
+  assert.deepEqual(sessionTools, []);
+  assert.deepEqual(customToolNames, []);
+  assert.deepEqual(result, {
+    message: "Plain completion",
+    name: "analysis",
+    steps: 0,
+    usage: { input: 10, output: 2, cacheRead: 4, cacheWrite: 1, total: 17 },
+  });
+});
+
+void test("schema agents reserve runtime fields", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
+  const agent = createPiWorkflowAgent({ cwd: project, tools: [] });
+
+  await assert.rejects(
+    agent(
+      "work",
+      {
+        schema: {
+          type: "object",
+          properties: { status: { type: "string" } },
+          required: ["status", "message"],
+        },
+        extensions: [],
+        tools: [],
+      },
+      {
+        launched(): void {
+          return undefined;
+        },
+        progress(): void {
+          return undefined;
+        },
+      },
+    ),
+    /reserved property "message"/,
+  );
+});
 
 void test("workflow_agent_surfaces_terminal_provider_errors", () => {
   assert.equal(

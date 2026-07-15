@@ -21,12 +21,11 @@ function catalogProvider(
     });
 }
 
-void test("proposal capability validation accepts top-level const lists on every agent-calling primitive", async () => {
+void test("proposal capability validation accepts top-level const lists on every agent-launching primitive", async () => {
   const source = `const EXTENSIONS = ["todo"];
 const TOOLS = ["todo_write"];
 export default async function workflow() {
   await agent("work", { extensions: EXTENSIONS, tools: TOOLS });
-  await coerce({ prompt: "shape", schema: true, extensions: [], tools: [] });
   await mapreduce({ inputPrompt: "input", mapPrompt: "map", reducePrompt: "reduce", extensions: EXTENSIONS, tools: TOOLS });
   return verifier({ criteria: [], criteriaPrompt: "vote", reducePrompt: "reduce", extensions: EXTENSIONS, tools: TOOLS });
 }`;
@@ -49,7 +48,6 @@ export default async function workflow() {
   await agent("spread", { ...options });
   await agent("duplicate", { tools: ["read"], tools: ["missing_duplicate"] });
   await agent("computed", { ["tools"]: ["missing_computed"] });
-  await coerce({ prompt: "shape", schema: true, tools: getTools() });
   await mapreduce(options);
   return verifier({ criteria: [], criteriaPrompt: "vote", reducePrompt: "reduce", extensions: ["missing"], tools: ["missing_tool"] });
 }`;
@@ -72,7 +70,6 @@ export default async function workflow() {
       assert.match(message, /agent tools: Agent primitive options cannot use spreads/);
       assert.match(message, /agent tools: Capability must be specified at most once/);
       assert.match(message, /agent tools\[0\] "missing_computed": Unknown tool/);
-      assert.match(message, /coerce tools "getTools\(\)": Capability selection must be an inline array/);
       assert.match(message, /mapreduce extensions: Agent primitive options must be an object literal/);
       assert.match(message, /mapreduce tools: Agent primitive options must be an object literal/);
       assert.match(message, /verifier extensions\[0\] "missing": Unknown extension/);
@@ -199,12 +196,10 @@ void test("proposal capability validation ignores locally shadowed primitive nam
   let catalogLoads = 0;
   await validateWorkflowAgentCapabilities({
     source: `const agent = () => undefined;
-const coerce = () => undefined;
 const mapreduce = () => undefined;
 const verifier = () => undefined;
 export default async function workflow() {
   agent("work", { tools: ["missing"] });
-  coerce({ tools: ["missing"] });
   mapreduce({ tools: ["missing"] });
   return verifier({ tools: ["missing"] });
 }`,

@@ -2,6 +2,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { BackgroundWorkflowRun } from "../workflow/background-runs.ts";
 import { errorMessage } from "../errors.ts";
+import { workflowFailureHandoffPrompt } from "../prompt-templates.ts";
 import type { WorkflowAgent, WorkflowSnapshot } from "../runtime/types.ts";
 import { WorkflowInputError } from "../workflow/input-contract.ts";
 import { prepareWorkflowRun, startPreparedWorkflowRun, type PreparedWorkflowRun } from "../workflow/start.ts";
@@ -147,7 +148,7 @@ function failVisibleWorkflowRun(
   const message = error instanceof WorkflowInputError ? error.message : `Workflow '${workflowName}' failed: ${errorMessage(error)}`;
   try {
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
-    sendWorkflowUserMessage(ctx, sendUserMessage, message);
+    sendWorkflowUserMessage(ctx, sendUserMessage, workflowFailureHandoffPrompt(workflowName, message));
   } catch (handlingError) {
     ctx.ui.notify(`Workflow '${workflowName}' failed, but failure handling failed: ${errorMessage(handlingError)}`, "error");
   }

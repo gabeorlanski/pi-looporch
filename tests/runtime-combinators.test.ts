@@ -7,58 +7,7 @@ import type { WorkflowAgent } from "../src/runtime/types.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
 import { writeWorkflow } from "./runtime-helpers.ts";
 
-void test("workflow_coerces_agent_output_to_json_schema", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
-  await writeWorkflow(
-    project,
-    "coerce",
-    `export const metadata = { name: "coerce", description: "Coerce output", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return coerce({
-    schema: {
-      type: "object",
-      properties: { title: { type: "string" }, score: { type: "number" } },
-      required: ["title", "score"],
-      additionalProperties: false,
-    },
-    prompt: "Extract a title and score",
-    label: "extract result",
-    extensions: ["./extensions/extract.ts"],
-    tools: ["read", "extract_fields"],
-    maxAttempts: 2,
-  });
-}`,
-  );
-  const agentOptions: unknown[] = [];
-  const prompts: string[] = [];
-  const agent: WorkflowAgent = (prompt, options) => {
-    prompts.push(prompt);
-    agentOptions.push(options);
-    return Promise.resolve(prompts.length === 1 ? "not json" : '{"title":"Ready","score":4}');
-  };
-
-  const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "coerce", input: {}, agent });
-
-  assert.deepEqual(result.result, { title: "Ready", score: 4 });
-  assert.equal(prompts.length, 2);
-  assert.match(prompts[1], /Repair the rejected response/);
-  assert.match(prompts[1], /not json/);
-  assert.deepEqual(
-    agentOptions.map((options) => Array.from((options as { extensions?: string[] }).extensions ?? [])),
-    [["./extensions/extract.ts"], []],
-  );
-  assert.deepEqual(
-    agentOptions.map((options) => Array.from((options as { tools?: string[] }).tools ?? [])),
-    [["read", "extract_fields"], []],
-  );
-  assert.equal(result.snapshot.agents.length, 2);
-  assert.deepEqual(
-    result.snapshot.agents.map((agentSnapshot) => agentSnapshot.label),
-    ["extract result", "extract result repair 2"],
-  );
-});
-
-void test("mapreduce coerces, maps, and reduces items", async () => {
+void test("mapreduce uses terminal items", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
@@ -73,7 +22,6 @@ export default async function workflow() {
     label: "letter work",
     extensions: ["./extensions/letters.ts"],
     tools: ["read", "letter_lookup"],
-    maxAttempts: 1,
   });
 }`,
   );
@@ -82,21 +30,28 @@ export default async function workflow() {
   const agent: WorkflowAgent = (prompt, options) => {
     prompts.push(prompt);
     agentOptions.push(options);
-    if (prompt.includes("Split letters into items")) return Promise.resolve('{"items":["alpha","beta"]}');
-    if (prompt === "Map alpha for letters at 0") return Promise.resolve("mapped alpha");
-    if (prompt === "Map beta for letters at 1") return Promise.resolve("mapped beta");
-    if (prompt === 'Reduce ["mapped alpha","mapped beta"] for letters') return Promise.resolve("reduced letters");
-    return Promise.resolve(`unexpected: ${prompt}`);
+    const result = { name: options.label ?? "agent", steps: 1, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, total: 2 } };
+    if (prompt.includes("Split letters into items")) return Promise.resolve({ ...result, message: null, items: ["alpha", "beta"] });
+    if (prompt === "Map alpha for letters at 0") return Promise.resolve({ ...result, message: "mapped alpha" });
+    if (prompt === "Map beta for letters at 1") return Promise.resolve({ ...result, message: "mapped beta" });
+    if (prompt.startsWith("Reduce [")) return Promise.resolve({ ...result, message: "reduced letters" });
+    return Promise.resolve({ ...result, message: `unexpected: ${prompt}` });
   };
 
   const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "mapreduce", input: {}, agent });
 
-  assert.equal(result.result, "reduced letters");
+  assert.deepEqual(result.result, {
+    message: "reduced letters",
+    name: "letter work reduce",
+    steps: 1,
+    usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, total: 2 },
+  });
   assert.equal(prompts.length, 4);
   assert.deepEqual(
     agentOptions.map((options) => Array.from((options as { extensions?: string[] }).extensions ?? [])),
     Array.from({ length: 4 }, () => ["./extensions/letters.ts"]),
   );
+  assert.equal((agentOptions[0] as { schema?: unknown }).schema !== undefined, true);
   assert.deepEqual(
     agentOptions.map((options) => Array.from((options as { tools?: string[] }).tools ?? [])),
     Array.from({ length: 4 }, () => ["read", "letter_lookup"]),

@@ -1,3 +1,4 @@
+/** Provides status behavior. */
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { renderWorkflowStatus, renderWorkflowStatusJson, renderWorkflowStatusList } from "../../src/display/workflow-status.ts";
 import { readSelectedWorkflowStatus, readWorkflowStatusList, type WorkflowStatusQuery } from "../../src/workflow/status.ts";
@@ -12,6 +13,7 @@ interface WorkflowStatusCommandArgs {
   format: "summary" | "json";
 }
 
+/** Provides the workflowStatusCommand function contract. */
 export async function workflowStatusCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
   try {
     const parsed = parseWorkflowStatusArgs(args);

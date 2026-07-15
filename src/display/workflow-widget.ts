@@ -1,8 +1,10 @@
+/** Provides workflow widget behavior. */
 import type { Component } from "@earendil-works/pi-tui";
 import type { WorkflowInspectorModel } from "./workflow-inspector-model.ts";
 import type { WorkflowTuiTheme } from "./workflow-tui-format.ts";
 import { fmtDuration, fmtTokens, glyph, padTo, spinnerFrame, truncEnd, width } from "./workflow-tui-format.ts";
 
+/** Provides the WorkflowWidget class contract. */
 export class WorkflowWidget implements Component {
   constructor(
     private readonly getModel: () => WorkflowInspectorModel,

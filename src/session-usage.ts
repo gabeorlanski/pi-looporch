@@ -1,3 +1,4 @@
+/** Provides session usage behavior. */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
@@ -7,6 +8,7 @@ export interface TokenUsage {
   total: number;
 }
 
+/** Provides the parseSessionTokens function contract. */
 export function parseSessionTokens(sessionDir: string): TokenUsage | null {
   const sessionFile = findLatestSessionFile(sessionDir);
   if (!sessionFile) return null;
@@ -32,6 +34,7 @@ export function parseSessionTokens(sessionDir: string): TokenUsage | null {
   }
 }
 
+/** Provides the workflowTokenUsageFromMessage function contract. */
 export function workflowTokenUsageFromMessage(value: unknown): { inputTokenCount: number; outputTokenCount: number } {
   if (typeof value !== "object" || value === null) return { inputTokenCount: 0, outputTokenCount: 0 };
   const usage = normalizeTokenUsage((value as { usage?: unknown }).usage);

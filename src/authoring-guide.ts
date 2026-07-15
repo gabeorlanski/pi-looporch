@@ -1,3 +1,4 @@
+/** Provides authoring guide behavior. */
 import { readFileSync } from "node:fs";
 import { renderWorkflowPrimitiveReference } from "./runtime/globals.ts";
 import { defaultWorkflowDraftRoot } from "./workflow/drafts.ts";
@@ -32,6 +33,7 @@ const designTopics: DesignTopic[] = [
   { name: "artifacts", summary: "How to handle large generated outputs and resource files.", promptFile: "artifacts.txt" },
 ];
 
+/** Provides the workflowDesignGuidance function contract. */
 export function workflowDesignGuidance(topic?: string): string {
   if (!topic) return workflowDesignTopicIndex();
   const selectedTopic = designTopics.find((candidate) => candidate.name === topic);

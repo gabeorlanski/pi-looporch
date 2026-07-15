@@ -1,3 +1,4 @@
+/** Provides running workflow ui behavior. */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { matchesKey, type TUI } from "@earendil-works/pi-tui";
 import { readActiveWorkflowSnapshots } from "../workflow/active-run-snapshots.ts";
@@ -47,6 +48,7 @@ const runningWorkflowUiStates = new WeakMap<ExtensionContext, RunningWorkflowUiS
 const runningWorkflowUiStatesByScope = new Map<string, RunningWorkflowUiState>();
 const refreshStatesByScope = new Map<string, RefreshState>();
 
+/** Provides the beginDynamicWorkflow function contract. */
 export function beginDynamicWorkflow(ctx: ExtensionContext): { done: () => void } {
   let done = false;
   dynamicWorkflowCounts.set(ctx, dynamicWorkflowCount(ctx) + 1);
@@ -61,6 +63,7 @@ export function beginDynamicWorkflow(ctx: ExtensionContext): { done: () => void 
   };
 }
 
+/** Provides the restoreRunningWorkflowUi function contract. */
 export async function restoreRunningWorkflowUi(ctx: ExtensionContext): Promise<number> {
   if (ctx.mode !== "tui") return 0;
   const scope = extensionSessionScope(ctx);
@@ -82,6 +85,7 @@ export async function restoreRunningWorkflowUi(ctx: ExtensionContext): Promise<n
   return restoredCount;
 }
 
+/** Provides the updateRunningWorkflowUi function contract. */
 export function updateRunningWorkflowUi(ctx: ExtensionContext, update: RunningWorkflowUiUpdate): void {
   const existing = runningWorkflowUiStates.get(ctx);
   const state = existing ?? installRunningWorkflowUi(ctx, update);
@@ -98,6 +102,7 @@ export function updateRunningWorkflowUi(ctx: ExtensionContext, update: RunningWo
   requestRender(state);
 }
 
+/** Provides the openRunningWorkflowInspector function contract. */
 export async function openRunningWorkflowInspector(ctx: ExtensionContext): Promise<boolean> {
   const state = findRunningWorkflowUiState(ctx);
   if (!state || state.runs.size === 0) return false;
@@ -105,6 +110,7 @@ export async function openRunningWorkflowInspector(ctx: ExtensionContext): Promi
   return true;
 }
 
+/** Provides the clearRunningWorkflowUi function contract. */
 export function clearRunningWorkflowUi(ctx: ExtensionContext, runId?: string): void {
   const scope = extensionSessionScope(ctx);
   const state = runningWorkflowUiStates.get(ctx) ?? runningWorkflowUiStatesByScope.get(scope);

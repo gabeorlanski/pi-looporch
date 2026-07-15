@@ -1,3 +1,4 @@
+/** Provides source analysis behavior. */
 import * as ts from "typescript";
 
 export interface SourceEdit {
@@ -12,6 +13,7 @@ export interface WorkflowSourceAnalysis {
   moduleEdits: SourceEdit[];
 }
 
+/** Provides the analyzeWorkflowSource function contract. */
 export function analyzeWorkflowSource(source: string, filePath = "workflow.js"): WorkflowSourceAnalysis {
   const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   return {

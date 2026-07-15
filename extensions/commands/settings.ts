@@ -1,3 +1,4 @@
+/** Provides settings behavior. */
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
@@ -10,6 +11,7 @@ import {
 } from "../../src/workflow/settings.ts";
 import { WORKFLOW_MESSAGE_TYPE } from "../messages.ts";
 
+/** Provides the workflowSettingsCommand function contract. */
 export async function workflowSettingsCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
   const trimmed = args.trim();
   if (trimmed) {

@@ -155,7 +155,9 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
     ): Promise<T> {
       customOpenCount++;
       return await new Promise<T>((resolve) => {
-        closeActiveCustom = () => resolve(undefined as T);
+        closeActiveCustom = () => {
+          resolve(undefined as T);
+        };
         activeCustom = factory(
           {
             terminal: { rows: 32 },

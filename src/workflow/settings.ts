@@ -1,3 +1,4 @@
+/** Provides settings behavior. */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isMissingFileError } from "../errors.ts";
@@ -29,20 +30,24 @@ function projectSettingsPath(cwd: string): string {
   return path.join(cwd, ".pi", "settings.json");
 }
 
+/** Provides the readWorkflowSettings function contract. */
 export async function readWorkflowSettings(cwd: string, agentDir: string): Promise<WorkflowSettings> {
   const globalWorkflow = await readWorkflowSettingsObject(globalSettingsPath(agentDir));
   const projectWorkflow = await readWorkflowSettingsObject(projectSettingsPath(cwd));
   return normalizeWorkflowSettings({ ...globalWorkflow, ...projectWorkflow });
 }
 
+/** Provides the readProjectWorkflowSettings function contract. */
 export async function readProjectWorkflowSettings(cwd: string): Promise<WorkflowSettings> {
   return normalizeWorkflowSettings(await readWorkflowSettingsObject(projectSettingsPath(cwd)));
 }
 
+/** Provides the writeGlobalWorkflowSettings function contract. */
 export async function writeGlobalWorkflowSettings(agentDir: string, settings: WorkflowSettingsPatch): Promise<void> {
   await writeWorkflowSettingsFile(globalSettingsPath(agentDir), settings);
 }
 
+/** Provides the writeProjectWorkflowSettings function contract. */
 export async function writeProjectWorkflowSettings(cwd: string, settings: WorkflowSettingsPatch): Promise<void> {
   await writeWorkflowSettingsFile(projectSettingsPath(cwd), settings);
 }

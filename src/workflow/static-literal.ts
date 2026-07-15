@@ -1,3 +1,4 @@
+/** Provides static literal behavior. */
 import * as ts from "typescript";
 
 /** Reads a JSON-like AST literal without evaluating workflow code. */
@@ -25,6 +26,7 @@ export function readStaticJsonLiteral(node: ts.Expression, sourceFile: ts.Source
   throw new Error(`${path} must be static JSON-like literals`);
 }
 
+/** Provides the isStaticJsonLiteral function contract. */
 export function isStaticJsonLiteral(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
   try {
     readStaticJsonLiteral(node, sourceFile, "value");
@@ -34,6 +36,7 @@ export function isStaticJsonLiteral(node: ts.Expression, sourceFile: ts.SourceFi
   }
 }
 
+/** Provides the staticPropertyName function contract. */
 export function staticPropertyName(name: ts.PropertyName, sourceFile: ts.SourceFile, path: string): string {
   if (ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name)) return name.text;
   throw new Error(`${path} cannot use computed property ${name.getText(sourceFile)}`);

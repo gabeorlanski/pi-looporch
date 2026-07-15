@@ -1,3 +1,4 @@
+/** Provides terminal structured-output tool behavior. */
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { TUnsafe } from "typebox";
 import { Check } from "typebox/value";
@@ -10,6 +11,7 @@ export interface StructuredOutput {
   result(): Output | undefined;
 }
 
+/** Creates a terminal StructuredOutput tool that validates and retains one schema-conforming result. */
 export function createStructuredOutput(schema: unknown): StructuredOutput {
   let value: Output | undefined;
   const parameters = outputParams(schema) as unknown as OutputParameters;

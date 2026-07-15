@@ -1,3 +1,4 @@
+/** Provides parallel behavior. */
 import type { WorkflowFanOutSnapshot } from ".././types.ts";
 import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
@@ -24,6 +25,7 @@ export const parallelPrimitive: WorkflowPrimitive<{
   }),
 };
 
+/** Provides the runParallel function contract. */
 export async function runParallel<T, R>(
   runtime: ActiveWorkflowRuntime,
   items: readonly T[],

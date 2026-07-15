@@ -1,3 +1,4 @@
+/** Provides draft save behavior. */
 import { cp, mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { isMissingFileError } from "../errors.ts";

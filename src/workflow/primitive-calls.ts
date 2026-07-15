@@ -1,3 +1,4 @@
+/** Provides primitive calls behavior. */
 import * as ts from "typescript";
 import { createWorkflowTypeChecker } from "./static-symbols.ts";
 

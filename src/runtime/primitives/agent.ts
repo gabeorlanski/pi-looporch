@@ -1,3 +1,4 @@
+/** Provides agent behavior. */
 import type {
   WorkflowAgentLaunchMetadata,
   WorkflowAgentOptions,
@@ -34,6 +35,7 @@ export const agentPrimitive: WorkflowPrimitive<{
   }),
 };
 
+/** Provides the runAgent function contract. */
 export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
   const task =
     agentOptions.schema === undefined

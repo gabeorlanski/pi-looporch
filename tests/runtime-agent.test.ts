@@ -102,7 +102,12 @@ export default async function workflow() {
   return agent("wait", { label: "slow" });
 }`,
   );
-  const agent: WorkflowAgent = () => new Promise((resolve) => setTimeout(() => resolve("done"), 1100));
+  const agent: WorkflowAgent = () =>
+    new Promise((resolve) =>
+      setTimeout(() => {
+        resolve("done");
+      }, 1100),
+    );
   let snapshots = 0;
 
   await runWorkflowFromDirectory({

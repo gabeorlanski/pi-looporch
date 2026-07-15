@@ -1,3 +1,4 @@
+/** Provides agent capability source behavior. */
 import * as ts from "typescript";
 import type { CapabilitySelection } from "./settings.ts";
 import { analyzeWorkflowPrimitiveCalls } from "./primitive-calls.ts";

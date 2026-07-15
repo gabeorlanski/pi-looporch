@@ -1,3 +1,4 @@
+/** Provides workflow monitor widget behavior. */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { readWorkflowStatusList, type WorkflowStatusQuery } from "../workflow/status.ts";
 import { extensionSessionScope } from "./session-scope.ts";
@@ -15,6 +16,7 @@ interface MonitorState {
 
 const monitorStatesByScope = new Map<string, MonitorState>();
 
+/** Provides the startWorkflowMonitorWidget function contract. */
 export function startWorkflowMonitorWidget(ctx: ExtensionContext): void {
   if (!ctx.hasUI) return;
   const scope = extensionSessionScope(ctx);
@@ -32,6 +34,7 @@ export function startWorkflowMonitorWidget(ctx: ExtensionContext): void {
   void refreshMonitor(ctx, state);
 }
 
+/** Provides the stopWorkflowMonitorWidget function contract. */
 export function stopWorkflowMonitorWidget(ctx: ExtensionContext): void {
   const scope = extensionSessionScope(ctx);
   const state = monitorStatesByScope.get(scope);

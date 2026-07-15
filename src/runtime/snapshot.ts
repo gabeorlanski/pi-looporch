@@ -1,6 +1,8 @@
+/** Provides snapshot behavior. */
 import type { WorkflowMetadata, WorkflowPhaseMetadata, WorkflowSnapshot } from "./types.ts";
 import { cloneSerializable } from "./serialization.ts";
 
+/** Provides the createInitialWorkflowSnapshot function contract. */
 export function createInitialWorkflowSnapshot(workflowName: string, metadata: WorkflowMetadata, input: unknown): WorkflowSnapshot {
   return {
     workflowName,

@@ -1,7 +1,9 @@
+/** Provides review behavior. */
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { workflowLogReviewMessage } from "../../src/log-review.ts";
 import { WORKFLOW_MESSAGE_TYPE } from "../messages.ts";
 
+/** Provides the reviewWorkflowCommand function contract. */
 export async function reviewWorkflowCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
   try {
     ctx.ui.notify("Reviewing workflow session logs for token-cost reduction", "info");

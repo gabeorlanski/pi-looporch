@@ -19,7 +19,7 @@ npm run check
 
 - Accept normalized inputs; do parsing/coercion in `extensions/` or tool boundaries.
 - Keep runtime logic strict and explicit; throw `Error` with actionable messages.
-- Add concise JSDoc contracts to exported declarations in public API modules covered by `npm run docs:check`.
+- Start every TypeScript module with a concise purpose JSDoc. Every exported callable declaration needs a leading JSDoc contract; ESLint enforces both rules.
 - Keep workflow primitive implementations under `runtime/primitives/`; add globals through the shared `WorkflowPrimitive` protocol in `runtime/context.ts` and `runtime/globals.ts` instead of ad hoc wiring.
 - Inject `WorkflowAgent`; never hardcode pi/model providers.
 - Put TUI and visible text rendering in `display/`; stateful running-workflow UI files may coordinate widgets/inspectors but should delegate workflow behavior to `workflow/` or `runtime/`.

@@ -1,5 +1,7 @@
+/** Provides serialization behavior. */
 import type { WorkflowSnapshot } from "./types.ts";
 
+/** Provides the cloneSnapshot function contract. */
 export function cloneSnapshot(snapshot: WorkflowSnapshot): WorkflowSnapshot {
   return {
     ...snapshot,
@@ -12,6 +14,7 @@ export function cloneSnapshot(snapshot: WorkflowSnapshot): WorkflowSnapshot {
   };
 }
 
+/** Provides the cloneSerializable function contract. */
 export function cloneSerializable(value: unknown): unknown {
   if (value === undefined || value === null || typeof value !== "object") return value;
   return JSON.parse(JSON.stringify(value)) as unknown;

@@ -11,7 +11,9 @@ export interface WorkflowUiAgent {
   model: string;
   status: WorkflowUiAgentStatus;
   inputTokens: number;
+  cachedTokens: number;
   outputTokens: number;
+  costUsd?: number;
   toolCalls: number;
   steps: number;
   durationSeconds: number;
@@ -40,7 +42,12 @@ export interface WorkflowUiWorkflow {
   agentsDone: number;
   agentsTotal: number;
   elapsed: number;
+  inputTokens: number;
+  cachedTokens: number;
+  outputTokens: number;
   tokensTotal: number;
+  costUsd: number;
+  costIncomplete: boolean;
   phases: WorkflowUiPhase[];
 }
 
@@ -69,6 +76,10 @@ export class WorkflowInspectorModel {
   workflow(): WorkflowUiWorkflow {
     const phases = workflowPhases(this.snapshot, this.now());
     const agentsDone = this.snapshot.agents.filter((agent) => agent.status !== "running").length;
+    const inputTokens = this.snapshot.agents.reduce((total, agent) => total + agent.inputTokenCount, 0);
+    const cachedTokens = this.snapshot.agents.reduce((total, agent) => total + agent.cacheReadTokenCount, 0);
+    const outputTokens = this.snapshot.agents.reduce((total, agent) => total + agent.outputTokenCount, 0);
+    const agentsWithUnknownCost = this.snapshot.agents.filter((agent) => agent.costUsd === undefined);
     return {
       name: `workflow ${this.snapshot.workflowName}`,
       subtitle: this.snapshot.description,
@@ -76,7 +87,12 @@ export class WorkflowInspectorModel {
       agentsDone,
       agentsTotal: this.snapshot.agents.length,
       elapsed: Math.max(0, Math.floor((this.now() - this.startedAt) / 1000)),
-      tokensTotal: this.snapshot.agents.reduce((total, agent) => total + agent.inputTokenCount + agent.outputTokenCount, 0),
+      inputTokens,
+      cachedTokens,
+      outputTokens,
+      tokensTotal: inputTokens + outputTokens,
+      costUsd: this.snapshot.agents.reduce((total, agent) => total + (agent.costUsd ?? 0), 0),
+      costIncomplete: agentsWithUnknownCost.length > 0,
       phases,
     };
   }
@@ -163,7 +179,9 @@ function uiAgent(agent: WorkflowAgentSnapshot, now: number): WorkflowUiAgent {
     model: agent.model ?? "default",
     status: agentStatus(agent.status),
     inputTokens: agent.inputTokenCount,
+    cachedTokens: agent.cacheReadTokenCount,
     outputTokens: agent.outputTokenCount,
+    costUsd: agent.costUsd,
     toolCalls: agent.toolCallCount,
     steps: agent.stepCount,
     durationSeconds: agentDurationSeconds(agent, now),

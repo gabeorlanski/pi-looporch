@@ -3,7 +3,18 @@ import { readFileSync } from "node:fs";
 import { type Component, type Focusable, matchesKey, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { WorkflowUiAgent, WorkflowUiPhase, WorkflowInspectorModel } from "./workflow-inspector-model.ts";
 import type { WorkflowTuiTheme } from "./workflow-tui-format.ts";
-import { fmtDuration, fmtTokens, glyph, joinColumns, padTo, panel, spinnerFrame, truncEnd, width } from "./workflow-tui-format.ts";
+import {
+  fmtCostUsd,
+  fmtDuration,
+  fmtTokens,
+  glyph,
+  joinColumns,
+  padTo,
+  panel,
+  spinnerFrame,
+  truncEnd,
+  width,
+} from "./workflow-tui-format.ts";
 
 type Level = "phases" | "detail";
 
@@ -44,10 +55,11 @@ export class WorkflowInspector implements Component, Focusable {
   render(termWidth: number): string[] {
     const height = Math.max(8, this.getHeight());
     const workflow = this.model.workflow();
-    const stats = `${String(workflow.agentsDone)}/${String(workflow.agentsTotal)} agents ${glyph.mid} ${fmtDuration(workflow.elapsed)}`;
     const statusTag =
       workflow.status === "error" ? this.theme.danger(" [error]") : workflow.status === "done" ? this.theme.ok(" [done]") : "";
-    const header = rightAlign(` ${this.theme.accent(this.theme.bold(workflow.name))}${statusTag}`, this.theme.dim(stats), termWidth);
+    const title = ` ${this.theme.accent(this.theme.bold(workflow.name))}${statusTag}`;
+    const stats = `${String(workflow.agentsDone)}/${String(workflow.agentsTotal)} agents ${glyph.mid} ${fmtDuration(workflow.elapsed)} ${glyph.mid} in ${fmtTokens(workflow.inputTokens)} ${glyph.mid} cached ${fmtTokens(workflow.cachedTokens)} ${glyph.mid} out ${fmtTokens(workflow.outputTokens)} ${glyph.mid} ${fmtCostUsd(workflow.costUsd, workflow.costIncomplete)}`;
+    const header = rightAlign(title, this.theme.dim(truncEnd(stats, Math.max(0, termWidth - width(title) - 1))), termWidth);
     const subtitle = padTo(` ${this.theme.dim(truncEnd(workflow.subtitle, termWidth - 2))}`, termWidth);
     const panelHeight = Math.max(3, height - 5);
     const body = this.level === "phases" ? this.renderPhases(termWidth, panelHeight) : this.renderDetail(termWidth, panelHeight);
@@ -156,7 +168,7 @@ export class WorkflowInspector implements Component, Focusable {
     push(`${agentGlyph(agent, this.model.tick, this.theme)} ${statusWord(agent.status)} ${glyph.mid} ${agent.model}`);
     push(
       this.theme.dim(
-        `${fmtTokens(agent.inputTokens)} in ${glyph.mid} ${fmtTokens(agent.outputTokens)} out ${glyph.mid} ${String(agent.toolCalls)} tools ${glyph.mid} ${String(agent.steps)} steps ${glyph.mid} ${fmtDuration(agent.durationSeconds, true)}`,
+        `${fmtTokens(agent.inputTokens)} in ${glyph.mid} ${fmtTokens(agent.cachedTokens)} cached ${glyph.mid} ${fmtTokens(agent.outputTokens)} out ${glyph.mid} ${fmtCostUsd(agent.costUsd ?? 0, agent.costUsd === undefined)} ${glyph.mid} ${String(agent.toolCalls)} tools ${glyph.mid} ${String(agent.steps)} steps ${glyph.mid} ${fmtDuration(agent.durationSeconds, true)}`,
       ),
     );
     push("");
@@ -229,7 +241,7 @@ function statusWord(status: WorkflowUiAgent["status"]): string {
 }
 
 function agentPreviewRow(agent: WorkflowUiAgent, rowWidth: number, tick: number, theme: WorkflowTuiTheme): string {
-  const stats = `${fmtTokens(agent.inputTokens + agent.outputTokens)} tok ${glyph.mid} ${String(agent.toolCalls)} tools ${glyph.mid} ${fmtDuration(agent.durationSeconds)}`;
+  const stats = `${fmtTokens(agent.inputTokens + agent.outputTokens)} tok ${glyph.mid} ${fmtTokens(agent.cachedTokens)} cached ${glyph.mid} ${fmtCostUsd(agent.costUsd ?? 0, agent.costUsd === undefined)} ${glyph.mid} ${String(agent.toolCalls)} tools ${glyph.mid} ${fmtDuration(agent.durationSeconds)}`;
   const left = `${agentGlyph(agent, tick, theme)} ${truncEnd(agent.displayName, Math.max(8, rowWidth - width(stats) - 14))}  ${theme.dim(agent.model)}`;
   return padTo(left, Math.max(0, rowWidth - width(stats))) + theme.dim(stats);
 }

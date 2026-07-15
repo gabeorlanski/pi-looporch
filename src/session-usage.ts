@@ -4,8 +4,12 @@ import path from "node:path";
 
 export interface TokenUsage {
   input: number;
+  cacheRead: number;
+  cacheWrite: number;
   output: number;
   total: number;
+  /** Exact USD total when every observed provider response reports it. */
+  costUsd?: number;
 }
 
 /** Provides the parseSessionTokens function contract. */
@@ -14,38 +18,79 @@ export function parseSessionTokens(sessionDir: string): TokenUsage | null {
   if (!sessionFile) return null;
   try {
     let input = 0;
+    let cacheRead = 0;
+    let cacheWrite = 0;
     let output = 0;
+    let costUsd = 0;
+    let costComplete = true;
+    let observedUsage = false;
     for (const line of readFileSync(sessionFile, "utf8").split("\n")) {
       if (!line.trim()) continue;
       try {
         const entry = JSON.parse(line) as { usage?: unknown; message?: { usage?: unknown } };
         const usage = normalizeTokenUsage(entry.usage ?? entry.message?.usage);
         if (usage) {
+          observedUsage = true;
           input += usage.input;
+          cacheRead += usage.cacheRead;
+          cacheWrite += usage.cacheWrite;
           output += usage.output;
+          if (usage.costUsd === undefined) costComplete = false;
+          else costUsd += usage.costUsd;
         }
       } catch {
         // Ignore malformed lines while scanning usage entries.
       }
     }
-    return { input, output, total: input + output };
+    return {
+      input,
+      cacheRead,
+      cacheWrite,
+      output,
+      total: input + cacheRead + cacheWrite + output,
+      ...(observedUsage && costComplete ? { costUsd } : {}),
+    };
   } catch {
     return null;
   }
 }
 
 /** Provides the workflowTokenUsageFromMessage function contract. */
-export function workflowTokenUsageFromMessage(value: unknown): { inputTokenCount: number; outputTokenCount: number } {
-  if (typeof value !== "object" || value === null) return { inputTokenCount: 0, outputTokenCount: 0 };
+export function workflowTokenUsageFromMessage(value: unknown): {
+  inputTokenCount: number;
+  cacheReadTokenCount: number;
+  outputTokenCount: number;
+  costUsd?: number;
+} {
+  if (typeof value !== "object" || value === null) return { inputTokenCount: 0, cacheReadTokenCount: 0, outputTokenCount: 0 };
   const usage = normalizeTokenUsage((value as { usage?: unknown }).usage);
-  return usage ? { inputTokenCount: usage.input, outputTokenCount: usage.output } : { inputTokenCount: 0, outputTokenCount: 0 };
+  return usage
+    ? {
+        inputTokenCount: usage.input,
+        cacheReadTokenCount: usage.cacheRead,
+        outputTokenCount: usage.output,
+        ...(usage.costUsd === undefined ? {} : { costUsd: usage.costUsd }),
+      }
+    : { inputTokenCount: 0, cacheReadTokenCount: 0, outputTokenCount: 0 };
 }
 
-function normalizeTokenUsage(value: unknown): { input: number; output: number } | null {
+function normalizeTokenUsage(
+  value: unknown,
+): { input: number; cacheRead: number; cacheWrite: number; output: number; costUsd?: number } | null {
   if (typeof value !== "object" || value === null) return null;
+  const properties = value as Record<string, unknown>;
+  const cost = properties.cost;
   return {
     input: tokenProperty(value, ["input", "inputTokens", "input_tokens", "promptTokens", "prompt_tokens", "inputTokenCount"]),
+    cacheRead: tokenProperty(value, ["cacheRead", "cache_read", "cacheReadTokens", "cache_read_tokens", "cache_read_input_tokens"]),
+    cacheWrite: tokenProperty(value, ["cacheWrite", "cache_write", "cacheWriteTokens", "cache_write_tokens"]),
     output: tokenProperty(value, ["output", "outputTokens", "output_tokens", "completionTokens", "completion_tokens", "outputTokenCount"]),
+    ...(typeof cost === "object" &&
+    cost !== null &&
+    typeof (cost as { total?: unknown }).total === "number" &&
+    Number.isFinite((cost as { total: number }).total)
+      ? { costUsd: (cost as { total: number }).total }
+      : {}),
   };
 }
 

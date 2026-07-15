@@ -6,7 +6,7 @@ import type { WorkflowSnapshot } from "../runtime/types.ts";
 import { extensionSessionScope } from "./session-scope.ts";
 import { WorkflowInspector } from "./workflow-inspector.ts";
 import { WorkflowInspectorModel } from "./workflow-inspector-model.ts";
-import { workflowTuiTheme } from "./workflow-tui-format.ts";
+import { fmtCostUsd, fmtTokens, glyph, workflowTuiTheme } from "./workflow-tui-format.ts";
 import { WorkflowWidget } from "./workflow-widget.ts";
 
 const RUNNING_WORKFLOW_WIDGET = "pi-workflow-running";
@@ -99,6 +99,7 @@ export function updateRunningWorkflowUi(ctx: ExtensionContext, update: RunningWo
     }
     existing.activeRunId = update.runId;
   }
+  updateWorkflowStatus(ctx, state);
   requestRender(state);
 }
 
@@ -115,8 +116,16 @@ export function clearRunningWorkflowUi(ctx: ExtensionContext, runId?: string): v
   const scope = extensionSessionScope(ctx);
   const state = runningWorkflowUiStates.get(ctx) ?? runningWorkflowUiStatesByScope.get(scope);
   if (state && runId) removeWorkflowRun(state, runId);
+  if (state && state.runs.size > 0) {
+    updateWorkflowStatus(ctx, state);
+    requestRender(state);
+    return;
+  }
   if (dynamicWorkflowCount(ctx) > 0) {
-    if (state) requestRender(state);
+    if (state) {
+      updateWorkflowStatus(ctx, state);
+      requestRender(state);
+    }
     return;
   }
   if (state?.animationTimer) clearInterval(state.animationTimer);
@@ -155,10 +164,12 @@ function installRunningWorkflowUi(ctx: ExtensionContext, update: RunningWorkflow
   runningWorkflowUiStatesByScope.set(extensionSessionScope(ctx), state);
   installWorkflowWidget(ctx, state);
   installWorkflowInputHandler(ctx, state);
+  updateWorkflowStatus(ctx, state);
   state.animationTimer = setInterval(() => {
     for (const run of state.runs.values()) run.model.advanceFrame();
     requestRender(state);
   }, ANIMATION_INTERVAL_MS);
+  state.animationTimer.unref();
   return state;
 }
 
@@ -248,6 +259,20 @@ function activeRun(state: RunningWorkflowUiState): RunningWorkflowRunState {
   const run = state.runs.get(state.activeRunId) ?? state.runs.values().next().value;
   if (!run) throw new Error("Running workflow UI has no active workflow run");
   return run;
+}
+
+function updateWorkflowStatus(ctx: ExtensionContext, state: RunningWorkflowUiState): void {
+  const workflows = [...state.runs.values()].map((run) => run.model.workflow());
+  const inputTokens = workflows.reduce((total, workflow) => total + workflow.inputTokens, 0);
+  const cachedTokens = workflows.reduce((total, workflow) => total + workflow.cachedTokens, 0);
+  const outputTokens = workflows.reduce((total, workflow) => total + workflow.outputTokens, 0);
+  const costUsd = workflows.reduce((total, workflow) => total + workflow.costUsd, 0);
+  const costIncomplete = workflows.some((workflow) => workflow.costIncomplete);
+  const prefix = workflows.length === 1 ? "Workflow" : `${String(workflows.length)} workflows`;
+  ctx.ui.setStatus(
+    RUNNING_WORKFLOW_STATUS,
+    `${prefix} ${glyph.mid} in ${fmtTokens(inputTokens)} ${glyph.mid} cached ${fmtTokens(cachedTokens)} ${glyph.mid} out ${fmtTokens(outputTokens)} ${glyph.mid} ${fmtCostUsd(costUsd, costIncomplete)}`,
+  );
 }
 
 function requestRender(state: RunningWorkflowUiState): void {

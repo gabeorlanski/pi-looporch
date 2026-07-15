@@ -25,7 +25,10 @@ interface NetStats {
   runningAgents: number;
   erroredAgents: number;
   inputTokenCount: number;
+  cachedTokenCount: number;
   outputTokenCount: number;
+  costUsd: number;
+  costIncomplete: boolean;
   toolCallCount: number;
 }
 
@@ -46,9 +49,13 @@ export function initialProgressDisplay(
     titleLine(`workflow ${workflowName}`, safeWidth, theme),
     ...optionalInputLine(input, safeWidth, theme),
     theme.fg("warning", fit("  STARTING · waiting for workflow runtime update", safeWidth)),
-    theme.fg("muted", fit("  NET 0/0 agents · in 0 · out 0 · total 0 · tools 0", safeWidth)),
+    theme.fg("muted", fit("  NET 0/0 agents · in 0 · cached 0 · out 0 · cost $0.00 · total 0 · tools 0", safeWidth)),
   ];
-  return { statusLine: `${workflowName}: STARTING · 0/0 agents · in 0 · out 0 · tools 0`, widgetLines, text: widgetLines.join("\n") };
+  return {
+    statusLine: `${workflowName}: STARTING · 0/0 agents · in 0 · cached 0 · out 0 · cost $0.00 · tools 0`,
+    widgetLines,
+    text: widgetLines.join("\n"),
+  };
 }
 
 /** Provides the progressDisplay function contract. */
@@ -56,7 +63,7 @@ export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDT
   const safeWidth = Math.max(MIN_WIDTH, width);
   const stats = netStats(snapshot);
   const state = workflowState(snapshot, stats);
-  const statusLine = `${snapshot.workflowName}: ${state.label} · ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · in ${formatTokenCount(stats.inputTokenCount)} · out ${formatTokenCount(stats.outputTokenCount)} · tools ${String(stats.toolCallCount)}`;
+  const statusLine = `${snapshot.workflowName}: ${state.label} · ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · in ${formatTokenCount(stats.inputTokenCount)} · cached ${formatTokenCount(stats.cachedTokenCount)} · out ${formatTokenCount(stats.outputTokenCount)} · cost ${formatCostUsd(stats.costUsd, stats.costIncomplete)} · tools ${String(stats.toolCallCount)}`;
   const widgetLines = [
     titleLine(`workflow ${snapshot.workflowName}`, safeWidth, theme),
     ...optionalInputLine(snapshot.input, safeWidth, theme),
@@ -74,6 +81,10 @@ export function formatTokenCount(tokenCount: number): string {
   if (tokenCount < 1000) return String(tokenCount);
   if (tokenCount < 1_000_000) return `${trimFixed(tokenCount / 1000)}k`;
   return `${trimFixed(tokenCount / 1_000_000)}M`;
+}
+
+function formatCostUsd(costUsd: number, incomplete: boolean): string {
+  return `$${costUsd.toFixed(2)}${incomplete ? "+" : ""}`;
 }
 
 function optionalInputLine(input: unknown, width: number, theme: ProgressTheme): string[] {
@@ -118,7 +129,9 @@ function agentLine(agent: WorkflowAgentSnapshot, width: number, theme: ProgressT
     agent.reasoning ?? "default",
     agent.model,
     `${formatTokenCount(agent.inputTokenCount)} in`,
+    `${formatTokenCount(agent.cacheReadTokenCount)} cached`,
     `${formatTokenCount(agent.outputTokenCount)} out`,
+    formatCostUsd(agent.costUsd ?? 0, agent.costUsd === undefined),
     `${String(agent.toolCallCount)} tools`,
     agent.status === "running" ? `${String(agent.stepCount)} steps` : undefined,
   ]
@@ -131,8 +144,8 @@ function netLine(snapshot: WorkflowSnapshot, stats: NetStats, width: number, the
   const totalTokenCount = stats.inputTokenCount + stats.outputTokenCount;
   return fit(
     `  ${theme.fg("muted", "NET")} ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · ` +
-      `${formatTokenCount(stats.inputTokenCount)} in · ${formatTokenCount(stats.outputTokenCount)} out · ` +
-      `${formatTokenCount(totalTokenCount)} total · ${String(stats.toolCallCount)} tools · ` +
+      `${formatTokenCount(stats.inputTokenCount)} in · ${formatTokenCount(stats.cachedTokenCount)} cached · ${formatTokenCount(stats.outputTokenCount)} out · ` +
+      `${formatCostUsd(stats.costUsd, stats.costIncomplete)} cost · ${formatTokenCount(totalTokenCount)} total · ${String(stats.toolCallCount)} tools · ` +
       `${String(snapshot.fanOuts.length)} ${snapshot.fanOuts.length === 1 ? "fanout" : "fanouts"}`,
     width,
   );
@@ -146,7 +159,10 @@ function netStats(snapshot: WorkflowSnapshot): NetStats {
     runningAgents: snapshot.agents.length - completedAgents,
     erroredAgents: snapshot.agents.filter((agent) => agent.status === "error").length,
     inputTokenCount: snapshot.agents.reduce((total, agent) => total + agent.inputTokenCount, 0),
+    cachedTokenCount: snapshot.agents.reduce((total, agent) => total + agent.cacheReadTokenCount, 0),
     outputTokenCount: snapshot.agents.reduce((total, agent) => total + agent.outputTokenCount, 0),
+    costUsd: snapshot.agents.reduce((total, agent) => total + (agent.costUsd ?? 0), 0),
+    costIncomplete: snapshot.agents.some((agent) => agent.costUsd === undefined),
     toolCallCount: snapshot.agents.reduce((total, agent) => total + agent.toolCallCount, 0),
   };
 }

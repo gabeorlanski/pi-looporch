@@ -26,7 +26,17 @@ void test("progress summarizes status, input, tokens, and agents", () => {
     phases: ["collect", "fanout"],
     traces: [{ label: "selected inputs", phaseIndex: 2, phase: "fanout", value: { count: 2 } }],
     agents: [
-      agent({ id: 1, phaseIndex: 1, phase: "collect", label: "inventory", status: "done", inputTokenCount: 1200, outputTokenCount: 900 }),
+      agent({
+        id: 1,
+        phaseIndex: 1,
+        phase: "collect",
+        label: "inventory",
+        status: "done",
+        inputTokenCount: 1200,
+        cacheReadTokenCount: 500,
+        outputTokenCount: 900,
+        costUsd: 0.1,
+      }),
       agent({
         id: 2,
         phaseIndex: 2,
@@ -36,7 +46,9 @@ void test("progress summarizes status, input, tokens, and agents", () => {
         model: "gpt-5",
         reasoning: "medium",
         inputTokenCount: 700,
+        cacheReadTokenCount: 300,
         outputTokenCount: 100,
+        costUsd: 0.02,
         toolCallCount: 3,
         stepCount: 4,
         message: "using read",
@@ -50,7 +62,7 @@ void test("progress summarizes status, input, tokens, and agents", () => {
 
   const display = progressDisplay(snapshot, 112);
 
-  assert.equal(display.statusLine, "review: RUNNING · 1/2 agents · in 1.9k · out 1k · tools 3");
+  assert.equal(display.statusLine, "review: RUNNING · 1/2 agents · in 1.9k · cached 800 · out 1k · cost $0.12 · tools 3");
   assert.ok(display.widgetLines.some((line) => line.includes('input {"files":["a.ts","b.ts"],"focus":"auth"}')));
   assert.ok(display.widgetLines.some((line) => line.includes("P1 collect") && line.includes("P2 fanout")));
   assert.ok(display.widgetLines.some((line) => line.includes("RUNNING #2 b.ts") && line.includes("medium") && line.includes("4 steps")));
@@ -77,7 +89,7 @@ void test("progress reports errors without completed agent rows", () => {
 
   const display = progressDisplay(snapshot, 96);
 
-  assert.equal(display.statusLine, "many: ERROR · 2/2 agents · in 0 · out 0 · tools 0");
+  assert.equal(display.statusLine, "many: ERROR · 2/2 agents · in 0 · cached 0 · out 0 · cost $0.00+ · tools 0");
   assert.ok(display.widgetLines.some((line) => line.includes("ERROR #2 failed")));
   assert.ok(display.widgetLines.some((line) => line.includes("1 completed/hidden agents")));
   assert.ok(!display.widgetLines.some((line) => line.includes("#1 done")));
@@ -86,7 +98,7 @@ void test("progress reports errors without completed agent rows", () => {
 void test("initial_workflow_progress_uses_empty_net_summary", () => {
   const display = initialProgressDisplay("review", 72, undefined, { files: ["src/a.ts"], focus: "auth" });
 
-  assert.equal(display.statusLine, "review: STARTING · 0/0 agents · in 0 · out 0 · tools 0");
+  assert.equal(display.statusLine, "review: STARTING · 0/0 agents · in 0 · cached 0 · out 0 · cost $0.00 · tools 0");
   assert.ok(display.widgetLines.some((line) => line.includes('input {"files":["src/a.ts"],"focus":"auth"}')));
   assert.ok(display.widgetLines.some((line) => line.includes("waiting for workflow runtime update")));
   assert.ok(display.widgetLines.some((line) => line.includes("NET 0/0 agents")));
@@ -135,6 +147,8 @@ void test("workflow_widget_and_inspector_render_within_width", () => {
   const inspectorLines = new WorkflowInspector(model, plainWorkflowTuiTheme, () => 18).render(100);
 
   assert.ok(widgetLines.some((line) => line.includes("workflow review")));
+  assert.ok(widgetLines.some((line) => line.includes("cached 0") && line.includes("out 300") && line.includes("$0.00+")));
+  assert.ok(inspectorLines.some((line) => line.includes("cached 0") && line.includes("out 300") && line.includes("$0.00+")));
   assert.ok(inspectorLines.some((line) => line.includes("collect")));
   assert.ok(widgetLines.every((line) => visibleWidth(line) <= 80));
   assert.ok(inspectorLines.every((line) => visibleWidth(line) <= 100));
@@ -214,6 +228,7 @@ void test("running workflow UI selects, inspects, and aborts", () => {
   let terminalInputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
   let widget: TestWorkflowComponent | undefined;
   let overlay: TestWorkflowComponent | undefined;
+  let workflowStatus: string | undefined;
   let aborted = false;
   const ctx = {
     mode: "tui",
@@ -223,8 +238,8 @@ void test("running workflow UI selects, inspects, and aborts", () => {
       getSessionId: () => "progress-test-session",
     },
     ui: {
-      setStatus(): void {
-        return undefined;
+      setStatus(key: string, text: string | undefined): void {
+        if (key === "workflow") workflowStatus = text;
       },
       onTerminalInput(handler: (data: string) => { consume?: boolean } | undefined): () => void {
         terminalInputHandler = handler;
@@ -261,6 +276,32 @@ void test("running workflow UI selects, inspects, and aborts", () => {
   } as unknown as ExtensionCommandContext;
 
   updateRunningWorkflowUi(ctx, { runId: "run-1", snapshot: workflowSnapshot(), abortWorkflow: () => (aborted = true) });
+  assert.match(workflowStatus ?? "", /in 0 .* cached 0 .* out 0 .* \$0\.00/);
+  updateRunningWorkflowUi(ctx, {
+    runId: "run-1",
+    snapshot: {
+      ...workflowSnapshot(),
+      agents: [
+        agent({
+          id: 1,
+          phaseIndex: 1,
+          phase: "collect",
+          label: "inventory",
+          status: "running",
+          startedAt: Date.now(),
+          inputTokenCount: 100,
+          cacheReadTokenCount: 50,
+          outputTokenCount: 30,
+          costUsd: 0.12,
+        }),
+      ],
+    },
+  });
+  assert.match(workflowStatus ?? "", /in 100 .* cached 50 .* out 30 .* \$0\.12/);
+  updateRunningWorkflowUi(ctx, { runId: "run-2", snapshot: workflowSnapshot(), abortWorkflow: () => (aborted = true) });
+  assert.match(workflowStatus ?? "", /^2 workflows/);
+  clearRunningWorkflowUi(ctx, "run-1");
+  assert.match(workflowStatus ?? "", /^Workflow/);
   assert.ok(terminalInputHandler);
   assert.ok(widget);
   const handler = terminalInputHandler;
@@ -281,7 +322,8 @@ void test("running workflow UI selects, inspects, and aborts", () => {
   overlayComponent.handleInput?.("x");
 
   assert.equal(aborted, true);
-  clearRunningWorkflowUi(ctx, "run-1");
+  clearRunningWorkflowUi(ctx, "run-2");
+  assert.equal(workflowStatus, undefined);
 });
 
 function noop(): void {
@@ -307,6 +349,7 @@ function agent(overrides: Partial<WorkflowAgentSnapshot> & Pick<WorkflowAgentSna
     phaseIndex: 0,
     startedAt: 0,
     inputTokenCount: 0,
+    cacheReadTokenCount: 0,
     outputTokenCount: 0,
     toolCallCount: 0,
     stepCount: 0,

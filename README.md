@@ -54,8 +54,13 @@ empty prompt to select it, `Enter` to inspect, and `Esc` or `Up` to return.
 
 ```text
   ↓ select (on an empty prompt) to inspect
-  ◐ review  reviewing src/auth.ts and tests/auth.test.ts        2/5 agents done · 1m12s · ↓18.4k tokens
+  ◐ workflow review  reviewing src/auth.ts and tests/auth.test.ts
+    2/5 agents done · 1m12s · in 18.4k · cached 12k · out 2.1k · $0.12
 ```
+
+While a workflow runs, the footer status bar shows the combined input, cached-read,
+output, and exact USD cost for all current-session workflows. The active-workflow
+widget and inspector header show those same totals for the selected workflow.
 
 A passive project monitor also appears below the editor for workflows active in
 other Pi sessions for the same project. Use `/workflow-status [--json] [--all]
@@ -65,7 +70,7 @@ the output directory.
 Inspector view:
 
 ```text
- review                                                       2/5 agents · 1m12s
+ review                    2/5 agents · 1m12s · in 18.4k · cached 12k · out 2.1k · $0.12
  reviewing src/auth.ts and tests/auth.test.ts
 
 ┌ Phases ───────────────┐┌ fanout · 4 agents ─────────────────────────────────────┐

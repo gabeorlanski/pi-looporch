@@ -70,6 +70,11 @@ export function fmtTokens(tokenCount: number): string {
   return `${stripZero(tokenCount / 1_000_000)}m`;
 }
 
+/** Provides the fmtCostUsd function contract. */
+export function fmtCostUsd(costUsd: number, incomplete = false): string {
+  return `$${costUsd.toFixed(2)}${incomplete ? "+" : ""}`;
+}
+
 function stripZero(value: number): string {
   const rendered = value.toFixed(1);
   return rendered.endsWith(".0") ? rendered.slice(0, -2) : rendered;

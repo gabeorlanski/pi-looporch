@@ -23,7 +23,9 @@ export interface WorkflowAgentStatus {
   reasoning?: string;
   durationSeconds: number;
   inputTokens: number;
+  cachedTokens: number;
   outputTokens: number;
+  costUsd?: number;
   toolCalls: number;
   steps: number;
   message?: string;
@@ -250,7 +252,9 @@ function agentStatus(agent: WorkflowAgentSnapshot, now: number): WorkflowAgentSt
     ...(agent.reasoning ? { reasoning: agent.reasoning } : {}),
     durationSeconds: elapsedSeconds(agent.startedAt, agent.endedAt ?? now),
     inputTokens: agent.inputTokenCount,
+    cachedTokens: agent.cacheReadTokenCount,
     outputTokens: agent.outputTokenCount,
+    ...(agent.costUsd === undefined ? {} : { costUsd: agent.costUsd }),
     toolCalls: agent.toolCallCount,
     steps: agent.stepCount,
     ...(agent.message ? { message: agent.message } : {}),

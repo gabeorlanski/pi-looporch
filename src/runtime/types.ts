@@ -65,7 +65,10 @@ export interface WorkflowAgentLaunchMetadata {
 export interface WorkflowAgentProgress {
   statusMessage?: string;
   inputTokenCount?: number;
+  cacheReadTokenCount?: number;
   outputTokenCount?: number;
+  /** Exact cumulative USD cost when provider usage supplies it. */
+  costUsd?: number;
   toolCallCount?: number;
   toolActivity?: WorkflowToolActivitySnapshot[];
   stepCount?: number;
@@ -97,7 +100,10 @@ export interface WorkflowAgentSnapshot {
   startedAt: number;
   endedAt?: number;
   inputTokenCount: number;
+  cacheReadTokenCount: number;
   outputTokenCount: number;
+  /** Exact cumulative USD cost when provider usage supplies it. */
+  costUsd?: number;
   toolCallCount: number;
   stepCount: number;
   fanOutId?: number;

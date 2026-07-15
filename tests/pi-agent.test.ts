@@ -269,15 +269,29 @@ void test("workflow_agent_progress_tracker_reports_tool_start_arguments", () => 
   tracker.handleEvent({ type: "message_start" });
   tracker.handleEvent({ type: "tool_execution_start", toolName: "read", args: { path: "src/auth.ts" } });
   tracker.handleEvent({ type: "tool_execution_update", toolName: "read" });
-  tracker.handleEvent({ type: "message_end", message: { usage: { inputTokens: 10, outputTokens: 4 } } });
+  tracker.handleEvent({
+    type: "message_end",
+    message: { usage: { inputTokens: 10, cacheRead: 3, outputTokens: 4, cost: { total: 0.001 } } },
+  });
   tracker.handleEvent({ type: "turn_end" });
 
   assert.deepEqual(progressReports, [
-    { statusMessage: "thinking", inputTokenCount: 0, outputTokenCount: 0, toolCallCount: 0, toolActivity: [], stepCount: 0 },
+    {
+      statusMessage: "thinking",
+      inputTokenCount: 0,
+      cacheReadTokenCount: 0,
+      outputTokenCount: 0,
+      costUsd: undefined,
+      toolCallCount: 0,
+      toolActivity: [],
+      stepCount: 0,
+    },
     {
       statusMessage: "active",
       inputTokenCount: 0,
+      cacheReadTokenCount: 0,
       outputTokenCount: 0,
+      costUsd: undefined,
       toolCallCount: 1,
       toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
       stepCount: 0,
@@ -285,14 +299,18 @@ void test("workflow_agent_progress_tracker_reports_tool_start_arguments", () => 
     {
       statusMessage: "active",
       inputTokenCount: 0,
+      cacheReadTokenCount: 0,
       outputTokenCount: 0,
+      costUsd: undefined,
       toolCallCount: 1,
       toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
       stepCount: 0,
     },
     {
       inputTokenCount: 10,
+      cacheReadTokenCount: 3,
       outputTokenCount: 4,
+      costUsd: 0.001,
       toolCallCount: 1,
       toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
       stepCount: 0,
@@ -300,7 +318,9 @@ void test("workflow_agent_progress_tracker_reports_tool_start_arguments", () => 
     {
       statusMessage: "waiting",
       inputTokenCount: 10,
+      cacheReadTokenCount: 3,
       outputTokenCount: 4,
+      costUsd: 0.001,
       toolCallCount: 1,
       toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
       stepCount: 1,
@@ -399,7 +419,7 @@ void test("session tokens parse provider usage aliases", async () => {
     "utf8",
   );
 
-  assert.deepEqual(parseSessionTokens(sessionDir), { input: 8, output: 9, total: 17 });
+  assert.deepEqual(parseSessionTokens(sessionDir), { input: 8, cacheRead: 1500, cacheWrite: 0, output: 9, total: 1517 });
 });
 
 void test("workflow_session_tokens_parse_actual_usage_from_session_file", async () => {
@@ -408,16 +428,16 @@ void test("workflow_session_tokens_parse_actual_usage_from_session_file", async 
     path.join(sessionDir, "session.jsonl"),
     [
       JSON.stringify({ type: "session", id: "session-1" }),
-      JSON.stringify({ message: { usage: { inputTokens: 10, outputTokens: 4 } } }),
+      JSON.stringify({ message: { usage: { inputTokens: 10, cacheRead: 2, outputTokens: 4, cost: { total: 0.01 } } } }),
       "not json",
-      JSON.stringify({ usage: { input: 3, output: 2 } }),
+      JSON.stringify({ usage: { input: 3, cacheRead: 1, output: 2, cost: { total: 0.02 } } }),
       "",
     ].join("\n"),
     "utf8",
   );
   await writeFile(path.join(sessionDir, "events.jsonl"), `${JSON.stringify({ usage: { input: 100, output: 100 } })}\n`, "utf8");
 
-  assert.deepEqual(parseSessionTokens(sessionDir), { input: 13, output: 6, total: 19 });
+  assert.deepEqual(parseSessionTokens(sessionDir), { input: 13, cacheRead: 3, cacheWrite: 0, output: 6, total: 22, costUsd: 0.03 });
 });
 
 void test("agent session logs use the project key and parent ID", () => {

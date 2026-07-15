@@ -180,9 +180,25 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
 
       await session.prompt(sessionPrompt);
       const loggedUsage = loggedSession ? parseSessionTokens(loggedSession.sessionManager.getSessionDir()) : null;
+      const sessionStats = session.getSessionStats();
       reporter.progress({
         statusMessage: "done",
-        ...(loggedUsage ? { inputTokenCount: loggedUsage.input, outputTokenCount: loggedUsage.output } : {}),
+        ...(loggedUsage
+          ? {
+              inputTokenCount: loggedUsage.input,
+              cacheReadTokenCount: loggedUsage.cacheRead,
+              outputTokenCount: loggedUsage.output,
+            }
+          : {
+              inputTokenCount: sessionStats.tokens.input,
+              cacheReadTokenCount: sessionStats.tokens.cacheRead,
+              outputTokenCount: sessionStats.tokens.output,
+            }),
+        ...(typeof sessionStats.cost === "number" && Number.isFinite(sessionStats.cost)
+          ? { costUsd: sessionStats.cost }
+          : loggedUsage?.costUsd === undefined
+            ? {}
+            : { costUsd: loggedUsage.costUsd }),
       });
       if (agentOptions.signal?.aborted) throw new Error("Workflow agent aborted");
       const failure = workflowAgentFailureMessage(session.messages, agentOptions.label);
@@ -190,7 +206,7 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       const result = structuredOutput?.result();
       if (agentOptions.schema !== undefined && result === undefined)
         throw new Error("Schema-enabled workflow child agents must finish by calling StructuredOutput");
-      const usage = session.getSessionStats().tokens;
+      const usage = sessionStats.tokens;
       return {
         ...(result ?? {}),
         message:
@@ -244,7 +260,11 @@ export interface WorkflowAgentProgressTracker {
 /** Creates a deterministic Pi session event tracker that reports workflow child-agent progress snapshots. */
 export function createWorkflowAgentProgressTracker(reporter: WorkflowAgentReporter): WorkflowAgentProgressTracker {
   let inputTokenCount = 0;
+  let cacheReadTokenCount = 0;
   let outputTokenCount = 0;
+  let costUsd = 0;
+  let costComplete = true;
+  let costObserved = false;
   let toolCallCount = 0;
   let stepCount = 0;
   const toolActivity: WorkflowToolActivitySnapshot[] = [];
@@ -252,7 +272,9 @@ export function createWorkflowAgentProgressTracker(reporter: WorkflowAgentReport
     reporter.progress({
       ...(statusMessage ? { statusMessage } : {}),
       inputTokenCount,
+      cacheReadTokenCount,
       outputTokenCount,
+      costUsd: costComplete && costObserved ? costUsd : undefined,
       toolCallCount,
       toolActivity: toolActivity.map((tool) => ({ ...tool })),
       stepCount,
@@ -272,7 +294,13 @@ export function createWorkflowAgentProgressTracker(reporter: WorkflowAgentReport
       if (event.type === "message_end") {
         const usage = workflowTokenUsageFromMessage(event.message);
         inputTokenCount += usage.inputTokenCount;
+        cacheReadTokenCount += usage.cacheReadTokenCount;
         outputTokenCount += usage.outputTokenCount;
+        if (usage.costUsd === undefined) costComplete = false;
+        else {
+          costUsd += usage.costUsd;
+          costObserved = true;
+        }
         report();
       }
       if (event.type === "turn_end") {

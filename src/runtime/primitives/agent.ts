@@ -57,6 +57,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       status: "running",
       startedAt: Date.now(),
       inputTokenCount: 0,
+      cacheReadTokenCount: 0,
       outputTokenCount: 0,
       toolCallCount: 0,
       stepCount: 0,
@@ -173,8 +174,16 @@ function applyAgentProgress(agent: WorkflowAgentSnapshot, progress: WorkflowAgen
     agent.inputTokenCount = progress.inputTokenCount;
     changed = true;
   }
+  if (progress.cacheReadTokenCount !== undefined && progress.cacheReadTokenCount !== agent.cacheReadTokenCount) {
+    agent.cacheReadTokenCount = progress.cacheReadTokenCount;
+    changed = true;
+  }
   if (progress.outputTokenCount !== undefined && progress.outputTokenCount !== agent.outputTokenCount) {
     agent.outputTokenCount = progress.outputTokenCount;
+    changed = true;
+  }
+  if ("costUsd" in progress && progress.costUsd !== agent.costUsd) {
+    agent.costUsd = progress.costUsd;
     changed = true;
   }
   if (progress.toolCallCount !== undefined && progress.toolCallCount !== agent.toolCallCount) {

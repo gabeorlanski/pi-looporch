@@ -24,7 +24,7 @@ const designTopics: DesignTopic[] = [
   },
   {
     name: "structured-outputs",
-    summary: "How to require compact JSON without filling the route prompt with schemas.",
+    summary: "How to require terminal structured fields without parsing assistant text.",
     promptFile: "structured-outputs.txt",
   },
   { name: "fanout", summary: "How to use parallelism without launching unbounded agents.", promptFile: "fanout.txt" },

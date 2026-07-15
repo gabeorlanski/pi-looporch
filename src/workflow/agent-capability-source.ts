@@ -2,7 +2,7 @@ import * as ts from "typescript";
 import type { CapabilitySelection } from "./settings.ts";
 import { analyzeWorkflowPrimitiveCalls } from "./primitive-calls.ts";
 
-const AGENT_PRIMITIVES = ["agent", "coerce", "mapreduce", "verifier"] as const;
+const AGENT_PRIMITIVES = ["agent", "mapreduce", "verifier"] as const;
 
 export type AgentPrimitiveName = (typeof AGENT_PRIMITIVES)[number];
 export type CapabilityName = "extensions" | "tools";

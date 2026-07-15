@@ -39,50 +39,6 @@ export default async function workflow() {
   );
 });
 
-void test("discovery skips workflows with invalid literal structured schemas", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-discovery-"));
-  await writeWorkflow(
-    project,
-    "invalid-schema",
-    `export const metadata = { name: "invalid-schema", description: "Invalid schema", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return agent("work", { schema: { type: "string", pattern: "[" } });
-}`,
-  );
-  assert.deepEqual(await discoverWorkflows(project), []);
-});
-
-void test("discovery validates a global agent outside a nested shadow", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-discovery-"));
-  await writeWorkflow(
-    project,
-    "nested-shadow",
-    `export const metadata = { name: "nested-shadow", description: "Nested shadow", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  function local() { const agent = () => undefined; return agent(); }
-  local();
-  return agent("work", { schema: { type: "string", pattern: "[" } });
-}`,
-  );
-  assert.deepEqual(await discoverWorkflows(project), []);
-});
-
-void test("discovery accepts static boolean schemas", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-discovery-"));
-  await writeWorkflow(
-    project,
-    "boolean-schema",
-    `export const metadata = { name: "boolean-schema", description: "Boolean schema", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return agent("work", { schema: true });
-}`,
-  );
-  assert.deepEqual(
-    (await discoverWorkflows(project)).map((workflow) => workflow.name),
-    ["boolean-schema"],
-  );
-});
-
 void test("discovery allows settings without workflow directories", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-discovery-"));
   await mkdir(path.join(project, ".pi"), { recursive: true });

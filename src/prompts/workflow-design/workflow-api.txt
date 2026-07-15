@@ -5,7 +5,7 @@ Guidance:
 - workflow.js exports static metadata and a default async workflow function; metadata must include name, description, inputInstructions, and phases.
 - Document the default function with JSDoc covering purpose, input fields/defaults, phases, child agents, file reads, and result shape.
 - Supported workflow primitives are rendered below from the runtime registry with short descriptions and signatures; call narrower guidance topics for examples only when needed.
-- agent, coerce, mapreduce, and verifier accept extensions?: string[] and tools?: string[]. Omit to inherit workflow settings, use [] for none, and use an exact tool list when only named tools should be exposed.
+- agent, mapreduce, and verifier accept extensions?: string[] and tools?: string[]. Omit to inherit workflow settings, use [] for none, and use an exact tool list when only named tools should be exposed. A schema-enabled agent always receives its terminal StructuredOutput tool.
 - propose_workflow statically validates inline and top-level const capability lists plus inherited defaults against Pi extension/tool metadata and saves nothing on error.
 - Receive workflow input through workflow({ field, optional = default }) parameters.
 - Workflows cannot import modules or use ambient Node globals. Use readText/readJson/writeText/writeJson and workflow-owned template tasks for files and artifacts.

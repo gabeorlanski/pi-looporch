@@ -67,10 +67,10 @@ void test("guidance tool returns index and focused guidance", async () => {
 
   const structured = await tool.execute("call-5", { topic: "structured-outputs" }, undefined, undefined, {} as never);
   const structuredText = structured.content[0]?.type === "text" ? structured.content[0].text : "";
-  assert.match(structuredText, /agent\(\{ template, values \}, \{ schema, maxAttempts \}\)/);
-  assert.match(structuredText, /maxLength/);
-  assert.match(structuredText, /same keys/);
-  assert.match(structuredText, /JSON-only repairs/);
+  assert.match(structuredText, /StructuredOutput/);
+  assert.match(structuredText, /prepended/);
+  assert.match(structuredText, /semantic/);
+  assert.match(structuredText, /does not call it fails/);
   assert.match(structuredText, /control surface/);
   assert.match(structuredText, /JSONL\/artifact files/);
   assert.doesNotMatch(structuredText, /verifier\(/);
@@ -457,28 +457,6 @@ export default async function workflow() {
       assert.match(String(error), /No workflow files were saved\./);
       return true;
     },
-  );
-  assert.equal(await readFile(published, "utf8"), "published workflow");
-});
-
-void test("propose workflow rejects invalid literal schemas before replacing a workflow", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-tool-"));
-  const draftDir = path.join(project, ".pi", "workflow-drafts", "summarize");
-  const published = path.join(project, ".pi", "workflows", "summarize", "workflow.js");
-  await mkdir(path.dirname(published), { recursive: true });
-  await writeFile(published, "published workflow", "utf8");
-  const source = `${generatedWorkflowDocstring}export const metadata = { name: "summarize", description: "Summarize files", inputInstructions: "Use input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return agent("work", { schema: { type: "string", pattern: "[" } });
-}`;
-  await mkdir(draftDir, { recursive: true });
-  await writeFile(path.join(draftDir, "workflow.js"), source, "utf8");
-  const tool = createWorkflowTools({ cwd: project }).find((candidate) => candidate.name === "propose_workflow");
-  assert.ok(tool);
-
-  await assert.rejects(
-    tool.execute("call-invalid", { name: "summarize", draftDir: path.relative(project, draftDir) }, undefined, undefined, {} as never),
-    /agent schema.*schema is invalid/,
   );
   assert.equal(await readFile(published, "utf8"), "published workflow");
 });

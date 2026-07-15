@@ -1,6 +1,5 @@
 import type { ActiveWorkflowRuntime, WorkflowPrimitive, WorkflowPrimitiveGlobalDoc } from "./context.ts";
 import { agentPrimitive } from "./primitives/agent.ts";
-import { coercePrimitive } from "./primitives/coerce.ts";
 import { environmentPrimitive, filePrimitive } from "./primitives/files.ts";
 import { logPrimitive } from "./primitives/log.ts";
 import { mapReducePrimitive } from "./primitives/mapreduce.ts";
@@ -19,7 +18,6 @@ const workflowPrimitives: WorkflowPrimitive[] = [
   filePrimitive,
   parallelPrimitive,
   pipelinePrimitive,
-  coercePrimitive,
   mapReducePrimitive,
   verifierPrimitive,
 ];

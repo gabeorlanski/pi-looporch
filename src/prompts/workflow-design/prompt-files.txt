@@ -1,30 +1,32 @@
-Workflow design guidance: prompt-files
-How to keep child-agent prompts in workflow-owned prompt files.
+<workflow_guidance topic="prompt-files">
+<purpose>Keep child-agent prompts in workflow-owned files with explicit data provenance and cache-friendly reuse.</purpose>
+<rules>
+<rule>Put reusable child-agent prompts under prompts/*.txt; use subdirectories when a workflow has several phases.</rule>
+<rule>If a workflow needs more than five distinct non-verifier prompts, split them into separate prompt files instead of packing variants into workflow.js or one oversized template.</rule>
+<rule>Launch reusable prompt files with agent({ template: templatePath, values }, options). Template paths resolve inside the workflow prompts/ directory immediately before child-agent launch.</rule>
+<rule>Use a stable &lt;workflow_instructions&gt; prefix for Purpose, Definitions, Rules, and Output. Put interpolated values in final typed sections such as &lt;workflow_inputs&gt; or &lt;workflow_task&gt; so workflow-supplied data is never mistaken for a user message.</rule>
+<rule>Keep dynamic sections small: include only values this stage directly consumes, not every workflow input or global. Pass paths, IDs, counts, or compact summaries instead of full objects.</rule>
+<rule>Keep static wording and examples identical across matching launches to maximize provider prompt-cache reuse. Do not repeat prior results or project context when a durable artifact path or compact manifest is sufficient.</rule>
+<rule>Use {{file}}, {{focus}}, {{outputPath}}, and {{priorSummary}} placeholders; every supplied value must be referenced, and every placeholder needs a supplied value. Do not write JS template variables like ${input.file} inside prompt files.</rule>
+<rule>Avoid unstructured global preamble dumps and repeated irrelevant globals. Keep renderPrompt(...) only for exceptional prompt composition and inline text only for tiny one-off glue.</rule>
+</rules>
+<example>
+&lt;workflow_instructions&gt;
+&lt;purpose&gt;Review the externally meaningful behavior for this stage.&lt;/purpose&gt;
+&lt;rules&gt;
+&lt;rule&gt;Cite evidence with file paths and lines.&lt;/rule&gt;
+&lt;rule&gt;Preserve observable behavior; do not restate every source detail.&lt;/rule&gt;
+&lt;/rules&gt;
+&lt;output&gt;Return compact JSON with status, summary, and artifactPaths.&lt;/output&gt;
+&lt;/workflow_instructions&gt;
 
-Guidance:
-- Put reusable child-agent prompts under prompts/*.txt; use subdirectories when a workflow has several phases.
-- If a workflow needs more than five distinct non-verifier prompts, split them into separate prompt files instead of packing variants into workflow.js or one oversized template.
-- Launch reusable prompt files with agent({ template: templatePath, values }, options). Template paths resolve inside the workflow prompts/ directory immediately before child-agent launch.
-- Prompt files should start with stable Purpose, Definitions, Rules, and Output sections, then put interpolated values in a final Task instance or Inputs section so matching task shapes retain a reusable prefix.
-- Keep the dynamic Task instance intentionally small: include only values this stage directly consumes, not every workflow input or global. Pass paths, IDs, counts, or compact summaries instead of full objects.
-- Use {{file}}, {{focus}}, {{outputPath}}, and {{priorSummary}} placeholders; every supplied value must be referenced, and every placeholder needs a supplied value. Do not write JS template variables like ${input.file} inside prompt files.
-- Avoid unstructured global preamble dumps and repeated irrelevant globals. Keep renderPrompt(...) only for exceptional prompt composition and inline text only for tiny one-off glue.
-
-Examples:
-Purpose:
-Review the externally meaningful behavior for this stage.
-
-Rules:
-- Cite evidence with file paths and lines.
-- Preserve observable behavior; do not restate every source detail.
-
-Output:
-Return compact JSON with status, summary, and artifactPaths.
-
-Task instance:
+&lt;workflow_task&gt;
 Read {{file}} for {{focus}} and write findings to {{outputPath}}.
+&lt;/workflow_task&gt;
 
 const result = await agent(
   { template: "review/file.txt", values: { file, focus, outputPath } },
   { label: "review " + file, taskFile: file, cwd },
 );
+</example>
+</workflow_guidance>

@@ -37,16 +37,7 @@ export const agentPrimitive: WorkflowPrimitive<{
 
 /** Provides the runAgent function contract. */
 export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
-  const task =
-    agentOptions.schema === undefined
-      ? prompt
-      : [
-          "Use the StructuredOutput tool to finish this task.",
-          "When the task is complete, call StructuredOutput exactly once. Its validated keyword arguments are the result and it ends your session. Do not provide a final assistant response.",
-          `Structured output schema:\n${JSON.stringify(agentOptions.schema)}`,
-          `Task:\n${prompt}`,
-        ].join("\n\n");
-  return runRawAgent(runtime, task, agentOptions);
+  return runRawAgent(runtime, prompt, agentOptions);
 }
 
 async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {

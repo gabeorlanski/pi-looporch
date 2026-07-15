@@ -92,7 +92,10 @@ code runs in a sandbox with globals such as `agent`, `parallel`, `pipeline`,
 `mapreduce`, `verifier`, `phase`, `log`, `trace`, and file helpers.
 Reusable child prompts live in `prompts/*.txt` and launch through
 `agent({ template, values }, options)`; `renderPrompt` remains available for
-exceptional composition.
+exceptional composition. Use a stable `<workflow_instructions>` prefix and put
+workflow-supplied task data in final typed sections such as `<workflow_task>`
+or `<workflow_inputs>`; this distinguishes it from user text and improves prompt
+cache reuse.
 
 `agent`, `mapreduce`, and `verifier` accept `extensions` and `tools`
 string lists. Omit either list to inherit workflow settings; use `[]` for none.

@@ -35,7 +35,7 @@ export default async function workflow() {
   assert.equal(result.snapshot.agents[0]?.cwd, scratch);
 });
 
-void test("schema agent prepends a terminal contract", async () => {
+void test("schema agent forwards its raw task and schema to the adapter", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
@@ -56,8 +56,10 @@ export default async function workflow() {
 }`,
   );
   const prompts: string[] = [];
-  const agent: WorkflowAgent = (prompt) => {
+  const schemas: unknown[] = [];
+  const agent: WorkflowAgent = (prompt, options) => {
     prompts.push(prompt);
+    schemas.push(options.schema);
     return Promise.resolve({
       message: null,
       name: "analysis",
@@ -85,9 +87,18 @@ export default async function workflow() {
     summary: "done",
   });
   assert.equal(prompts.length, 1);
-  assert.match(prompts[0] ?? "", /^Use the StructuredOutput tool to finish this task\./);
-  assert.match(prompts[0] ?? "", /"summary"/);
-  assert.match(prompts[0] ?? "", /Analyze the input/);
+  assert.equal(prompts[0], "Analyze the input");
+  assert.equal(
+    JSON.stringify(schemas),
+    JSON.stringify([
+      {
+        type: "object",
+        properties: { ok: { type: "boolean" }, summary: { type: "string" } },
+        required: ["ok", "summary"],
+        additionalProperties: false,
+      },
+    ]),
+  );
   assert.equal(result.snapshot.agents.length, 1);
   assert.deepEqual(result.snapshot.traces, []);
 });

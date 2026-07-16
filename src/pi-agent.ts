@@ -1,11 +1,10 @@
 /** Provides pi agent behavior. */
 import path from "node:path";
 import {
-  AuthStorage,
   createAgentSession,
   DefaultResourceLoader,
   getAgentDir,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
   type CreateAgentSessionOptions,
@@ -44,9 +43,10 @@ export interface PiWorkflowAgentOptions {
 export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): WorkflowAgent {
   return async (prompt, agentOptions, reporter) => {
     const agentDir = getAgentDir();
-    const authStorage = options.session?.authStorage ?? AuthStorage.create();
-    const modelRegistry = options.session?.modelRegistry ?? ModelRegistry.create(authStorage);
-    const model = agentOptions.model ? resolveModel(modelRegistry, agentOptions.model) : undefined;
+    const modelRuntime =
+      options.session?.modelRuntime ??
+      (await ModelRuntime.create({ authPath: path.join(agentDir, "auth.json"), modelsPath: path.join(agentDir, "models.json") }));
+    const model = agentOptions.model ? resolveModel(modelRuntime, agentOptions.model) : undefined;
     const projectCwd = path.resolve(options.cwd);
     const effectiveCwd = resolveWorkflowAgentCwd(options.cwd, agentOptions.cwd) ?? projectCwd;
     const workflowSettings = await readWorkflowSettings(projectCwd, agentDir);
@@ -131,11 +131,10 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
     const { session } = await (options.createSession ?? createAgentSession)({
       cwd: effectiveCwd,
       agentDir,
-      authStorage,
-      modelRegistry,
       sessionManager: sessionManager ?? SessionManager.inMemory(effectiveCwd),
       settingsManager,
       ...options.session,
+      modelRuntime,
       resourceLoader,
       customTools,
       thinkingLevel: agentOptions.reasoning ?? options.session?.thinkingLevel,
@@ -241,11 +240,11 @@ export { workflowAgentSessionLogDirectory } from "./session-logs.ts";
 export { workflowAgentLogEvent } from "./session-events.ts";
 export { parseSessionTokens } from "./session-usage.ts";
 
-function resolveModel(modelRegistry: ModelRegistry, spec: string): ReturnType<ModelRegistry["find"]> {
+function resolveModel(modelRuntime: ModelRuntime, spec: string): ReturnType<ModelRuntime["getModel"]> {
   const modelSpec = spec.split(":", 1)[0] ?? spec;
   const slash = modelSpec.indexOf("/");
-  if (slash >= 0) return modelRegistry.find(modelSpec.slice(0, slash), modelSpec.slice(slash + 1));
-  return modelRegistry.getAll().find((model) => model.id === modelSpec || model.name === modelSpec);
+  if (slash >= 0) return modelRuntime.getModel(modelSpec.slice(0, slash), modelSpec.slice(slash + 1));
+  return modelRuntime.getModels().find((model) => model.id === modelSpec || model.name === modelSpec);
 }
 
 /** Deterministic tracker for translating Pi child-agent session events into workflow progress snapshots. */

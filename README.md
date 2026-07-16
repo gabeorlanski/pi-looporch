@@ -153,6 +153,8 @@ none. Per-agent lists override these defaults.
 
 ## Development
 
+Development and compatibility checks target Pi SDK and TUI 0.80.8.
+
 ```bash
 npm run lint
 npm run format:check

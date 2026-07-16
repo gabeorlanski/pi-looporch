@@ -60,14 +60,11 @@ export class WorkflowInspector implements Component, Focusable {
     const title = ` ${this.theme.accent(this.theme.bold(workflow.name))}${statusTag}`;
     const stats = `${String(workflow.agentsDone)}/${String(workflow.agentsTotal)} agents ${glyph.mid} ${fmtDuration(workflow.elapsed)}`;
     const header = rightAlign(title, this.theme.dim(truncEnd(stats, Math.max(0, termWidth - width(title) - 1))), termWidth);
-    const usage = ` in ${fmtTokens(workflow.inputTokens)} ${glyph.mid} cached ${fmtTokens(workflow.cachedTokens)} ${glyph.mid} out ${fmtTokens(workflow.outputTokens)} ${glyph.mid} ${fmtCostUsd(workflow.cost)}`;
-    const usageLines =
-      width(usage) <= termWidth - 2
-        ? [this.theme.dim(usage)]
-        : [
-            this.theme.dim(` in ${fmtTokens(workflow.inputTokens)} ${glyph.mid} cached ${fmtTokens(workflow.cachedTokens)}`),
-            this.theme.dim(` out ${fmtTokens(workflow.outputTokens)} ${glyph.mid} ${fmtCostUsd(workflow.cost)}`),
-          ];
+    const inputUsage = `${this.theme.dim(" in ")}${this.theme.accent(fmtTokens(workflow.inputTokens))}${this.theme.dim(
+      ` ${glyph.mid} cached ${fmtTokens(workflow.cachedTokens)}`,
+    )}`;
+    const outputUsage = `${this.theme.dim(` ${glyph.mid} out ${fmtTokens(workflow.outputTokens)} ${glyph.mid} `)}${this.theme.warn(fmtCostUsd(workflow.cost))}`;
+    const usageLines = width(inputUsage + outputUsage) <= termWidth - 2 ? [inputUsage + outputUsage] : [inputUsage, outputUsage];
     const subtitle = padTo(` ${this.theme.dim(truncEnd(workflow.subtitle, termWidth - 2))}`, termWidth);
     const panelHeight = Math.max(3, height - 5 - (usageLines.length - 1));
     const body = this.level === "phases" ? this.renderPhases(termWidth, panelHeight) : this.renderDetail(termWidth, panelHeight);
@@ -183,9 +180,11 @@ export class WorkflowInspector implements Component, Focusable {
     };
     push(`${agentGlyph(agent, this.model.tick, this.theme)} ${statusWord(agent.status)} ${glyph.mid} ${agent.model}`);
     push(
-      this.theme.dim(
-        `${fmtTokens(agent.inputTokens)} in ${glyph.mid} ${fmtTokens(agent.cachedTokens)} cached ${glyph.mid} ${fmtTokens(agent.outputTokens)} out ${glyph.mid} ${fmtCostUsd(agent.cost)} ${glyph.mid} ${String(agent.toolCalls)} tools ${glyph.mid} ${String(agent.steps)} steps ${glyph.mid} ${fmtDuration(agent.durationSeconds, true)}`,
-      ),
+      `${this.theme.accent(fmtTokens(agent.inputTokens))}${this.theme.dim(
+        ` in ${glyph.mid} ${fmtTokens(agent.cachedTokens)} cached ${glyph.mid} ${fmtTokens(agent.outputTokens)} out ${glyph.mid} `,
+      )}${this.theme.warn(fmtCostUsd(agent.cost))}${this.theme.dim(
+        ` ${glyph.mid} ${String(agent.toolCalls)} tools ${glyph.mid} ${String(agent.steps)} steps ${glyph.mid} ${fmtDuration(agent.durationSeconds, true)}`,
+      )}`,
     );
     push("");
     push(this.theme.accent(`Details ${glyph.mid} ${String(agent.detailLines.length)} lines`));

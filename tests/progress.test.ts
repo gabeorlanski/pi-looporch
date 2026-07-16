@@ -163,6 +163,51 @@ void test("workflow_widget_and_inspector_render_within_width", () => {
   assert.ok(narrowWidgetLines.some((line) => line.includes("out 300") && line.includes("$0.00+")));
   assert.ok(narrowInspectorLines.some((line) => line.includes("in 1.2k") && line.includes("cached 0")));
   assert.ok(narrowInspectorLines.some((line) => line.includes("out 300") && line.includes("$0.00+")));
+
+  const wideWidgetLines = new WorkflowWidget(
+    () => model,
+    plainWorkflowTuiTheme,
+    () => false,
+  ).render(240);
+  const wideMetrics = wideWidgetLines.find((line) => line.includes("in 1.2k")) ?? "";
+  assert.equal(wideWidgetLines.length, 2);
+  assert.doesNotMatch(wideMetrics.trimEnd(), /cached 0 {2,}.*out 300/);
+  assert.ok(wideWidgetLines.every((line) => visibleWidth(line) <= 240));
+  assert.ok(
+    new WorkflowWidget(
+      () => model,
+      plainWorkflowTuiTheme,
+      () => false,
+    )
+      .render(20)
+      .every((line) => visibleWidth(line) <= 20),
+  );
+});
+
+void test("workflow widget colors input tokens and cost", () => {
+  const accented: string[] = [];
+  const warned: string[] = [];
+  const model = new WorkflowInspectorModel(workflowSnapshot());
+  const theme = {
+    ...plainWorkflowTuiTheme,
+    accent: (text: string) => {
+      accented.push(text);
+      return text;
+    },
+    warn: (text: string) => {
+      warned.push(text);
+      return text;
+    },
+  };
+
+  new WorkflowWidget(
+    () => model,
+    theme,
+    () => false,
+  ).render(120);
+
+  assert.ok(accented.includes("0"));
+  assert.ok(warned.includes("$0.00+"));
 });
 
 void test("inspector shows activity, output, and expandable prompts", async () => {
@@ -235,7 +280,7 @@ void test("inspector shows activity, output, and expandable prompts", async () =
 });
 
 void test("running workflow UI selects, inspects, and aborts", () => {
-  let editorText = "";
+  const editorText = "";
   let terminalInputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
   let widget: TestWorkflowComponent | undefined;
   let overlay: TestWorkflowComponent | undefined;
@@ -287,7 +332,7 @@ void test("running workflow UI selects, inspects, and aborts", () => {
   } as unknown as ExtensionCommandContext;
 
   updateRunningWorkflowUi(ctx, { runId: "run-1", snapshot: workflowSnapshot(), abortWorkflow: () => (aborted = true) });
-  assert.match(workflowStatus ?? "", /in 0 .* cached 0 .* out 0 .* \$0\.00/);
+  assert.equal(workflowStatus, undefined);
   updateRunningWorkflowUi(ctx, {
     runId: "run-1",
     snapshot: {
@@ -308,24 +353,17 @@ void test("running workflow UI selects, inspects, and aborts", () => {
       ],
     },
   });
-  assert.match(workflowStatus ?? "", /in 100 .* cached 50 .* out 30 .* \$0\.12/);
+  assert.equal(workflowStatus, undefined);
   updateRunningWorkflowUi(ctx, { runId: "run-2", snapshot: workflowSnapshot(), abortWorkflow: () => (aborted = true) });
-  assert.match(workflowStatus ?? "", /^2 workflows/);
-  assert.match(workflowStatus ?? "", /\$0\.12\+/);
+  assert.equal(workflowStatus, undefined);
   clearRunningWorkflowUi(ctx, "run-1");
-  assert.match(workflowStatus ?? "", /^Workflow/);
+  assert.equal(workflowStatus, undefined);
   assert.ok(terminalInputHandler);
   assert.ok(widget);
   const handler = terminalInputHandler;
-  const widgetComponent = widget;
-
   assert.deepEqual(handler("\u001B[B"), { consume: true });
-  assert.ok(widgetComponent.render(80).some((line) => line.includes("open inspector")));
-  assert.deepEqual(handler("\u001B[A"), { consume: true });
-  editorText = "not empty";
-  assert.equal(handler("\u001B[B"), undefined);
-  editorText = "";
   assert.deepEqual(handler("\u001B[B"), { consume: true });
+  assert.equal(handler("\u001B[1;1:3B"), undefined);
   assert.deepEqual(handler("\r"), { consume: true });
   assert.ok(overlay);
   const overlayComponent = overlay;

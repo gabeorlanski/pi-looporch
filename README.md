@@ -53,15 +53,12 @@ Running workflows show a compact widget below the editor. Press `Down` on an
 empty prompt to select it, `Enter` to inspect, and `Esc` or `Up` to return.
 
 ```text
-  ↓ select (on an empty prompt) to inspect
-  ◐ workflow review  reviewing src/auth.ts and tests/auth.test.ts
+  ↓ ◐ workflow review  reviewing src/auth.ts and tests/auth.test.ts
     2/5 agents done · 1m12s · in 18.4k · cached 12k · out 2.1k · $0.12
 ```
 
-While a workflow runs, the footer status bar shows the combined input, cached-read,
-output, and known USD cost for all current-session workflows. A trailing `+` means
-at least one observed provider response did not report a price. The active-workflow
-widget and inspector header show those same totals for the selected workflow.
+The active-workflow widget and inspector header show totals for the selected workflow.
+A trailing `+` means at least one observed provider response did not report a price.
 
 A passive project monitor also appears below the editor for workflows active in
 other Pi sessions for the same project. Use `/workflow-status [--json] [--all]

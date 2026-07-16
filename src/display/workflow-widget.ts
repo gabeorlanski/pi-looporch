@@ -31,22 +31,18 @@ export class WorkflowWidget implements Component {
         ? this.theme.ok(glyph.done)
         : this.theme.danger("✗");
     const stats = `${String(workflow.agentsDone)}/${String(workflow.agentsTotal)} agents done ${glyph.mid} ${fmtDuration(workflow.elapsed)}`;
-    const usageLeft = `in ${fmtTokens(workflow.inputTokens)} ${glyph.mid} cached ${fmtTokens(workflow.cachedTokens)}`;
-    const usageRight = `out ${fmtTokens(workflow.outputTokens)} ${glyph.mid} ${fmtCostUsd(workflow.cost)}`;
-    const gutter = armed ? this.theme.accent(glyph.marker) : " ";
+    const usage = `${this.theme.dim("in ")}${this.theme.accent(fmtTokens(workflow.inputTokens))}${this.theme.dim(
+      ` ${glyph.mid} cached ${fmtTokens(workflow.cachedTokens)} ${glyph.mid} out ${fmtTokens(workflow.outputTokens)} ${glyph.mid} `,
+    )}${this.theme.warn(fmtCostUsd(workflow.cost))}`;
+    const gutter = armed ? this.theme.accent(glyph.marker) : this.theme.dim(glyph.arrowDown);
     const namePart = `${gutter} ${lead} ${this.theme.accent(workflow.name)}`;
-    const subtitle = this.theme.dim(truncEnd(workflow.subtitle, Math.max(0, termWidth - width(namePart) - 2)));
-    let row = padTo(`${namePart}  ${subtitle}`, termWidth);
-    let summary = padTo(`   ${this.theme.dim(stats)}`, termWidth);
-    let usage = padTo(`   ${this.theme.dim(usageLeft)}`, Math.max(0, termWidth - width(usageRight) - 1)) + this.theme.dim(usageRight);
-    if (armed) {
-      row = this.theme.selected(row);
-      summary = this.theme.selected(summary);
-      usage = this.theme.selected(padTo(usage, termWidth));
-    }
-    const hint = armed
-      ? this.theme.dim(`${glyph.enter} open inspector ${glyph.mid} ↑/esc back to prompt`)
-      : this.theme.dim(`${glyph.arrowDown} select (on an empty prompt) to inspect`);
-    return [padTo(`  ${hint}`, termWidth), row, summary, padTo(usage, termWidth)];
+    const subtitle = this.theme.dim(truncEnd(workflow.subtitle, Math.max(0, termWidth - width(namePart) - 3)));
+    const row = padTo(`  ${namePart}  ${subtitle}`, termWidth);
+    const metrics = `${stats} ${glyph.mid} ${usage}`;
+    const metricRows =
+      width(metrics) <= termWidth - 3
+        ? [padTo(`   ${this.theme.dim(stats)} ${this.theme.dim(glyph.mid)} ${usage}`, termWidth)]
+        : [padTo(`   ${this.theme.dim(stats)}`, termWidth), padTo(`   ${usage}`, termWidth)];
+    return [row, ...metricRows].map((line) => (armed ? this.theme.selected(line) : line));
   }
 }

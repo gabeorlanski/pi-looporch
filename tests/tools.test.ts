@@ -33,8 +33,8 @@ void test("guidance tool returns index and focused guidance", async () => {
 
   const all = await tool.execute("call-1", {}, undefined, undefined, {} as never);
   const allText = all.content[0]?.type === "text" ? all.content[0].text : "";
-  assert.match(allText, /<workflow_guidance/);
-  assert.match(allText, /overview/);
+  assert.match(allText, /^# Workflow authoring guidance$/m);
+  assert.match(allText, /\*\*overview\*\*/);
   assert.match(allText, /workflow-api/);
   assert.match(allText, /prompt-files/);
   assert.match(allText, /Supported workflow primitives \(generated from the runtime registry\)/);
@@ -43,7 +43,7 @@ void test("guidance tool returns index and focused guidance", async () => {
 
   const overview = await tool.execute("call-2", { topic: "overview" }, undefined, undefined, {} as never);
   const overviewText = overview.content[0]?.type === "text" ? overview.content[0].text : "";
-  assert.match(overviewText, /<workflow_guidance topic="overview">/);
+  assert.match(overviewText, /^# Workflow overview$/m);
   assert.match(overviewText, new RegExp(escapeRegExp(defaultWorkflowDraftRoot())));
   assert.match(overviewText, /prompts\/\*\.txt/);
   assertPrimitiveReferenceIsRendered(overviewText);
@@ -56,28 +56,26 @@ void test("guidance tool returns index and focused guidance", async () => {
 
   const promptFiles = await tool.execute("call-4", { topic: "prompt-files" }, undefined, undefined, {} as never);
   const promptFilesText = promptFiles.content[0]?.type === "text" ? promptFiles.content[0].text : "";
-  assert.match(promptFilesText, /collision-prone outer envelopes/);
-  assert.match(promptFilesText, /runtime instruction block also contains nested tags/);
-  assert.match(promptFilesText, /&lt;workflow_instructions&gt;/);
-  assert.match(promptFilesText, /&lt;workflow_task&gt;/);
-  assert.match(promptFilesText, /&lt;workflow_context&gt;/);
-  assert.match(promptFilesText, /&lt;structured_output_contract&gt;/);
-  assert.match(promptFilesText, /&lt;structured_output_schema&gt;/);
-  assert.match(promptFilesText, /&lt;operating_contract&gt;/);
-  assert.match(promptFilesText, /&lt;goal_and_authority&gt;/);
-  assert.match(promptFilesText, /&lt;evidence&gt;/);
-  assert.match(promptFilesText, /&lt;decisions_and_scope&gt;/);
-  assert.match(promptFilesText, /&lt;validation&gt;/);
-  assert.match(promptFilesText, /&lt;output&gt;/);
-  assert.match(promptFilesText, /&lt;stop_and_escalation&gt;/);
-  assert.match(promptFilesText, /&lt;completion&gt;/);
-  assert.match(promptFilesText, /&lt;task_contract&gt;/);
+  assert.match(promptFilesText, /^# Prompt files$/m);
+  assert.match(promptFilesText, /When to use XML tags/);
+  assert.match(promptFilesText, /\*\*Default:\*\* use Markdown headings, bullets, or plain text/);
+  assert.match(promptFilesText, /\*\*Use tags\*\* to delineate key information in a complex prompt/);
+  assert.match(promptFilesText, /\*\*Do not use tags\*\* when the prompt is short or its sections are already clear/);
+  assert.match(promptFilesText, /prefer `schema` and `StructuredOutput`/);
+  assert.match(promptFilesText, /Tags are delimiters, not a security boundary/);
+  assert.match(promptFilesText, /<task_input>/);
+  assert.match(promptFilesText, /<sources>/);
+  assert.match(promptFilesText, /<prior_results>/);
+  assert.match(promptFilesText, /<workflow_instructions>/);
+  assert.match(promptFilesText, /<workflow_task>/);
+  assert.match(promptFilesText, /<workflow_context>/);
+  assert.match(promptFilesText, /<structured_output_contract>/);
+  assert.match(promptFilesText, /<structured_output_schema>/);
   assert.match(promptFilesText, /more than five distinct non-verifier prompts/);
-  assert.match(promptFilesText, /Keep dynamic sections small/);
-  assert.match(promptFilesText, /not every workflow input or global/);
   assert.match(promptFilesText, /\{\{file\}\}/);
-  assert.match(promptFilesText, /Do not write JS template variables/);
-  assert.match(promptFilesText, /Avoid unstructured global preamble dumps/);
+  assert.match(promptFilesText, /Do not put JavaScript expressions/);
+  assert.match(promptFilesText, /Avoid unstructured global preambles/);
+  assert.doesNotMatch(promptFilesText, /&lt;/);
 
   const structured = await tool.execute("call-5", { topic: "structured-outputs" }, undefined, undefined, {} as never);
   const structuredText = structured.content[0]?.type === "text" ? structured.content[0].text : "";
@@ -103,7 +101,9 @@ void test("every workflow guidance topic loads its prompt file", () => {
     "artifacts",
   ]) {
     const guidance = workflowDesignGuidance(topic);
-    assert.match(guidance, new RegExp(`<workflow_guidance topic="${topic}">`));
+    assert.match(guidance, /^# /m);
+    assert.doesNotMatch(guidance, /<workflow_guidance/);
+    assert.doesNotMatch(guidance, /&lt;/);
     assert.doesNotMatch(guidance, /\{\{(?:draftRoot|primitiveReference)\}\}/);
   }
   assertPrimitiveReferenceIsRendered(workflowDesignGuidance("overview"));

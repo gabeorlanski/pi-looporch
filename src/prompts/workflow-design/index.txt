@@ -1,10 +1,9 @@
-<workflow_guidance_index>
-<purpose>Choose focused guidance while authoring a workflow.</purpose>
-<instructions>Start with topic: overview. Use topic: workflow-api for primitive syntax and sandbox rules.</instructions>
-<topics>
+# Workflow authoring guidance
+
+Start with **overview**. Request a narrower topic only when it is needed.
+
+## Topics
 {{topicList}}
-</topics>
-<workflow_primitive_reference>
+
+## Supported workflow primitives
 {{primitiveReference}}
-</workflow_primitive_reference>
-</workflow_guidance_index>

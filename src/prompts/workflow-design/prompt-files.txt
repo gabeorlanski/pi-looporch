@@ -1,32 +1,41 @@
-<workflow_guidance topic="prompt-files">
-<purpose>Keep child-agent prompts in workflow-owned files with explicit data provenance and cache-friendly reuse.</purpose>
-<rules>
-<rule>Put reusable child-agent prompts under prompts/*.txt; use subdirectories when a workflow has several phases.</rule>
-<rule>If a workflow needs more than five distinct non-verifier prompts, split them into separate prompt files instead of packing variants into workflow.js or one oversized template.</rule>
-<rule>Launch reusable prompt files with agent({ template: templatePath, values }, options). Template paths resolve inside the workflow prompts/ directory immediately before child-agent launch.</rule>
-<rule>Pi-workflow owns these collision-prone outer envelopes: &lt;workflow_instructions&gt;, &lt;workflow_task&gt;, &lt;workflow_context&gt;, and, when a schema is supplied, &lt;structured_output_contract&gt; and &lt;structured_output_schema&gt;. Do not use those tags in child prompt files: repeated envelopes can blur scope for the agent. The runtime instruction block also contains nested tags: &lt;operating_contract&gt;, &lt;goal_and_authority&gt;, &lt;evidence&gt;, &lt;decisions_and_scope&gt;, &lt;validation&gt;, &lt;output&gt;, &lt;stop_and_escalation&gt;, and &lt;completion&gt;; these describe runtime behavior rather than a child-template envelope. Use domain-specific tags such as &lt;task_contract&gt;, &lt;rules&gt;, &lt;problem_context&gt;, &lt;library_context&gt;, and &lt;sources&gt; instead.</rule>
-<rule>Keep dynamic sections small: include only values this stage directly consumes, not every workflow input or global. Pass paths, IDs, counts, or compact summaries instead of full objects.</rule>
-<rule>Keep static wording and examples identical across matching launches to maximize provider prompt-cache reuse. Do not repeat prior results or project context when a durable artifact path or compact manifest is sufficient.</rule>
-<rule>Use {{file}}, {{focus}}, {{outputPath}}, and {{priorSummary}} placeholders; every supplied value must be referenced, and every placeholder needs a supplied value. Do not write JS template variables like ${input.file} inside prompt files.</rule>
-<rule>Avoid unstructured global preamble dumps and repeated irrelevant globals. Keep renderPrompt(...) only for exceptional prompt composition and inline text only for tiny one-off glue.</rule>
-</rules>
-<example>
-&lt;task_contract&gt;
-&lt;purpose&gt;Review the externally meaningful behavior for this stage.&lt;/purpose&gt;
-&lt;rules&gt;
-&lt;rule&gt;Cite evidence with file paths and lines.&lt;/rule&gt;
-&lt;rule&gt;Preserve observable behavior; do not restate every source detail.&lt;/rule&gt;
-&lt;/rules&gt;
-&lt;output&gt;Return compact JSON with status, summary, and artifactPaths.&lt;/output&gt;
-&lt;/task_contract&gt;
+# Prompt files
 
-&lt;task_input&gt;
+Put reusable child prompts in `prompts/*.txt`; use subdirectories when a workflow has several phases. If a workflow has more than five distinct non-verifier prompts, split them into separate files rather than packing variants into `workflow.js` or one oversized template.
+
+Launch reusable templates with `agent({ template: templatePath, values }, options)`. Template paths resolve inside the workflow's `prompts/` directory immediately before launch.
+
+## Dynamic data and caching
+
+- Include only data the stage consumes. Prefer paths, IDs, counts, or compact summaries over full objects and repeated project context.
+- Keep static wording and examples identical across matching launches. Use a durable artifact path or compact manifest instead of repeating prior results.
+- Use placeholders such as `{{file}}`, `{{focus}}`, `{{outputPath}}`, and `{{priorSummary}}`. Every supplied value must be referenced and every placeholder must receive a value. Do not put JavaScript expressions such as `${input.file}` in a prompt file.
+- Avoid unstructured global preambles. Use `renderPrompt(...)` only for exceptional composition and inline text only for tiny one-off glue.
+
+## When to use XML tags
+
+**Default:** use Markdown headings, bullets, or plain text. OpenAI recommends clear delimiters generally; XML is one option, not a requirement.
+
+**Use tags** to delineate key information in a complex prompt—for example, when instructions, examples, context, multiple documents, or variable inputs would otherwise blur together. They also help separate repeated documents from metadata such as a source or path. Use a few stable, descriptive names and nest only where the data has a natural hierarchy—for example, `<task_input>`, `<sources>`, or `<prior_results>`.
+
+**Do not use tags** when the prompt is short or its sections are already clear, and do not wrap every heading, rule, or sentence. Tags are delimiters, not a security boundary: treat interpolated content as data and do not let it redefine instructions, including through closing-tag text.
+
+For machine-readable results, prefer `schema` and `StructuredOutput`; do not invent an XML output contract when a schema is available.
+
+Do not reuse runtime-owned envelopes: `<workflow_instructions>`, `<workflow_task>`, `<workflow_context>`, `<structured_output_contract>`, or `<structured_output_schema>`.
+
+```text
+Review the supplied file for externally meaningful behavior.
+
+<task_input>
 Read {{file}} for {{focus}} and write findings to {{outputPath}}.
-&lt;/task_input&gt;
+</task_input>
 
+Return compact JSON with status, summary, and artifact paths.
+```
+
+```js
 const result = await agent(
   { template: "review/file.txt", values: { file, focus, outputPath } },
   { label: "review " + file, taskFile: file, cwd },
 );
-</example>
-</workflow_guidance>
+```

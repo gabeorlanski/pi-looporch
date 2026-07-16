@@ -1,23 +1,21 @@
-<workflow_guidance topic="workflow-api">
-<purpose>Use the sandbox globals and metadata contract in workflow.js.</purpose>
-<rules>
-<rule>workflow.js exports static metadata and a default async workflow function; metadata must include name, description, inputInstructions, and phases.</rule>
-<rule>Document the default function with JSDoc covering purpose, input fields/defaults, phases, child agents, file reads, and result shape.</rule>
-<rule>Supported workflow primitives are rendered below from the runtime registry with short descriptions and signatures; call narrower guidance topics for examples only when needed.</rule>
-<rule>agent, mapreduce, and verifier accept extensions?: string[] and tools?: string[]. Omit to inherit workflow settings, use [] for none, and use an exact tool list when only named tools should be exposed. A schema-enabled agent always receives its terminal StructuredOutput tool.</rule>
-<rule>propose_workflow statically validates inline and top-level const capability lists plus inherited defaults against Pi extension/tool metadata and saves nothing on error.</rule>
-<rule>Receive workflow input through workflow({ field, optional = default }) parameters.</rule>
-<rule>Workflows cannot import modules or use ambient Node globals. Use readText/readJson/writeText/writeJson and workflow-owned template tasks for files and artifacts.</rule>
-</rules>
-<example>
+# Workflow API
+
+- `workflow.js` exports static `metadata` and a default async workflow function. Metadata needs `name`, `description`, `inputInstructions`, and `phases`.
+- Document the default function with JSDoc covering purpose, input fields/defaults, phases, child agents, file reads, and result shape.
+- Supported workflow primitives are rendered below from the runtime registry with short descriptions and signatures; request narrower guidance topics for examples only when needed.
+- `agent`, `mapreduce`, and `verifier` accept `extensions?: string[]` and `tools?: string[]`. Omit to inherit settings, use `[]` for none, and use an exact tool list when only named tools should be exposed. Schema-enabled agents always receive terminal `StructuredOutput`.
+- `propose_workflow` validates inline and top-level `const` capability lists plus inherited defaults against Pi metadata and saves nothing on error.
+- Receive workflow input through `workflow({ field, optional = default })` parameters.
+- Workflows cannot import modules or use ambient Node globals. Use file helpers and workflow-owned templates for files and artifacts.
+
+```js
 export const metadata = {
   name: "review",
   description: "Review selected files",
   inputInstructions: "Resolve files from explicit path mentions; use remaining prose as focus.",
   phases: [{ title: "review" }, { title: "synthesis" }],
 };
-</example>
-<workflow_primitive_reference>
+```
+
+## Supported workflow primitives
 {{primitiveReference}}
-</workflow_primitive_reference>
-</workflow_guidance>

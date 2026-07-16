@@ -95,11 +95,13 @@ code runs in a sandbox with globals such as `agent`, `parallel`, `pipeline`,
 `mapreduce`, `verifier`, `phase`, `log`, `trace`, and file helpers.
 Reusable child prompts live in `prompts/*.txt` and launch through
 `agent({ template, values }, options)`; `renderPrompt` remains available for
-exceptional composition. Use domain-specific XML tags such as
-`<task_contract>`, `<rules>`, `<problem_context>`, `<library_context>`, and
-`<sources>` for workflow-supplied content. The runtime owns
-`<workflow_instructions>`, `<workflow_task>`, `<workflow_context>`, and,
-for schema-enabled agents, `<structured_output_contract>` and
+exceptional composition. Use Markdown or plain text by default. Add a few
+stable domain-specific XML tags only when complex mixed instructions, context,
+examples, documents, or dynamic inputs need unambiguous boundaries; do not
+wrap every heading or sentence. Tags are delimiters, not a security boundary.
+For machine-readable results, prefer `schema` and `StructuredOutput`. The
+runtime owns `<workflow_instructions>`, `<workflow_task>`, `<workflow_context>`,
+and, for schema-enabled agents, `<structured_output_contract>` and
 `<structured_output_schema>`; do not reuse them in child prompt files. The
 rendered child task is embedded verbatim in that runtime envelope; runtime
 metadata remains escaped.

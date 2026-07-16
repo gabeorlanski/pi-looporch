@@ -1,9 +1,6 @@
-<workflow_guidance topic="artifacts">
-<purpose>Handle large generated outputs and resource files without bloating prompt context.</purpose>
-<rules>
-<rule>Route large generated content to files; prompts name exact output paths.</rule>
-<rule>Return artifactPaths plus concise status or summary, not full file contents.</rule>
-<rule>Use @workflow/... with readText/readJson for workflow-owned prompts, schemas, fixtures, and small deterministic inputs. Use writeText/writeJson for artifacts and manifests that later stages read by path.</rule>
-<rule>Avoid bulk-reading project source just to paste it into a prompt; pass paths instead.</rule>
-</rules>
-</workflow_guidance>
+# Artifacts
+
+- Route large generated content to files; prompts name exact output paths.
+- Return `artifactPaths` plus a concise status or summary, not full file contents.
+- Use `@workflow/...` with `readText` and `readJson` for workflow-owned prompts, schemas, fixtures, and small deterministic inputs. Use `writeText` and `writeJson` for artifacts and manifests that later stages read by path.
+- Avoid bulk-reading project source just to paste it into a prompt; pass paths instead.

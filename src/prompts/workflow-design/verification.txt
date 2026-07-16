@@ -1,10 +1,7 @@
-<workflow_guidance topic="verification">
-<purpose>Add verification only when the artifact risk justifies the cost.</purpose>
-<rules>
-<rule>Add verification only for high-risk, user-visible, or artifact-producing workflows; do not add it by default.</rule>
-<rule>Prefer one verifier voter and at most one bounded repair pass unless the user explicitly asks for stronger assurance.</rule>
-<rule>Verifier prompts should cite evidence and separate major correctness failures from recommendations.</rule>
-<rule>Give verifier one extensions/tools selection for all voters and its reducer; omit either list only when inheriting the workflow default is intentional.</rule>
-<rule>Skip optional verification when budget.agentCount or budget.tokenCount shows the run is already expensive; these are observed counters, not estimates.</rule>
-</rules>
-</workflow_guidance>
+# Verification
+
+- Add verification only for high-risk, user-visible, or artifact-producing workflows; do not add it by default.
+- Prefer one verifier voter and at most one bounded repair pass unless the user explicitly asks for stronger assurance.
+- Verifier prompts should cite evidence and separate major correctness failures from recommendations.
+- Give a verifier one `extensions` and `tools` selection for all voters and its reducer; omit either list only when inheriting the workflow default is intentional.
+- Skip optional verification when `budget.agentCount` or `budget.tokenCount` shows the run is already expensive; these are observed counters, not estimates.

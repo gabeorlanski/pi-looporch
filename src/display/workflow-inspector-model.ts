@@ -1,5 +1,6 @@
 /** Provides workflow inspector model behavior. */
-import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
+import type { WorkflowAgentSnapshot, WorkflowCost, WorkflowSnapshot } from "../runtime/types.ts";
+import { workflowUsageTotals } from "../runtime/usage.ts";
 
 export type WorkflowUiStatus = "running" | "done" | "error";
 export type WorkflowUiPhaseStatus = "done" | "running" | "pending" | "error";
@@ -13,7 +14,7 @@ export interface WorkflowUiAgent {
   inputTokens: number;
   cachedTokens: number;
   outputTokens: number;
-  costUsd?: number;
+  cost: WorkflowCost;
   toolCalls: number;
   steps: number;
   durationSeconds: number;
@@ -46,8 +47,7 @@ export interface WorkflowUiWorkflow {
   cachedTokens: number;
   outputTokens: number;
   tokensTotal: number;
-  costUsd: number;
-  costIncomplete: boolean;
+  cost: WorkflowCost;
   phases: WorkflowUiPhase[];
 }
 
@@ -76,10 +76,7 @@ export class WorkflowInspectorModel {
   workflow(): WorkflowUiWorkflow {
     const phases = workflowPhases(this.snapshot, this.now());
     const agentsDone = this.snapshot.agents.filter((agent) => agent.status !== "running").length;
-    const inputTokens = this.snapshot.agents.reduce((total, agent) => total + agent.inputTokenCount, 0);
-    const cachedTokens = this.snapshot.agents.reduce((total, agent) => total + agent.cacheReadTokenCount, 0);
-    const outputTokens = this.snapshot.agents.reduce((total, agent) => total + agent.outputTokenCount, 0);
-    const agentsWithUnknownCost = this.snapshot.agents.filter((agent) => agent.costUsd === undefined);
+    const usage = workflowUsageTotals(this.snapshot.agents);
     return {
       name: `workflow ${this.snapshot.workflowName}`,
       subtitle: this.snapshot.description,
@@ -87,12 +84,7 @@ export class WorkflowInspectorModel {
       agentsDone,
       agentsTotal: this.snapshot.agents.length,
       elapsed: Math.max(0, Math.floor((this.now() - this.startedAt) / 1000)),
-      inputTokens,
-      cachedTokens,
-      outputTokens,
-      tokensTotal: inputTokens + outputTokens,
-      costUsd: this.snapshot.agents.reduce((total, agent) => total + (agent.costUsd ?? 0), 0),
-      costIncomplete: agentsWithUnknownCost.length > 0,
+      ...usage,
       phases,
     };
   }
@@ -181,7 +173,7 @@ function uiAgent(agent: WorkflowAgentSnapshot, now: number): WorkflowUiAgent {
     inputTokens: agent.inputTokenCount,
     cachedTokens: agent.cacheReadTokenCount,
     outputTokens: agent.outputTokenCount,
-    costUsd: agent.costUsd,
+    cost: agent.cost,
     toolCalls: agent.toolCallCount,
     steps: agent.stepCount,
     durationSeconds: agentDurationSeconds(agent, now),

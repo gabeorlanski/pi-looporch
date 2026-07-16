@@ -35,7 +35,7 @@ void test("progress summarizes status, input, tokens, and agents", () => {
         inputTokenCount: 1200,
         cacheReadTokenCount: 500,
         outputTokenCount: 900,
-        costUsd: 0.1,
+        cost: { knownUsd: 0.1, complete: true },
       }),
       agent({
         id: 2,
@@ -48,7 +48,7 @@ void test("progress summarizes status, input, tokens, and agents", () => {
         inputTokenCount: 700,
         cacheReadTokenCount: 300,
         outputTokenCount: 100,
-        costUsd: 0.02,
+        cost: { knownUsd: 0.02, complete: true },
         toolCallCount: 3,
         stepCount: 4,
         message: "using read",
@@ -148,10 +148,21 @@ void test("workflow_widget_and_inspector_render_within_width", () => {
 
   assert.ok(widgetLines.some((line) => line.includes("workflow review")));
   assert.ok(widgetLines.some((line) => line.includes("cached 0") && line.includes("out 300") && line.includes("$0.00+")));
-  assert.ok(inspectorLines.some((line) => line.includes("cached 0") && line.includes("out 300") && line.includes("$0.00+")));
+  assert.ok(inspectorLines.some((line) => line.includes("cached 0")));
+  assert.ok(inspectorLines.some((line) => line.includes("out 300") && line.includes("$0.00+")));
   assert.ok(inspectorLines.some((line) => line.includes("collect")));
   assert.ok(widgetLines.every((line) => visibleWidth(line) <= 80));
   assert.ok(inspectorLines.every((line) => visibleWidth(line) <= 100));
+  const narrowWidgetLines = new WorkflowWidget(
+    () => model,
+    plainWorkflowTuiTheme,
+    () => false,
+  ).render(64);
+  const narrowInspectorLines = new WorkflowInspector(model, plainWorkflowTuiTheme, () => 18).render(64);
+  assert.ok(narrowWidgetLines.some((line) => line.includes("in 1.2k") && line.includes("cached 0")));
+  assert.ok(narrowWidgetLines.some((line) => line.includes("out 300") && line.includes("$0.00+")));
+  assert.ok(narrowInspectorLines.some((line) => line.includes("in 1.2k") && line.includes("cached 0")));
+  assert.ok(narrowInspectorLines.some((line) => line.includes("out 300") && line.includes("$0.00+")));
 });
 
 void test("inspector shows activity, output, and expandable prompts", async () => {
@@ -292,7 +303,7 @@ void test("running workflow UI selects, inspects, and aborts", () => {
           inputTokenCount: 100,
           cacheReadTokenCount: 50,
           outputTokenCount: 30,
-          costUsd: 0.12,
+          cost: { knownUsd: 0.12, complete: true },
         }),
       ],
     },
@@ -300,6 +311,7 @@ void test("running workflow UI selects, inspects, and aborts", () => {
   assert.match(workflowStatus ?? "", /in 100 .* cached 50 .* out 30 .* \$0\.12/);
   updateRunningWorkflowUi(ctx, { runId: "run-2", snapshot: workflowSnapshot(), abortWorkflow: () => (aborted = true) });
   assert.match(workflowStatus ?? "", /^2 workflows/);
+  assert.match(workflowStatus ?? "", /\$0\.12\+/);
   clearRunningWorkflowUi(ctx, "run-1");
   assert.match(workflowStatus ?? "", /^Workflow/);
   assert.ok(terminalInputHandler);
@@ -351,6 +363,7 @@ function agent(overrides: Partial<WorkflowAgentSnapshot> & Pick<WorkflowAgentSna
     inputTokenCount: 0,
     cacheReadTokenCount: 0,
     outputTokenCount: 0,
+    cost: { knownUsd: 0, complete: false },
     toolCallCount: 0,
     stepCount: 0,
     ...overrides,

@@ -281,7 +281,7 @@ void test("workflow_agent_progress_tracker_reports_tool_start_arguments", () => 
       inputTokenCount: 0,
       cacheReadTokenCount: 0,
       outputTokenCount: 0,
-      costUsd: undefined,
+      cost: { knownUsd: 0, complete: false },
       toolCallCount: 0,
       toolActivity: [],
       stepCount: 0,
@@ -291,7 +291,7 @@ void test("workflow_agent_progress_tracker_reports_tool_start_arguments", () => 
       inputTokenCount: 0,
       cacheReadTokenCount: 0,
       outputTokenCount: 0,
-      costUsd: undefined,
+      cost: { knownUsd: 0, complete: false },
       toolCallCount: 1,
       toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
       stepCount: 0,
@@ -301,7 +301,7 @@ void test("workflow_agent_progress_tracker_reports_tool_start_arguments", () => 
       inputTokenCount: 0,
       cacheReadTokenCount: 0,
       outputTokenCount: 0,
-      costUsd: undefined,
+      cost: { knownUsd: 0, complete: false },
       toolCallCount: 1,
       toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
       stepCount: 0,
@@ -310,7 +310,7 @@ void test("workflow_agent_progress_tracker_reports_tool_start_arguments", () => 
       inputTokenCount: 10,
       cacheReadTokenCount: 3,
       outputTokenCount: 4,
-      costUsd: 0.001,
+      cost: { knownUsd: 0.001, complete: true },
       toolCallCount: 1,
       toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
       stepCount: 0,
@@ -320,12 +320,22 @@ void test("workflow_agent_progress_tracker_reports_tool_start_arguments", () => 
       inputTokenCount: 10,
       cacheReadTokenCount: 3,
       outputTokenCount: 4,
-      costUsd: 0.001,
+      cost: { knownUsd: 0.001, complete: true },
       toolCallCount: 1,
       toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
       stepCount: 1,
     },
   ]);
+});
+
+void test("workflow_agent_progress_tracker_keeps_known_cost_when_later_usage_is_unpriced", () => {
+  const reports: WorkflowAgentProgress[] = [];
+  const tracker = createWorkflowAgentProgressTracker({ launched: () => undefined, progress: (progress) => reports.push(progress) });
+
+  tracker.handleEvent({ type: "message_end", message: { usage: { input: 10, output: 2, cost: { total: 0.12 } } } });
+  tracker.handleEvent({ type: "message_end", message: { usage: { input: 5, output: 1 } } });
+
+  assert.deepEqual(reports.at(-1)?.cost, { knownUsd: 0.12, complete: false });
 });
 
 void test("workflow_agent_event_log_omits_streamed_message_updates", () => {
@@ -419,7 +429,14 @@ void test("session tokens parse provider usage aliases", async () => {
     "utf8",
   );
 
-  assert.deepEqual(parseSessionTokens(sessionDir), { input: 8, cacheRead: 1500, cacheWrite: 0, output: 9, total: 1517 });
+  assert.deepEqual(parseSessionTokens(sessionDir), {
+    input: 8,
+    cacheRead: 1500,
+    cacheWrite: 0,
+    output: 9,
+    total: 17,
+    cost: { knownUsd: 0, complete: false },
+  });
 });
 
 void test("workflow_session_tokens_parse_actual_usage_from_session_file", async () => {
@@ -437,7 +454,14 @@ void test("workflow_session_tokens_parse_actual_usage_from_session_file", async 
   );
   await writeFile(path.join(sessionDir, "events.jsonl"), `${JSON.stringify({ usage: { input: 100, output: 100 } })}\n`, "utf8");
 
-  assert.deepEqual(parseSessionTokens(sessionDir), { input: 13, cacheRead: 3, cacheWrite: 0, output: 6, total: 22, costUsd: 0.03 });
+  assert.deepEqual(parseSessionTokens(sessionDir), {
+    input: 13,
+    cacheRead: 3,
+    cacheWrite: 0,
+    output: 6,
+    total: 19,
+    cost: { knownUsd: 0.03, complete: true },
+  });
 });
 
 void test("agent session logs use the project key and parent ID", () => {

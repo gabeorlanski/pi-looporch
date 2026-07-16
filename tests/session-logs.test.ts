@@ -1,10 +1,47 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { workflowAgentSessionLogParentDirectory, writeWorkflowSessionSummary } from "../src/session-logs.ts";
+import { readWorkflowSnapshot, workflowSnapshotPath } from "../src/workflow/outputs.ts";
 import type { WorkflowSnapshot } from "../src/runtime/types.ts";
+
+void test("workflow_snapshot_normalizes_pre_usage_tracking_agents", async () => {
+  const outputsDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-old-snapshot-"));
+  await writeFile(
+    workflowSnapshotPath(outputsDir),
+    JSON.stringify({
+      workflowName: "review",
+      description: "Review files",
+      plannedPhases: [],
+      phases: [],
+      traces: [],
+      messages: [],
+      fanOuts: [],
+      status: "running",
+      agents: [
+        {
+          id: 1,
+          label: "worker",
+          phaseIndex: 0,
+          status: "running",
+          startedAt: 0,
+          inputTokenCount: 1,
+          outputTokenCount: 2,
+          toolCallCount: 0,
+          stepCount: 0,
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const snapshot = await readWorkflowSnapshot(outputsDir);
+
+  assert.equal(snapshot.agents[0]?.cacheReadTokenCount, 0);
+  assert.deepEqual(snapshot.agents[0]?.cost, { knownUsd: 0, complete: false });
+});
 
 void test("workflow_session_summary_saves_structured_run_metadata", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-session-summary-"));
@@ -30,7 +67,7 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
         inputTokenCount: 9,
         cacheReadTokenCount: 0,
         outputTokenCount: 3,
-        costUsd: 0.02,
+        cost: { knownUsd: 0.02, complete: true },
         toolCallCount: 2,
         stepCount: 4,
         promptPath: "/tmp/run/agent-1/prompt.txt",
@@ -79,7 +116,7 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
       inputTokenCount: 9,
       cacheReadTokenCount: 0,
       outputTokenCount: 3,
-      costUsd: 0.02,
+      cost: { knownUsd: 0.02, complete: true },
       toolCallCount: 2,
       stepCount: 4,
       promptPath: "/tmp/run/agent-1/prompt.txt",

@@ -194,11 +194,10 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
               cacheReadTokenCount: sessionStats.tokens.cacheRead,
               outputTokenCount: sessionStats.tokens.output,
             }),
-        ...(typeof sessionStats.cost === "number" && Number.isFinite(sessionStats.cost)
-          ? { costUsd: sessionStats.cost }
-          : loggedUsage?.costUsd === undefined
-            ? {}
-            : { costUsd: loggedUsage.costUsd }),
+        cost:
+          typeof sessionStats.cost === "number" && Number.isFinite(sessionStats.cost)
+            ? { knownUsd: sessionStats.cost, complete: true }
+            : (loggedUsage?.cost ?? { knownUsd: 0, complete: false }),
       });
       if (agentOptions.signal?.aborted) throw new Error("Workflow agent aborted");
       const failure = workflowAgentFailureMessage(session.messages, agentOptions.label);
@@ -274,7 +273,7 @@ export function createWorkflowAgentProgressTracker(reporter: WorkflowAgentReport
       inputTokenCount,
       cacheReadTokenCount,
       outputTokenCount,
-      costUsd: costComplete && costObserved ? costUsd : undefined,
+      cost: { knownUsd: costUsd, complete: costObserved && costComplete },
       toolCallCount,
       toolActivity: toolActivity.map((tool) => ({ ...tool })),
       stepCount,

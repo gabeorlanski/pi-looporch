@@ -59,7 +59,8 @@ empty prompt to select it, `Enter` to inspect, and `Esc` or `Up` to return.
 ```
 
 While a workflow runs, the footer status bar shows the combined input, cached-read,
-output, and exact USD cost for all current-session workflows. The active-workflow
+output, and known USD cost for all current-session workflows. A trailing `+` means
+at least one observed provider response did not report a price. The active-workflow
 widget and inspector header show those same totals for the selected workflow.
 
 A passive project monitor also appears below the editor for workflows active in

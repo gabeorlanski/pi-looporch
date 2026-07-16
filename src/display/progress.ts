@@ -1,5 +1,7 @@
 /** Provides progress behavior. */
 import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
+import { workflowUsageTotals, type WorkflowUsageTotals } from "../runtime/usage.ts";
+import { fmtCostUsd } from "./workflow-tui-format.ts";
 import { fit, titleLine, trimFixed } from "./text.ts";
 
 const DEFAULT_WIDTH = 96;
@@ -19,16 +21,11 @@ export interface ProgressDisplay {
   text: string;
 }
 
-interface NetStats {
+interface NetStats extends WorkflowUsageTotals {
   totalAgents: number;
   completedAgents: number;
   runningAgents: number;
   erroredAgents: number;
-  inputTokenCount: number;
-  cachedTokenCount: number;
-  outputTokenCount: number;
-  costUsd: number;
-  costIncomplete: boolean;
   toolCallCount: number;
 }
 
@@ -63,7 +60,7 @@ export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDT
   const safeWidth = Math.max(MIN_WIDTH, width);
   const stats = netStats(snapshot);
   const state = workflowState(snapshot, stats);
-  const statusLine = `${snapshot.workflowName}: ${state.label} · ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · in ${formatTokenCount(stats.inputTokenCount)} · cached ${formatTokenCount(stats.cachedTokenCount)} · out ${formatTokenCount(stats.outputTokenCount)} · cost ${formatCostUsd(stats.costUsd, stats.costIncomplete)} · tools ${String(stats.toolCallCount)}`;
+  const statusLine = `${snapshot.workflowName}: ${state.label} · ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · in ${formatTokenCount(stats.inputTokens)} · cached ${formatTokenCount(stats.cachedTokens)} · out ${formatTokenCount(stats.outputTokens)} · cost ${fmtCostUsd(stats.cost)} · tools ${String(stats.toolCallCount)}`;
   const widgetLines = [
     titleLine(`workflow ${snapshot.workflowName}`, safeWidth, theme),
     ...optionalInputLine(snapshot.input, safeWidth, theme),
@@ -81,10 +78,6 @@ export function formatTokenCount(tokenCount: number): string {
   if (tokenCount < 1000) return String(tokenCount);
   if (tokenCount < 1_000_000) return `${trimFixed(tokenCount / 1000)}k`;
   return `${trimFixed(tokenCount / 1_000_000)}M`;
-}
-
-function formatCostUsd(costUsd: number, incomplete: boolean): string {
-  return `$${costUsd.toFixed(2)}${incomplete ? "+" : ""}`;
 }
 
 function optionalInputLine(input: unknown, width: number, theme: ProgressTheme): string[] {
@@ -131,7 +124,7 @@ function agentLine(agent: WorkflowAgentSnapshot, width: number, theme: ProgressT
     `${formatTokenCount(agent.inputTokenCount)} in`,
     `${formatTokenCount(agent.cacheReadTokenCount)} cached`,
     `${formatTokenCount(agent.outputTokenCount)} out`,
-    formatCostUsd(agent.costUsd ?? 0, agent.costUsd === undefined),
+    fmtCostUsd(agent.cost),
     `${String(agent.toolCallCount)} tools`,
     agent.status === "running" ? `${String(agent.stepCount)} steps` : undefined,
   ]
@@ -141,11 +134,11 @@ function agentLine(agent: WorkflowAgentSnapshot, width: number, theme: ProgressT
 }
 
 function netLine(snapshot: WorkflowSnapshot, stats: NetStats, width: number, theme: ProgressTheme): string {
-  const totalTokenCount = stats.inputTokenCount + stats.outputTokenCount;
+  const totalTokenCount = stats.tokensTotal;
   return fit(
     `  ${theme.fg("muted", "NET")} ${String(stats.completedAgents)}/${String(stats.totalAgents)} agents · ` +
-      `${formatTokenCount(stats.inputTokenCount)} in · ${formatTokenCount(stats.cachedTokenCount)} cached · ${formatTokenCount(stats.outputTokenCount)} out · ` +
-      `${formatCostUsd(stats.costUsd, stats.costIncomplete)} cost · ${formatTokenCount(totalTokenCount)} total · ${String(stats.toolCallCount)} tools · ` +
+      `${formatTokenCount(stats.inputTokens)} in · ${formatTokenCount(stats.cachedTokens)} cached · ${formatTokenCount(stats.outputTokens)} out · ` +
+      `${fmtCostUsd(stats.cost)} cost · ${formatTokenCount(totalTokenCount)} total · ${String(stats.toolCallCount)} tools · ` +
       `${String(snapshot.fanOuts.length)} ${snapshot.fanOuts.length === 1 ? "fanout" : "fanouts"}`,
     width,
   );
@@ -154,15 +147,11 @@ function netLine(snapshot: WorkflowSnapshot, stats: NetStats, width: number, the
 function netStats(snapshot: WorkflowSnapshot): NetStats {
   const completedAgents = snapshot.agents.filter((agent) => agent.status !== "running").length;
   return {
+    ...workflowUsageTotals(snapshot.agents),
     totalAgents: snapshot.agents.length,
     completedAgents,
     runningAgents: snapshot.agents.length - completedAgents,
     erroredAgents: snapshot.agents.filter((agent) => agent.status === "error").length,
-    inputTokenCount: snapshot.agents.reduce((total, agent) => total + agent.inputTokenCount, 0),
-    cachedTokenCount: snapshot.agents.reduce((total, agent) => total + agent.cacheReadTokenCount, 0),
-    outputTokenCount: snapshot.agents.reduce((total, agent) => total + agent.outputTokenCount, 0),
-    costUsd: snapshot.agents.reduce((total, agent) => total + (agent.costUsd ?? 0), 0),
-    costIncomplete: snapshot.agents.some((agent) => agent.costUsd === undefined),
     toolCallCount: snapshot.agents.reduce((total, agent) => total + agent.toolCallCount, 0),
   };
 }

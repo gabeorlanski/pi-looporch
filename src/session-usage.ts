@@ -1,6 +1,7 @@
 /** Provides session usage behavior. */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import type { WorkflowCost } from "./runtime/types.ts";
 
 export interface TokenUsage {
   input: number;
@@ -8,8 +9,7 @@ export interface TokenUsage {
   cacheWrite: number;
   output: number;
   total: number;
-  /** Exact USD total when every observed provider response reports it. */
-  costUsd?: number;
+  cost: WorkflowCost;
 }
 
 /** Provides the parseSessionTokens function contract. */
@@ -47,8 +47,8 @@ export function parseSessionTokens(sessionDir: string): TokenUsage | null {
       cacheRead,
       cacheWrite,
       output,
-      total: input + cacheRead + cacheWrite + output,
-      ...(observedUsage && costComplete ? { costUsd } : {}),
+      total: input + output,
+      cost: { knownUsd: costUsd, complete: observedUsage && costComplete },
     };
   } catch {
     return null;

@@ -30,26 +30,23 @@ export class WorkflowWidget implements Component {
       : workflow.status === "done"
         ? this.theme.ok(glyph.done)
         : this.theme.danger("✗");
-    const stats = [
-      `${String(workflow.agentsDone)}/${String(workflow.agentsTotal)} agents done`,
-      fmtDuration(workflow.elapsed),
-      `in ${fmtTokens(workflow.inputTokens)}`,
-      `cached ${fmtTokens(workflow.cachedTokens)}`,
-      `out ${fmtTokens(workflow.outputTokens)}`,
-      fmtCostUsd(workflow.costUsd, workflow.costIncomplete),
-    ].join(` ${glyph.mid} `);
+    const stats = `${String(workflow.agentsDone)}/${String(workflow.agentsTotal)} agents done ${glyph.mid} ${fmtDuration(workflow.elapsed)}`;
+    const usageLeft = `in ${fmtTokens(workflow.inputTokens)} ${glyph.mid} cached ${fmtTokens(workflow.cachedTokens)}`;
+    const usageRight = `out ${fmtTokens(workflow.outputTokens)} ${glyph.mid} ${fmtCostUsd(workflow.cost)}`;
     const gutter = armed ? this.theme.accent(glyph.marker) : " ";
     const namePart = `${gutter} ${lead} ${this.theme.accent(workflow.name)}`;
     const subtitle = this.theme.dim(truncEnd(workflow.subtitle, Math.max(0, termWidth - width(namePart) - 2)));
     let row = padTo(`${namePart}  ${subtitle}`, termWidth);
-    let usage = padTo(`   ${this.theme.dim(truncEnd(stats, Math.max(0, termWidth - 3)))}`, termWidth);
+    let summary = padTo(`   ${this.theme.dim(stats)}`, termWidth);
+    let usage = padTo(`   ${this.theme.dim(usageLeft)}`, Math.max(0, termWidth - width(usageRight) - 1)) + this.theme.dim(usageRight);
     if (armed) {
       row = this.theme.selected(row);
-      usage = this.theme.selected(usage);
+      summary = this.theme.selected(summary);
+      usage = this.theme.selected(padTo(usage, termWidth));
     }
     const hint = armed
       ? this.theme.dim(`${glyph.enter} open inspector ${glyph.mid} ↑/esc back to prompt`)
       : this.theme.dim(`${glyph.arrowDown} select (on an empty prompt) to inspect`);
-    return [padTo(`  ${hint}`, termWidth), row, usage];
+    return [padTo(`  ${hint}`, termWidth), row, summary, padTo(usage, termWidth)];
   }
 }

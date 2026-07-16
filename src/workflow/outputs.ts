@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { errorMessage } from "../errors.ts";
-import type { WorkflowAgentSnapshot, WorkflowSnapshot, WorkflowToolActivitySnapshot } from "../runtime/types.ts";
+import type { WorkflowAgentSnapshot, WorkflowCost, WorkflowSnapshot, WorkflowToolActivitySnapshot } from "../runtime/types.ts";
 import { writeJsonFileAtomic, writeTextFileAtomic } from "./files.ts";
 
 type WorkflowOutputStatus = "done" | "error" | "running";
@@ -95,8 +95,30 @@ export async function readWorkflowOutputManifest(outputsDir: string): Promise<Wo
 }
 
 /** Provides the readWorkflowSnapshot function contract. */
+type PersistedWorkflowAgentSnapshot = Omit<WorkflowAgentSnapshot, "cacheReadTokenCount" | "cost"> & {
+  cacheReadTokenCount?: number;
+  cost?: WorkflowCost;
+  costUsd?: unknown;
+};
+
+type PersistedWorkflowSnapshot = Omit<WorkflowSnapshot, "agents"> & { agents: PersistedWorkflowAgentSnapshot[] };
+
+/** Provides the readWorkflowSnapshot function contract. */
 export async function readWorkflowSnapshot(outputsDir: string): Promise<WorkflowSnapshot> {
-  return JSON.parse(await readFile(workflowSnapshotPath(outputsDir), "utf8")) as WorkflowSnapshot;
+  const snapshot = JSON.parse(await readFile(workflowSnapshotPath(outputsDir), "utf8")) as PersistedWorkflowSnapshot;
+  return { ...snapshot, agents: snapshot.agents.map(normalizeWorkflowAgentSnapshot) };
+}
+
+function normalizeWorkflowAgentSnapshot(agent: PersistedWorkflowAgentSnapshot): WorkflowAgentSnapshot {
+  return {
+    ...agent,
+    cacheReadTokenCount: agent.cacheReadTokenCount ?? 0,
+    cost: agent.cost ?? legacyWorkflowCost(agent.costUsd),
+  };
+}
+
+function legacyWorkflowCost(value: unknown): WorkflowCost {
+  return typeof value === "number" && Number.isFinite(value) ? { knownUsd: value, complete: true } : { knownUsd: 0, complete: false };
 }
 
 /** Provides the writeWorkflowSnapshot function contract. */

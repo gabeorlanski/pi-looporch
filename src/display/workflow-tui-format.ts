@@ -1,5 +1,6 @@
 /** Provides workflow tui format behavior. */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { WorkflowCost } from "../runtime/types.ts";
 
 interface PiThemeLike {
   fg(color: "accent" | "borderMuted" | "dim" | "error" | "muted" | "success" | "warning", text: string): string;
@@ -71,8 +72,8 @@ export function fmtTokens(tokenCount: number): string {
 }
 
 /** Provides the fmtCostUsd function contract. */
-export function fmtCostUsd(costUsd: number, incomplete = false): string {
-  return `$${costUsd.toFixed(2)}${incomplete ? "+" : ""}`;
+export function fmtCostUsd(cost: WorkflowCost): string {
+  return `$${cost.knownUsd.toFixed(2)}${cost.complete ? "" : "+"}`;
 }
 
 function stripZero(value: number): string {

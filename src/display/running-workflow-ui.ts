@@ -3,6 +3,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { matchesKey, type TUI } from "@earendil-works/pi-tui";
 import { readActiveWorkflowSnapshots } from "../workflow/active-run-snapshots.ts";
 import type { WorkflowSnapshot } from "../runtime/types.ts";
+import { mergeWorkflowUsageTotals } from "../runtime/usage.ts";
 import { extensionSessionScope } from "./session-scope.ts";
 import { WorkflowInspector } from "./workflow-inspector.ts";
 import { WorkflowInspectorModel } from "./workflow-inspector-model.ts";
@@ -263,15 +264,19 @@ function activeRun(state: RunningWorkflowUiState): RunningWorkflowRunState {
 
 function updateWorkflowStatus(ctx: ExtensionContext, state: RunningWorkflowUiState): void {
   const workflows = [...state.runs.values()].map((run) => run.model.workflow());
-  const inputTokens = workflows.reduce((total, workflow) => total + workflow.inputTokens, 0);
-  const cachedTokens = workflows.reduce((total, workflow) => total + workflow.cachedTokens, 0);
-  const outputTokens = workflows.reduce((total, workflow) => total + workflow.outputTokens, 0);
-  const costUsd = workflows.reduce((total, workflow) => total + workflow.costUsd, 0);
-  const costIncomplete = workflows.some((workflow) => workflow.costIncomplete);
+  const usage = mergeWorkflowUsageTotals(
+    workflows.map((workflow) => ({
+      inputTokens: workflow.inputTokens,
+      cachedTokens: workflow.cachedTokens,
+      outputTokens: workflow.outputTokens,
+      tokensTotal: workflow.tokensTotal,
+      cost: workflow.cost,
+    })),
+  );
   const prefix = workflows.length === 1 ? "Workflow" : `${String(workflows.length)} workflows`;
   ctx.ui.setStatus(
     RUNNING_WORKFLOW_STATUS,
-    `${prefix} ${glyph.mid} in ${fmtTokens(inputTokens)} ${glyph.mid} cached ${fmtTokens(cachedTokens)} ${glyph.mid} out ${fmtTokens(outputTokens)} ${glyph.mid} ${fmtCostUsd(costUsd, costIncomplete)}`,
+    `${prefix} ${glyph.mid} in ${fmtTokens(usage.inputTokens)} ${glyph.mid} cached ${fmtTokens(usage.cachedTokens)} ${glyph.mid} out ${fmtTokens(usage.outputTokens)} ${glyph.mid} ${fmtCostUsd(usage.cost)}`,
   );
 }
 

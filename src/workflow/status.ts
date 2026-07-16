@@ -2,7 +2,7 @@
 import path from "node:path";
 import { readActiveWorkflowRuns, type ActiveWorkflowRunRecord } from "./active-runs.ts";
 import { readWorkflowOutputManifest, readWorkflowSnapshot } from "./outputs.ts";
-import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
+import type { WorkflowAgentSnapshot, WorkflowCost, WorkflowSnapshot } from "../runtime/types.ts";
 import { errorMessage, isMissingFileError } from "../errors.ts";
 
 export type WorkflowStatusScope = "project" | "current-session";
@@ -25,7 +25,7 @@ export interface WorkflowAgentStatus {
   inputTokens: number;
   cachedTokens: number;
   outputTokens: number;
-  costUsd?: number;
+  cost: WorkflowCost;
   toolCalls: number;
   steps: number;
   message?: string;
@@ -254,7 +254,7 @@ function agentStatus(agent: WorkflowAgentSnapshot, now: number): WorkflowAgentSt
     inputTokens: agent.inputTokenCount,
     cachedTokens: agent.cacheReadTokenCount,
     outputTokens: agent.outputTokenCount,
-    ...(agent.costUsd === undefined ? {} : { costUsd: agent.costUsd }),
+    cost: agent.cost,
     toolCalls: agent.toolCallCount,
     steps: agent.stepCount,
     ...(agent.message ? { message: agent.message } : {}),

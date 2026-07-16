@@ -59,6 +59,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       inputTokenCount: 0,
       cacheReadTokenCount: 0,
       outputTokenCount: 0,
+      cost: { knownUsd: 0, complete: false },
       toolCallCount: 0,
       stepCount: 0,
       fanOutId: fanOutScope.getStore(),
@@ -182,8 +183,8 @@ function applyAgentProgress(agent: WorkflowAgentSnapshot, progress: WorkflowAgen
     agent.outputTokenCount = progress.outputTokenCount;
     changed = true;
   }
-  if ("costUsd" in progress && progress.costUsd !== agent.costUsd) {
-    agent.costUsd = progress.costUsd;
+  if (progress.cost !== undefined && (progress.cost.knownUsd !== agent.cost.knownUsd || progress.cost.complete !== agent.cost.complete)) {
+    agent.cost = progress.cost;
     changed = true;
   }
   if (progress.toolCallCount !== undefined && progress.toolCallCount !== agent.toolCallCount) {

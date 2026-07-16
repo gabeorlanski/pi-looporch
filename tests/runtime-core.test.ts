@@ -21,7 +21,13 @@ export default async function workflow({ files }) {
     { "prompt.txt": "review " },
   );
   const agent: WorkflowAgent = (prompt, options, reporter) => {
-    reporter.progress({ inputTokenCount: 5, cacheReadTokenCount: 3, outputTokenCount: 2, costUsd: 0.01, model: "fake-model" });
+    reporter.progress({
+      inputTokenCount: 5,
+      cacheReadTokenCount: 3,
+      outputTokenCount: 2,
+      cost: { knownUsd: 0.01, complete: true },
+      model: "fake-model",
+    });
     return Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
   };
 
@@ -53,8 +59,11 @@ export default async function workflow({ files }) {
     [2, 2],
   );
   assert.deepEqual(
-    result.snapshot.agents.map((agentSnapshot) => agentSnapshot.costUsd),
-    [0.01, 0.01],
+    result.snapshot.agents.map((agentSnapshot) => agentSnapshot.cost),
+    [
+      { knownUsd: 0.01, complete: true },
+      { knownUsd: 0.01, complete: true },
+    ],
   );
   assert.deepEqual(
     result.snapshot.agents.map((agentSnapshot) => agentSnapshot.fanOutId),

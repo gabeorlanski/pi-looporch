@@ -61,14 +61,19 @@ export interface WorkflowAgentLaunchMetadata {
   prompt: string;
 }
 
+/** Known workflow cost and whether it includes every observed provider response. */
+export interface WorkflowCost {
+  knownUsd: number;
+  complete: boolean;
+}
+
 /** Incremental child-agent progress reported by the Pi adapter to the workflow runtime. */
 export interface WorkflowAgentProgress {
   statusMessage?: string;
   inputTokenCount?: number;
   cacheReadTokenCount?: number;
   outputTokenCount?: number;
-  /** Exact cumulative USD cost when provider usage supplies it. */
-  costUsd?: number;
+  cost?: WorkflowCost;
   toolCallCount?: number;
   toolActivity?: WorkflowToolActivitySnapshot[];
   stepCount?: number;
@@ -102,8 +107,7 @@ export interface WorkflowAgentSnapshot {
   inputTokenCount: number;
   cacheReadTokenCount: number;
   outputTokenCount: number;
-  /** Exact cumulative USD cost when provider usage supplies it. */
-  costUsd?: number;
+  cost: WorkflowCost;
   toolCallCount: number;
   stepCount: number;
   fanOutId?: number;

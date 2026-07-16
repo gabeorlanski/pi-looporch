@@ -4,25 +4,25 @@
 <rule>Put reusable child-agent prompts under prompts/*.txt; use subdirectories when a workflow has several phases.</rule>
 <rule>If a workflow needs more than five distinct non-verifier prompts, split them into separate prompt files instead of packing variants into workflow.js or one oversized template.</rule>
 <rule>Launch reusable prompt files with agent({ template: templatePath, values }, options). Template paths resolve inside the workflow prompts/ directory immediately before child-agent launch.</rule>
-<rule>Use a stable &lt;workflow_instructions&gt; prefix for Purpose, Definitions, Rules, and Output. Put interpolated values in final typed sections such as &lt;workflow_inputs&gt; or &lt;workflow_task&gt; so workflow-supplied data is never mistaken for a user message.</rule>
+<rule>Pi-workflow owns these collision-prone outer envelopes: &lt;workflow_instructions&gt;, &lt;workflow_task&gt;, &lt;workflow_context&gt;, and, when a schema is supplied, &lt;structured_output_contract&gt; and &lt;structured_output_schema&gt;. Do not use those tags in child prompt files: repeated envelopes can blur scope for the agent. The runtime instruction block also contains nested tags: &lt;operating_contract&gt;, &lt;goal_and_authority&gt;, &lt;evidence&gt;, &lt;decisions_and_scope&gt;, &lt;validation&gt;, &lt;output&gt;, &lt;stop_and_escalation&gt;, and &lt;completion&gt;; these describe runtime behavior rather than a child-template envelope. Use domain-specific tags such as &lt;task_contract&gt;, &lt;rules&gt;, &lt;problem_context&gt;, &lt;library_context&gt;, and &lt;sources&gt; instead.</rule>
 <rule>Keep dynamic sections small: include only values this stage directly consumes, not every workflow input or global. Pass paths, IDs, counts, or compact summaries instead of full objects.</rule>
 <rule>Keep static wording and examples identical across matching launches to maximize provider prompt-cache reuse. Do not repeat prior results or project context when a durable artifact path or compact manifest is sufficient.</rule>
 <rule>Use {{file}}, {{focus}}, {{outputPath}}, and {{priorSummary}} placeholders; every supplied value must be referenced, and every placeholder needs a supplied value. Do not write JS template variables like ${input.file} inside prompt files.</rule>
 <rule>Avoid unstructured global preamble dumps and repeated irrelevant globals. Keep renderPrompt(...) only for exceptional prompt composition and inline text only for tiny one-off glue.</rule>
 </rules>
 <example>
-&lt;workflow_instructions&gt;
+&lt;task_contract&gt;
 &lt;purpose&gt;Review the externally meaningful behavior for this stage.&lt;/purpose&gt;
 &lt;rules&gt;
 &lt;rule&gt;Cite evidence with file paths and lines.&lt;/rule&gt;
 &lt;rule&gt;Preserve observable behavior; do not restate every source detail.&lt;/rule&gt;
 &lt;/rules&gt;
 &lt;output&gt;Return compact JSON with status, summary, and artifactPaths.&lt;/output&gt;
-&lt;/workflow_instructions&gt;
+&lt;/task_contract&gt;
 
-&lt;workflow_task&gt;
+&lt;task_input&gt;
 Read {{file}} for {{focus}} and write findings to {{outputPath}}.
-&lt;/workflow_task&gt;
+&lt;/task_input&gt;
 
 const result = await agent(
   { template: "review/file.txt", values: { file, focus, outputPath } },

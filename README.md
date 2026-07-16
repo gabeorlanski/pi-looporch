@@ -95,10 +95,14 @@ code runs in a sandbox with globals such as `agent`, `parallel`, `pipeline`,
 `mapreduce`, `verifier`, `phase`, `log`, `trace`, and file helpers.
 Reusable child prompts live in `prompts/*.txt` and launch through
 `agent({ template, values }, options)`; `renderPrompt` remains available for
-exceptional composition. Use a stable `<workflow_instructions>` prefix and put
-workflow-supplied task data in final typed sections such as `<workflow_task>`
-or `<workflow_inputs>`; this distinguishes it from user text and improves prompt
-cache reuse.
+exceptional composition. Use domain-specific XML tags such as
+`<task_contract>`, `<rules>`, `<problem_context>`, `<library_context>`, and
+`<sources>` for workflow-supplied content. The runtime owns
+`<workflow_instructions>`, `<workflow_task>`, `<workflow_context>`, and,
+for schema-enabled agents, `<structured_output_contract>` and
+`<structured_output_schema>`; do not reuse them in child prompt files. The
+rendered child task is embedded verbatim in that runtime envelope; runtime
+metadata remains escaped.
 
 `agent`, `mapreduce`, and `verifier` accept `extensions` and `tools`
 string lists. Omit either list to inherit workflow settings; use `[]` for none.

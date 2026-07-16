@@ -56,8 +56,22 @@ void test("guidance tool returns index and focused guidance", async () => {
 
   const promptFiles = await tool.execute("call-4", { topic: "prompt-files" }, undefined, undefined, {} as never);
   const promptFilesText = promptFiles.content[0]?.type === "text" ? promptFiles.content[0].text : "";
+  assert.match(promptFilesText, /collision-prone outer envelopes/);
+  assert.match(promptFilesText, /runtime instruction block also contains nested tags/);
   assert.match(promptFilesText, /&lt;workflow_instructions&gt;/);
-  assert.match(promptFilesText, /final typed sections/);
+  assert.match(promptFilesText, /&lt;workflow_task&gt;/);
+  assert.match(promptFilesText, /&lt;workflow_context&gt;/);
+  assert.match(promptFilesText, /&lt;structured_output_contract&gt;/);
+  assert.match(promptFilesText, /&lt;structured_output_schema&gt;/);
+  assert.match(promptFilesText, /&lt;operating_contract&gt;/);
+  assert.match(promptFilesText, /&lt;goal_and_authority&gt;/);
+  assert.match(promptFilesText, /&lt;evidence&gt;/);
+  assert.match(promptFilesText, /&lt;decisions_and_scope&gt;/);
+  assert.match(promptFilesText, /&lt;validation&gt;/);
+  assert.match(promptFilesText, /&lt;output&gt;/);
+  assert.match(promptFilesText, /&lt;stop_and_escalation&gt;/);
+  assert.match(promptFilesText, /&lt;completion&gt;/);
+  assert.match(promptFilesText, /&lt;task_contract&gt;/);
   assert.match(promptFilesText, /more than five distinct non-verifier prompts/);
   assert.match(promptFilesText, /Keep dynamic sections small/);
   assert.match(promptFilesText, /not every workflow input or global/);

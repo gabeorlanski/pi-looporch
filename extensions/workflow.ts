@@ -4,7 +4,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../src/errors.ts";
 import { naturalLanguageRequestMessage, steerableInputResolutionMessage, workflowFailureHandoffPrompt } from "../src/prompt-templates.ts";
 import { discoverWorkflows } from "../src/discovery.ts";
-import { createPiWorkflowAgent } from "../src/pi-agent.ts";
+import { createPiWorkflowAgent, type PiWorkflowAgentOptions } from "../src/pi-agent.ts";
 import { createParentAgentCapabilityCatalogProvider, type AgentCapabilityCatalogProvider } from "../src/pi-agent-capabilities.ts";
 import { parseWorkflowInput } from "../src/input.ts";
 import { startWorkflowMonitorWidget, stopWorkflowMonitorWidget } from "../src/display/workflow-monitor-widget.ts";
@@ -13,14 +13,21 @@ import { abortVisibleWorkflowRuns, startVisibleWorkflowRun } from "../src/displa
 import { sendWorkflowUserMessage } from "../src/display/workflow-user-message.ts";
 import { createWorkflowTools } from "../src/tools.ts";
 import { WorkflowInputError } from "../src/workflow/input-contract.ts";
+import type { WorkflowAgent } from "../src/runtime/types.ts";
 import { normalizeWorkflowName } from "../src/workflow/paths.ts";
 import { readWorkflowInputContract } from "../src/workflow/start.ts";
 import { reviewWorkflowCommand } from "./commands/review.ts";
 import { workflowSettingsCommand } from "./commands/settings.ts";
 import { workflowStatusCommand } from "./commands/status.ts";
 
+/** Injectable Pi agent construction used by extension command and tool launches. */
+export interface PiWorkflowExtensionDependencies {
+  createAgent?: (options: PiWorkflowAgentOptions) => WorkflowAgent;
+}
+
 /** Registers pi-workflow commands, tools, and TUI hooks with a Pi extension host. */
-export default function piWorkflow(pi: ExtensionAPI): void {
+export default function piWorkflow(pi: ExtensionAPI, dependencies: PiWorkflowExtensionDependencies = {}): void {
+  const createAgent = dependencies.createAgent ?? createPiWorkflowAgent;
   const aliases = new Set<string>();
   const capabilityCatalogs = new Map<string, AgentCapabilityCatalogProvider>();
   const capabilityCatalogForCwd = (cwd: string): AgentCapabilityCatalogProvider => {
@@ -32,7 +39,7 @@ export default function piWorkflow(pi: ExtensionAPI): void {
   };
 
   for (const tool of createWorkflowTools({
-    agentForContext: (ctx) => createPiWorkflowAgent({ cwd: ctx.cwd, agentCapabilityCatalog: capabilityCatalogForCwd(ctx.cwd) }),
+    agentForContext: (ctx) => createAgent({ cwd: ctx.cwd, agentCapabilityCatalog: capabilityCatalogForCwd(ctx.cwd) }),
     agentCapabilityCatalogForContext: (ctx) => capabilityCatalogForCwd(ctx.cwd),
     sendUserMessageForContext:
       () =>
@@ -45,7 +52,7 @@ export default function piWorkflow(pi: ExtensionAPI): void {
   pi.registerCommand("workflow", {
     description: "Run or create a project workflow in the current session",
     getArgumentCompletions: (prefix) => workflowCompletions(process.cwd(), prefix),
-    handler: async (args, ctx) => steerWorkflowCommand(pi, ctx, undefined, args, capabilityCatalogForCwd(ctx.cwd)),
+    handler: async (args, ctx) => steerWorkflowCommand(pi, createAgent, ctx, undefined, args, capabilityCatalogForCwd(ctx.cwd)),
   });
 
   pi.registerCommand("workflow-review", {
@@ -80,7 +87,7 @@ export default function piWorkflow(pi: ExtensionAPI): void {
       pi.registerCommand(command, {
         description: workflow.metadata.description,
         handler: async (args, commandCtx) =>
-          steerWorkflowCommand(pi, commandCtx, workflow.name, args, capabilityCatalogForCwd(commandCtx.cwd)),
+          steerWorkflowCommand(pi, createAgent, commandCtx, workflow.name, args, capabilityCatalogForCwd(commandCtx.cwd)),
       });
     }
   });
@@ -93,13 +100,14 @@ export default function piWorkflow(pi: ExtensionAPI): void {
 
 async function steerWorkflowCommand(
   pi: ExtensionAPI,
+  createAgent: (options: PiWorkflowAgentOptions) => WorkflowAgent,
   ctx: ExtensionCommandContext,
   fixedWorkflowName: string | undefined,
   args: string,
   capabilityCatalog?: AgentCapabilityCatalogProvider,
 ): Promise<void> {
   if (fixedWorkflowName) {
-    await runExistingWorkflowCommand(pi, ctx, normalizeWorkflowName(fixedWorkflowName), args, capabilityCatalog);
+    await runExistingWorkflowCommand(pi, createAgent, ctx, normalizeWorkflowName(fixedWorkflowName), args, capabilityCatalog);
     return;
   }
 
@@ -113,7 +121,7 @@ async function steerWorkflowCommand(
 
   const [first, rest] = splitFirstWord(trimmed);
   if (names.includes(first)) {
-    await runExistingWorkflowCommand(pi, ctx, first, rest, capabilityCatalog);
+    await runExistingWorkflowCommand(pi, createAgent, ctx, first, rest, capabilityCatalog);
     return;
   }
 
@@ -123,6 +131,7 @@ async function steerWorkflowCommand(
 
 async function runExistingWorkflowCommand(
   pi: ExtensionAPI,
+  createAgent: (options: PiWorkflowAgentOptions) => WorkflowAgent,
   ctx: ExtensionCommandContext,
   workflowName: string,
   rawInput: string,
@@ -151,7 +160,7 @@ async function runExistingWorkflowCommand(
       );
       return;
     }
-    const agent = createPiWorkflowAgent({ cwd: ctx.cwd, ...(capabilityCatalog ? { agentCapabilityCatalog: capabilityCatalog } : {}) });
+    const agent = createAgent({ cwd: ctx.cwd, ...(capabilityCatalog ? { agentCapabilityCatalog: capabilityCatalog } : {}) });
     ctx.ui.notify(`Running workflow '${workflowName}' in the background`, "info");
     await startVisibleWorkflowRun({
       ctx,

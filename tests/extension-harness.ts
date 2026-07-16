@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ToolDefinition, ToolInfo } from "@earendil-works/pi-coding-agent";
-import piWorkflow from "../extensions/workflow.ts";
+import piWorkflow, { type PiWorkflowExtensionDependencies } from "../extensions/workflow.ts";
 
 interface RegisteredTestCommand {
   handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> | void;
@@ -51,6 +51,7 @@ export interface ExtensionHarnessOptions {
   sendMessage?: (message: SentMessage, options?: unknown) => void;
   sendUserMessage?: (message: unknown, options?: unknown) => void;
   parentTools?: ToolInfo[];
+  extensionDependencies?: PiWorkflowExtensionDependencies;
 }
 
 export interface ExtensionHarness {
@@ -128,7 +129,7 @@ export function createExtensionHarness(options: ExtensionHarnessOptions): Extens
       return options.parentTools ?? [];
     },
   } as unknown as ExtensionAPI;
-  piWorkflow(pi);
+  piWorkflow(pi, options.extensionDependencies);
   const ui = {
     notify(message: string, type?: "info" | "warning" | "error"): void {
       notifications.push({ message, type });

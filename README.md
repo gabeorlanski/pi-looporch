@@ -153,7 +153,7 @@ none. Per-agent lists override these defaults.
 
 ## Development
 
-Development and compatibility checks target Pi SDK and TUI 0.80.8.
+Development and compatibility checks target Pi SDK and TUI 0.80.8. The test suite includes a deterministic dummy-workflow E2E covering the extension command, Pi child-agent initialization, schema output, and completion handoff.
 
 ```bash
 npm run lint

@@ -184,6 +184,79 @@ void test("workflow_widget_and_inspector_render_within_width", () => {
   );
 });
 
+void test("inspector does not duplicate a current phase after setup", () => {
+  const model = new WorkflowInspectorModel({
+    workflowName: "review",
+    description: "Review auth-sensitive files",
+    plannedPhases: [{ title: "Setup" }, { title: "Repository screen" }, { title: "Materialize and test" }, { title: "Report" }],
+    phases: ["Repository screen", "Materialize and test"],
+    traces: [],
+    agents: [
+      agent({ id: 1, phaseIndex: 0, label: "prepare", status: "done" }),
+      agent({ id: 2, phaseIndex: 1, phase: "Repository screen", label: "screen", status: "done" }),
+      agent({ id: 3, phaseIndex: 2, phase: "Materialize and test", label: "test", status: "running" }),
+    ],
+    fanOuts: [],
+    messages: [],
+    status: "running",
+  });
+
+  assert.deepEqual(
+    model.workflow().phases.map((phase) => phase.name),
+    ["Setup", "Repository screen", "Materialize and test", "Report"],
+  );
+});
+
+void test("inspector preserves a planned phase after unplanned setup work", () => {
+  const model = new WorkflowInspectorModel({
+    workflowName: "review",
+    description: "Review auth-sensitive files",
+    plannedPhases: [{ title: "Run" }],
+    phases: [],
+    traces: [],
+    agents: [agent({ id: 1, phaseIndex: 0, label: "prepare", status: "running" })],
+    fanOuts: [],
+    messages: [],
+    status: "running",
+  });
+
+  assert.deepEqual(
+    model.workflow().phases.map((phase) => phase.name),
+    ["Setup", "Run"],
+  );
+});
+
+void test("inspector dynamically fits long titles and labels at every width", () => {
+  const model = new WorkflowInspectorModel({
+    workflowName: "a workflow with a deliberately oversized name that must not corrupt the inspector header",
+    description: "Review auth-sensitive files",
+    plannedPhases: [{ title: "Materialize and test a deliberately oversized phase name" }],
+    phases: ["Materialize and test a deliberately oversized phase name"],
+    traces: [],
+    agents: [
+      agent({
+        id: 1,
+        phaseIndex: 1,
+        phase: "Materialize and test a deliberately oversized phase name",
+        label: "an agent with a deliberately oversized label that should grow the agent pane without breaking the detail pane",
+        status: "running",
+      }),
+    ],
+    fanOuts: [],
+    messages: [],
+    status: "running",
+  });
+  const inspector = new WorkflowInspector(model, plainWorkflowTuiTheme, () => 18);
+
+  for (const terminalWidth of [20, 64, 100, 300]) {
+    assert.ok(inspector.render(terminalWidth).every((line) => visibleWidth(line) <= terminalWidth));
+  }
+  inspector.handleInput("\r");
+  for (const terminalWidth of [20, 64, 100, 300]) {
+    assert.ok(inspector.render(terminalWidth).every((line) => visibleWidth(line) <= terminalWidth));
+  }
+});
+
 void test("workflow widget colors input tokens and cost", () => {
   const accented: string[] = [];
   const warned: string[] = [];
@@ -222,7 +295,10 @@ void test("inspector shows activity, output, and expandable prompts", async () =
       [
         { name: "find", arguments: { pattern: "*.ts" } },
         { name: "read", arguments: { path: "src/auth.ts" } },
-        { name: "bash", arguments: { command: `npm test ${"界".repeat(30)}` } },
+        {
+          name: "bash",
+          arguments: { command: `npm test ${"界".repeat(80)}`, ignored: "this argument should not appear in the summary" },
+        },
         { name: "write", arguments: { path: "out.txt" } },
       ]
         .map((entry) => JSON.stringify(entry))
@@ -248,8 +324,11 @@ void test("inspector shows activity, output, and expandable prompts", async () =
           promptPath,
           activityPath,
           outputPath,
+          cwd: "/tmp/project",
+          sessionDir: "/tmp/session-dir",
           sessionFile: "/tmp/session.jsonl",
           eventsFile: "/tmp/events.jsonl",
+          tools: ["read", "write"],
         }),
       ],
       fanOuts: [],
@@ -263,11 +342,14 @@ void test("inspector shows activity, output, and expandable prompts", async () =
   inspector.handleInput("\r");
   const collapsed = inspector.render(120).join("\n");
 
-  assert.match(collapsed, /session file: \/tmp\/session\.jsonl/);
-  assert.match(collapsed, /events file: \/tmp\/events\.jsonl/);
+  assert.match(collapsed, /tools: read, write/);
+  assert.doesNotMatch(collapsed, /\/tmp\/project|\/tmp\/session-dir|\/tmp\/session\.jsonl|\/tmp\/events\.jsonl/);
+  assert.doesNotMatch(collapsed, new RegExp(artifactsDir));
   assert.doesNotMatch(collapsed, /find \{"pattern":"\*\.ts"\}/);
   assert.match(collapsed, /read \{"path":"src\/auth\.ts"\}/);
-  assert.match(collapsed, /bash \{"command":"npm test/);
+  const bashActivityLine = collapsed.split("\n").find((line) => line.includes('bash {"command":"npm test'));
+  assert.match(bashActivityLine ?? "", /…/);
+  assert.doesNotMatch(collapsed, /this argument should not appear in the summary/);
   assert.match(collapsed, /write \{"path":"out\.txt"\}/);
   assert.match(collapsed, /EXACT OUTPUT/);
   assert.doesNotMatch(collapsed, /EXACT PROMPT/);

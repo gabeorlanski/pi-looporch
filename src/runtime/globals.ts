@@ -3,6 +3,7 @@ import type { ActiveWorkflowRuntime, WorkflowPrimitive, WorkflowPrimitiveGlobalD
 import { agentPrimitive } from "./primitives/agent.ts";
 import { environmentPrimitive, filePrimitive } from "./primitives/files.ts";
 import { logPrimitive } from "./primitives/log.ts";
+import { llmPrimitive } from "./primitives/llm.ts";
 import { mapReducePrimitive } from "./primitives/mapreduce.ts";
 import { parallelPrimitive } from "./primitives/parallel.ts";
 import { phasePrimitive } from "./primitives/phase.ts";
@@ -12,6 +13,7 @@ import { verifierPrimitive } from "./primitives/verifier.ts";
 
 const workflowPrimitives: WorkflowPrimitive[] = [
   environmentPrimitive,
+  llmPrimitive,
   agentPrimitive,
   phasePrimitive,
   logPrimitive,

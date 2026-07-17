@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
-import { writeWorkflow } from "./runtime-helpers.ts";
+import { unavailableLLM, writeWorkflow } from "./runtime-helpers.ts";
 
 void test("workflow_queues_parallel_items_over_the_max_parallel_cap", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
@@ -28,6 +28,7 @@ export default async function workflow({ items }) {
   };
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 2,
     cwd: project,
     workflowName: "queue",
@@ -61,6 +62,7 @@ export default async function workflow({ items }) {
   };
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 2,
     cwd: project,
     workflowName: "direct-cap",
@@ -95,6 +97,7 @@ export default async function workflow() {
   };
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 2,
     cwd: project,
     workflowName: "global-cap",
@@ -138,6 +141,7 @@ export default async function workflow() {
   };
 
   const run = runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 1,
     cwd: project,
     workflowName: "queued-abort",

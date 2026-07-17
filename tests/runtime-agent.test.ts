@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
-import { writeWorkflow } from "./runtime-helpers.ts";
+import { unavailableLLM, writeWorkflow } from "./runtime-helpers.ts";
 
 void test("agent cwd resolves relative to the project", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
@@ -25,7 +25,14 @@ export default async function workflow() {
     return Promise.resolve(options.cwd);
   };
 
-  const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "agent-cwd", input: {}, agent });
+  const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "agent-cwd",
+    input: {},
+    agent,
+  });
 
   assert.equal(result.result, scratch);
   assert.deepEqual(
@@ -71,6 +78,7 @@ export default async function workflow() {
   };
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "structured-agent",
@@ -122,6 +130,7 @@ export default async function workflow() {
   let snapshots = 0;
 
   await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "heartbeat",
@@ -155,6 +164,7 @@ export default async function workflow() {
   };
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "templated-prompt-artifact",
@@ -203,6 +213,7 @@ export default async function workflow() {
   };
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "progress-log",
@@ -256,6 +267,7 @@ export default async function workflow() {
   };
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "logged",

@@ -42,6 +42,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Put pi command, TUI, and extension registration wiring in `extensions/`; put workflow orchestration logic in `src/`.
 - Put runtime implementation under `src/runtime/`, including workflow execution in `src/runtime/run.ts`; import runtime types from `src/runtime/types.ts` and workflow helpers from `src/workflow/`.
 - Keep workflow runtime primitives in `src/runtime/primitives/` and register their globals through the shared `WorkflowPrimitive` protocol instead of adding ad hoc branches to `src/runtime/globals.ts`.
+- Keep workflow object-schema validation and typing in `src/workflow-schema.ts` so primitives share one boundary.
 - Put TUI and visible text rendering under `src/display/`, with one display concern per file.
 - Keep raw agent prompt text in `src/prompts/*.txt`; keep typed interpolation and domain shaping outside the prompt directory.
 - Keep rendered authoring guidance outside raw prompt files; raw prompts should receive generated guides through placeholders.
@@ -59,7 +60,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 ### Runtime and Boundaries
 
-- Inject `WorkflowAgent`; never hardcode model or pi providers into core logic.
+- Inject `WorkflowAgent` and `WorkflowLLM`; never hardcode model or Pi providers into core logic.
 - Propose generated workflows as complete project-local draft directories such as `.pi/workflow-drafts/<name>/`; `propose_workflow` `draftDir` values should point at the directory, not the `workflow.js` file.
 - `propose_workflow` saves directly after validating the draft directory and child-agent capabilities; it must statically resolve inline or top-level `const` capability lists, validate inherited settings defaults against Pi's real extension/tool metadata, aggregate source-located failures, and leave published workflows untouched on error.
 - Require workflow metadata to include `phases: [{ title, detail? }]`; this planned runbook outline is required planning data, while runtime `phase()` calls are actual progress.
@@ -74,6 +75,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - If a workflow needs more than five distinct non-verifier prompts, split them into separate prompt files rather than packing variants into `workflow.js` or one oversized template.
 - Use adversarial verifier/repair stages for important generated artifacts only when the risk justifies the extra agents; verifier prompts should cite evidence and separate major correctness failures from recommendations.
 - Prefer `agent({ template, values }, { schema })` for child agents that need structured fields. The schema is prepended to the prompt and becomes the terminal `StructuredOutput` tool contract; Pi validates keyword arguments, the tool ends the session, and a missing call is an error.
+- Use `LLM(prompt, { system?, messages?, chatTemplate?, schema? })` for one generation-only call with Pi's active model and auth. It appends the prompt as the final user message and renders the complete list into one user prompt with a simple default or supplied Hugging Face-style Jinja template, returns a stable response envelope, and never launches a child agent or repair request.
 - Treat structured JSON as a control surface, not the payload: return status, decisions, stable IDs, counts, line/evidence references, short summaries, and artifact paths; put reasoning, transcripts, diffs, generated reports, and large evidence in files or JSONL artifacts.
 - Keep structured-output schemas token-efficient with short keys, bounded strings/lists, enums/booleans, `additionalProperties: false`, stable lookup IDs, and staged expansion for only selected items that need detail.
 - Use `agent({ template, values }, { cwd })` when a child agent should operate from a scratch or alternate directory; relative `cwd` values resolve from the workflow project cwd.

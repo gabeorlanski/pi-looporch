@@ -4,7 +4,7 @@ import { defineTool, getAgentDir, type ExtensionContext, type ToolDefinition } f
 import { startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
 import type { SendWorkflowUserMessage } from "./display/workflow-user-message.ts";
 import { workflowFinalOutputPath } from "./workflow/outputs.ts";
-import type { WorkflowAgent } from "./runtime/types.ts";
+import type { WorkflowAgent, WorkflowLLM } from "./runtime/types.ts";
 import { progressDisplay } from "./display/progress.ts";
 import { saveWorkflowDraft } from "./workflow/draft-save.ts";
 import { workflowDesignGuidance } from "./authoring-guide.ts";
@@ -19,33 +19,29 @@ import { readWorkflowSettings } from "./workflow/settings.ts";
 /** Dependencies used to construct workflow tools for either an extension session or tests. */
 export interface WorkflowToolsOptions {
   cwd?: string;
-  agent?: WorkflowAgent;
-  agentForContext?: (ctx: ExtensionContext) => WorkflowAgent;
-  sendUserMessageForContext?: (ctx: ExtensionContext) => SendWorkflowUserMessage | undefined;
+  run?: WorkflowRunToolOptions;
   agentCapabilityCatalog?: AgentCapabilityCatalogProvider;
   agentCapabilityCatalogForContext?: (ctx: ExtensionContext) => AgentCapabilityCatalogProvider;
 }
 
-/** Builds the public tool surface for running, authoring guidance, and proposing workflows. */
-export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefinition[] {
-  return [...workflowRunTools(options), createWorkflowStatusTool(options), createGuidanceTool(), createProposeWorkflowTool(options)];
-}
-
-function workflowRunTools(options: WorkflowToolsOptions): ToolDefinition[] {
-  return isWorkflowRunToolOptions(options) ? [createRunWorkflowTool(options)] : [];
-}
-
-interface WorkflowRunToolOptions extends WorkflowToolsOptions {
-  agent?: WorkflowAgent;
-  agentForContext?: (ctx: ExtensionContext) => WorkflowAgent;
+/** Complete dependency set required to expose the run_workflow tool. */
+export interface WorkflowRunToolOptions {
+  agentForContext: (ctx: ExtensionContext) => WorkflowAgent;
+  llmForContext: (ctx: ExtensionContext) => WorkflowLLM;
   sendUserMessageForContext: (ctx: ExtensionContext) => SendWorkflowUserMessage;
 }
 
-function isWorkflowRunToolOptions(options: WorkflowToolsOptions): options is WorkflowRunToolOptions {
-  return (options.agent !== undefined || options.agentForContext !== undefined) && options.sendUserMessageForContext !== undefined;
+/** Builds the public tool surface for running, authoring guidance, and proposing workflows. */
+export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefinition[] {
+  return [
+    ...(options.run === undefined ? [] : [createRunWorkflowTool(options.cwd, options.run)]),
+    createWorkflowStatusTool(options),
+    createGuidanceTool(),
+    createProposeWorkflowTool(options),
+  ];
 }
 
-function createRunWorkflowTool(options: WorkflowRunToolOptions): ToolDefinition {
+function createRunWorkflowTool(cwdOverride: string | undefined, options: WorkflowRunToolOptions): ToolDefinition {
   return defineTool({
     name: "run_workflow",
     label: "Run Workflow",
@@ -56,10 +52,10 @@ function createRunWorkflowTool(options: WorkflowRunToolOptions): ToolDefinition 
       input: Type.Optional(Type.Any({ description: "JSON-serializable workflow input" })),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const cwd = options.cwd ?? ctx.cwd;
+      const cwd = cwdOverride ?? ctx.cwd;
       const workflowName = normalizeWorkflowName(params.name);
-      const agent = options.agent ?? options.agentForContext?.(ctx);
-      if (!agent) throw new Error("run_workflow requires a workflow agent");
+      const agent = options.agentForContext(ctx);
+      const llm = options.llmForContext(ctx);
       const sendUserMessage = options.sendUserMessageForContext(ctx);
       const visible = await startVisibleWorkflowRun({
         ctx,
@@ -68,6 +64,7 @@ function createRunWorkflowTool(options: WorkflowRunToolOptions): ToolDefinition 
         input: params.input ?? {},
         agentDir: getAgentDir(),
         agent,
+        llm,
         signal,
         sendUserMessage,
         onSnapshot: (snapshot, prepared, run) => {

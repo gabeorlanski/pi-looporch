@@ -48,6 +48,7 @@ npm run check
 
 - `runtime/types.ts`: `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, `WorkflowRunResult`.
 - `runtime/`: runtime internals. `run.ts` owns workflow execution wiring, `context.ts` defines the shared primitive protocol, `globals.ts` binds primitives, and `primitives/` owns agent/phase/log/trace/files/parallel/pipeline/mapreduce/verifier behavior.
+- `workflow-schema.ts`: shared validation and typing for workflow object schemas.
 - `workflow/input-contract.ts`: default workflow function/JSDoc input contract extraction and normalized input validation.
 - `workflow/files.ts`: shared read/write helpers and atomic file-writing utilities used by workflow primitives and output persistence.
 - `workflow/`: workflow pathing, metadata, sandbox, output, draft, status, active-run, and settings helpers.

@@ -1,0 +1,2 @@
+Return only one JSON value matching this schema. Do not use Markdown fences.
+{{schema}}

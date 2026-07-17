@@ -5,6 +5,7 @@
 <rule>Before asking about missing purpose or contract details, inspect relevant project context and infer the workflow purpose, inputs/defaults, phases, child-agent roles, file reads, and result shape when they are reasonably clear.</rule>
 <rule>Draft the workflow under the default outside-project draft root {{draftRoot}}, then call propose_workflow with the workflow name.</rule>
 <rule>Keep workflow.js as orchestration code. Put reusable child-agent prompt text in prompts/*.txt and launch it with agent({ template, values }, options).</rule>
+<rule>Use LLM for one generation-only response without tools or a child session; use agent when the model needs tools, iterative work, or persistent child-agent state.</rule>
 <rule>Give agent-calling primitives explicit extensions/tools lists when they should not inherit project defaults; [] means none, and named extension tools imply their owner without exposing sibling tools.</rule>
 <rule>Design prompt files for reuse: keep static instructions and examples in a stable prefix, put only stage-specific data in a final typed section, and pass paths, IDs, counts, or compact manifests instead of repeated bulk context.</rule>
 <rule>Ask this tool for narrower topics only when needed: workflow-api, draft-directory, prompt-files, child-agents, structured-outputs, fanout, verification, artifacts.</rule>

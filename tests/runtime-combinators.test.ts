@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
-import { writeWorkflow } from "./runtime-helpers.ts";
+import { unavailableLLM, writeWorkflow } from "./runtime-helpers.ts";
 
 void test("mapreduce uses terminal items", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
@@ -38,7 +38,14 @@ export default async function workflow() {
     return Promise.resolve({ ...result, message: `unexpected: ${prompt}` });
   };
 
-  const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "mapreduce", input: {}, agent });
+  const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "mapreduce",
+    input: {},
+    agent,
+  });
 
   assert.deepEqual(result.result, {
     message: "reduced letters",
@@ -93,7 +100,14 @@ export default async function workflow() {
     return Promise.resolve(`vote: ${prompt}`);
   };
 
-  const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "verifier", input: {}, agent });
+  const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "verifier",
+    input: {},
+    agent,
+  });
 
   assert.equal(result.result, "verified");
   assert.deepEqual(
@@ -137,6 +151,7 @@ export default async function workflow() {
 
   await assert.rejects(
     runWorkflowFromDirectory({
+      llm: unavailableLLM,
       maxParallelAgents: 2,
       cwd: project,
       workflowName: "parallel-failure",

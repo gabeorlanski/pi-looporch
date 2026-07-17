@@ -27,7 +27,10 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
 
   const snapshot = createInitialWorkflowSnapshot(workflowName, metadata, options.input);
   const runtime: ActiveWorkflowRuntime = {
-    options: { ...options, maxParallelAgents },
+    options: {
+      ...options,
+      maxParallelAgents,
+    },
     snapshot,
     agentLaunchQueue: createAgentLaunchQueue(maxParallelAgents),
     emit: () => options.onSnapshot?.(cloneSnapshot(snapshot)),

@@ -6,7 +6,7 @@ import { test } from "node:test";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
 import { parseWorkflowSourceMetadata } from "../src/workflow/metadata.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
-import { writeWorkflow } from "./runtime-helpers.ts";
+import { unavailableLLM, writeWorkflow } from "./runtime-helpers.ts";
 
 void test("sandbox blocks ambient authority but permits reads", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
@@ -25,7 +25,7 @@ export default async function workflow() {
 }`,
   );
   await assert.rejects(
-    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "process", input: {}, agent }),
+    runWorkflowFromDirectory({ llm: unavailableLLM, maxParallelAgents: 4, cwd: project, workflowName: "process", input: {}, agent }),
     /process is not defined/,
   );
 
@@ -38,7 +38,7 @@ export default async function workflow() {
 }`,
   );
   await assert.rejects(
-    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "no-args-global", input: {}, agent }),
+    runWorkflowFromDirectory({ llm: unavailableLLM, maxParallelAgents: 4, cwd: project, workflowName: "no-args-global", input: {}, agent }),
     /args is not defined/,
   );
 
@@ -52,6 +52,7 @@ export default async function workflow({ absolutePath }) {
     { "data.json": '{"workflow":true}' },
   );
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "read-anywhere",
@@ -70,7 +71,7 @@ export default async function workflow() {
 }`,
   );
   await assert.rejects(
-    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "prompt-escape", input: {}, agent }),
+    runWorkflowFromDirectory({ llm: unavailableLLM, maxParallelAgents: 4, cwd: project, workflowName: "prompt-escape", input: {}, agent }),
     /escapes workflow prompt directory/,
   );
 });
@@ -87,7 +88,14 @@ export default async function workflow() {
 }`,
   );
 
-  const result = await runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "prompt-text", input: {}, agent });
+  const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "prompt-text",
+    input: {},
+    agent,
+  });
 
   assert.equal(result.result, "Do not import the agent's code or write export default examples.");
 });
@@ -118,7 +126,7 @@ export default async function workflow() {
 }`,
   );
   await assert.rejects(
-    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "static-import", input: {}, agent }),
+    runWorkflowFromDirectory({ llm: unavailableLLM, maxParallelAgents: 4, cwd: project, workflowName: "static-import", input: {}, agent }),
     /cannot import modules/,
   );
 
@@ -131,7 +139,7 @@ export default async function workflow() {
 }`,
   );
   await assert.rejects(
-    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "dynamic-import", input: {}, agent }),
+    runWorkflowFromDirectory({ llm: unavailableLLM, maxParallelAgents: 4, cwd: project, workflowName: "dynamic-import", input: {}, agent }),
     /cannot import modules/,
   );
 
@@ -144,7 +152,7 @@ export default async function workflow() {
 }`,
   );
   await assert.rejects(
-    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "require", input: {}, agent }),
+    runWorkflowFromDirectory({ llm: unavailableLLM, maxParallelAgents: 4, cwd: project, workflowName: "require", input: {}, agent }),
     /cannot use require/,
   );
 });

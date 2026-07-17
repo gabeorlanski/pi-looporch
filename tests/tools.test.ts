@@ -9,6 +9,7 @@ import { abortVisibleWorkflowRuns } from "../src/display/visible-workflow-run.ts
 import { defaultWorkflowDraftDirectory, defaultWorkflowDraftRoot } from "../src/workflow/drafts.ts";
 import { workflowPrimitiveReference } from "../src/runtime/globals.ts";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
+import { unavailableLLM } from "./runtime-helpers.ts";
 
 const generatedWorkflowDocstring = `/**
  * Purpose: generated test workflow.
@@ -113,8 +114,11 @@ export default async function workflow(input) {
   const sentUserMessages: { message: string; options: unknown }[] = [];
   const tool = createWorkflowTools({
     cwd: project,
-    agent,
-    sendUserMessageForContext: () => (message, options) => sentUserMessages.push({ message, options }),
+    run: {
+      agentForContext: () => agent,
+      llmForContext: () => unavailableLLM,
+      sendUserMessageForContext: () => (message, options) => sentUserMessages.push({ message, options }),
+    },
   }).find((candidate) => candidate.name === "run_workflow");
   assert.ok(tool);
 
@@ -178,8 +182,11 @@ export default async function workflow() {
   const sentUserMessages: { message: string; options: unknown }[] = [];
   const tool = createWorkflowTools({
     cwd: project,
-    agent,
-    sendUserMessageForContext: () => (message, options) => sentUserMessages.push({ message, options }),
+    run: {
+      agentForContext: () => agent,
+      llmForContext: () => unavailableLLM,
+      sendUserMessageForContext: () => (message, options) => sentUserMessages.push({ message, options }),
+    },
   }).find((candidate) => candidate.name === "run_workflow");
   assert.ok(tool);
   const notifications: { message: string; type?: string }[] = [];
@@ -235,10 +242,13 @@ export default async function workflow() {
   const sentUserMessages: string[] = [];
   const tool = createWorkflowTools({
     cwd: project,
-    agent,
-    sendUserMessageForContext: () => (message) => {
-      if (stale) throw new Error("stale user message");
-      sentUserMessages.push(message);
+    run: {
+      agentForContext: () => agent,
+      llmForContext: () => unavailableLLM,
+      sendUserMessageForContext: () => (message) => {
+        if (stale) throw new Error("stale user message");
+        sentUserMessages.push(message);
+      },
     },
   }).find((candidate) => candidate.name === "run_workflow");
   assert.ok(tool);

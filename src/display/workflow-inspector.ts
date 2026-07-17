@@ -1,7 +1,7 @@
 /** Provides workflow inspector behavior. */
 import { readFileSync } from "node:fs";
 import { type Component, type Focusable, matchesKey, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { WorkflowUiAgent, WorkflowUiPhase, WorkflowInspectorModel } from "./workflow-inspector-model.ts";
+import type { WorkflowUiCall, WorkflowUiPhase, WorkflowInspectorModel } from "./workflow-inspector-model.ts";
 import type { WorkflowTuiTheme } from "./workflow-tui-format.ts";
 import {
   fmtCostUsd,
@@ -25,7 +25,7 @@ export class WorkflowInspector implements Component, Focusable {
   onAbort?: () => void;
   private level: Level = "phases";
   private selectedPhase = 0;
-  private selectedAgent = 0;
+  private selectedCall = 0;
   private promptExpanded = false;
   private scroll = 0;
   private note = "";
@@ -55,7 +55,8 @@ export class WorkflowInspector implements Component, Focusable {
     const workflow = this.model.workflow();
     const statusTag =
       workflow.status === "error" ? this.theme.danger(" [error]") : workflow.status === "done" ? this.theme.ok(" [done]") : "";
-    const stats = `${String(workflow.agentsDone)}/${String(workflow.agentsTotal)} agents ${glyph.mid} ${fmtDuration(workflow.elapsed)}`;
+    const llmStats = workflow.llmsTotal > 0 ? ` ${glyph.mid} ${String(workflow.llmsDone)}/${String(workflow.llmsTotal)} LLM` : "";
+    const stats = `${String(workflow.agentsDone)}/${String(workflow.agentsTotal)} agents${llmStats} ${glyph.mid} ${fmtDuration(workflow.elapsed)}`;
     const renderedStats = this.theme.dim(truncEnd(stats, Math.floor(termWidth / 2)));
     const title = truncEnd(
       ` ${this.theme.accent(this.theme.bold(workflow.name))}${statusTag}`,
@@ -88,7 +89,7 @@ export class WorkflowInspector implements Component, Focusable {
     else if (matchesKey(data, "down")) this.selectedPhase = clamp(this.selectedPhase + 1, 0, this.phases().length - 1);
     else if (matchesKey(data, "right") || matchesKey(data, "enter")) {
       this.level = "detail";
-      this.selectedAgent = 0;
+      this.selectedCall = 0;
       this.scroll = 0;
       this.promptExpanded = false;
     } else if (matchesKey(data, "escape") || matchesKey(data, "backspace") || matchesKey(data, "left")) this.onClose?.();
@@ -100,11 +101,11 @@ export class WorkflowInspector implements Component, Focusable {
 
   private handleDetail(data: string): void {
     if (matchesKey(data, "up")) {
-      this.selectedAgent = clamp(this.selectedAgent - 1, 0, this.currentPhase().agents.length - 1);
+      this.selectedCall = clamp(this.selectedCall - 1, 0, this.currentPhase().calls.length - 1);
       this.scroll = 0;
       this.promptExpanded = false;
     } else if (matchesKey(data, "down")) {
-      this.selectedAgent = clamp(this.selectedAgent + 1, 0, this.currentPhase().agents.length - 1);
+      this.selectedCall = clamp(this.selectedCall + 1, 0, this.currentPhase().calls.length - 1);
       this.scroll = 0;
       this.promptExpanded = false;
     } else if (matchesKey(data, "k")) this.scroll = Math.max(0, this.scroll - 1);
@@ -121,8 +122,8 @@ export class WorkflowInspector implements Component, Focusable {
     if (this.note) return ` ${this.theme.warn(this.note)}`;
     const text =
       this.level === "phases"
-        ? `${glyph.updown} select ${glyph.mid} → agents ${glyph.mid} x abort workflow ${glyph.mid} esc back ${glyph.mid} s snapshot path`
-        : `${glyph.arrowUp}${glyph.arrowDown} agent ${glyph.mid} j/k scroll ${glyph.mid} ${glyph.enter} prompt ${glyph.mid} x abort ${glyph.mid} esc back`;
+        ? `${glyph.updown} select ${glyph.mid} → calls ${glyph.mid} x abort workflow ${glyph.mid} esc back ${glyph.mid} s snapshot path`
+        : `${glyph.arrowUp}${glyph.arrowDown} call ${glyph.mid} j/k scroll ${glyph.mid} ${glyph.enter} prompt ${glyph.mid} x abort ${glyph.mid} esc back`;
     return ` ${this.theme.dim(text)}`;
   }
 
@@ -136,7 +137,7 @@ export class WorkflowInspector implements Component, Focusable {
     const left = phases.slice(0, height - 2).map((phase, index) => {
       const selected = index === this.selectedPhase;
       const marker = selected ? this.theme.accent(glyph.marker) : " ";
-      const count = phase.agentsTotal === 0 ? "" : `${String(phase.agentsDone)}/${String(phase.agentsTotal)}`;
+      const count = phase.callsTotal === 0 ? "" : `${String(phase.callsDone)}/${String(phase.callsTotal)}`;
       const name = phase.status === "pending" ? this.theme.pending(phase.name) : phase.name;
       let row =
         padTo(`${marker}${phaseGlyph(phase, this.model.tick, this.theme)} ${name}`, leftWidth - 3 - width(count)) + this.theme.dim(count);
@@ -144,10 +145,10 @@ export class WorkflowInspector implements Component, Focusable {
       return row;
     });
     const phase = this.currentPhase();
-    const rightTitle = `${phase.name} ${glyph.mid} ${String(phase.agentsTotal)} agents`;
-    const body = phase.agents.length
-      ? phase.agents.slice(0, height - 2).map((agent) => agentPreviewRow(agent, rightWidth - 2, this.model.tick, this.theme))
-      : [this.theme.dim(phase.detail ?? "No agents launched for this phase yet.")];
+    const rightTitle = `${phase.name} ${glyph.mid} ${String(phase.callsTotal)} calls`;
+    const body = phase.calls.length
+      ? phase.calls.slice(0, height - 2).map((call) => callPreviewRow(call, rightWidth - 2, this.model.tick, this.theme))
+      : [this.theme.dim(phase.detail ?? "No model calls launched for this phase yet.")];
     return joinColumns(panel(this.theme, "Phases", left, leftWidth, height), panel(this.theme, rightTitle, body, rightWidth, height));
   }
 
@@ -155,13 +156,13 @@ export class WorkflowInspector implements Component, Focusable {
     const phase = this.currentPhase();
     const leftWidth = inspectorLeftWidth(
       termWidth,
-      phase.agents.map((agent) => agent.displayName),
+      phase.calls.map((call) => call.displayName),
     );
     const rightWidth = termWidth - leftWidth;
-    const left = phase.agents.slice(0, height - 2).map((agent, index) => {
-      const selected = index === this.selectedAgent;
+    const left = phase.calls.slice(0, height - 2).map((call, index) => {
+      const selected = index === this.selectedCall;
       const marker = selected ? this.theme.accent(glyph.marker) : " ";
-      let row = `${marker}${agentGlyph(agent, this.model.tick, this.theme)} ${truncEnd(agent.displayName, leftWidth - 5)}`;
+      let row = `${marker}${callGlyph(call, this.model.tick, this.theme)} ${truncEnd(call.displayName, leftWidth - 5)}`;
       if (selected) row = this.theme.selected(padTo(truncEnd(row, leftWidth - 2), leftWidth - 2));
       return row;
     });
@@ -172,16 +173,16 @@ export class WorkflowInspector implements Component, Focusable {
     const windowLines = doc.slice(this.scroll, this.scroll + windowHeight);
     while (windowLines.length < windowHeight) windowLines.push("");
     windowLines.push(rangeIndicator(this.scroll, windowHeight, doc.length, rightInner, this.theme));
-    const agent = this.currentAgent();
+    const call = this.currentCall();
     return joinColumns(
-      panel(this.theme, `${phase.name} ${glyph.mid} ${String(phase.agents.length)} agents`, left, leftWidth, height),
-      panel(this.theme, agent ? agent.displayName : phase.name, windowLines, rightWidth, height),
+      panel(this.theme, `${phase.name} ${glyph.mid} ${String(phase.calls.length)} calls`, left, leftWidth, height),
+      panel(this.theme, call ? call.displayName : phase.name, windowLines, rightWidth, height),
     );
   }
 
   private buildDetailDoc(innerWidth: number): string[] {
-    const agent = this.currentAgent();
-    if (!agent) return [this.theme.dim("No agent selected.")];
+    const call = this.currentCall();
+    if (!call) return [this.theme.dim("No call selected.")];
     const lines: string[] = [];
     const push = (line = ""): void => {
       lines.push(truncEnd(line, innerWidth));
@@ -189,36 +190,42 @@ export class WorkflowInspector implements Component, Focusable {
     const pushExact = (line = ""): void => {
       for (const wrapped of wrapExactLine(line, innerWidth)) lines.push(wrapped);
     };
-    push(`${agentGlyph(agent, this.model.tick, this.theme)} ${statusWord(agent.status)} ${glyph.mid} ${agent.model}`);
+    push(`${callGlyph(call, this.model.tick, this.theme)} ${statusWord(call.status)} ${glyph.mid} ${call.model}`);
+    const workStats = call.kind === "agent" ? ` ${glyph.mid} ${String(call.toolCalls)} tools ${glyph.mid} ${String(call.steps)} steps` : "";
     push(
-      `${this.theme.accent(fmtTokens(agent.inputTokens))}${this.theme.dim(
-        ` in ${glyph.mid} ${fmtTokens(agent.cachedTokens)} cached ${glyph.mid} ${fmtTokens(agent.outputTokens)} out ${glyph.mid} `,
-      )}${this.theme.warn(fmtCostUsd(agent.cost))}${this.theme.dim(
-        ` ${glyph.mid} ${String(agent.toolCalls)} tools ${glyph.mid} ${String(agent.steps)} steps ${glyph.mid} ${fmtDuration(agent.durationSeconds, true)}`,
-      )}`,
+      `${this.theme.accent(fmtTokens(call.inputTokens))}${this.theme.dim(
+        ` in ${glyph.mid} ${fmtTokens(call.cachedTokens)} cached ${glyph.mid} ${fmtTokens(call.outputTokens)} out ${glyph.mid} `,
+      )}${this.theme.warn(fmtCostUsd(call.cost))}${this.theme.dim(` ${workStats} ${glyph.mid} ${fmtDuration(call.durationSeconds, true)}`)}`,
     );
     push("");
-    push(this.theme.accent(`Details ${glyph.mid} ${String(agent.detailLines.length)} lines`));
-    for (const line of agent.detailLines) push(`  ${line}`);
+    push(this.theme.accent(`Details ${glyph.mid} ${String(call.detailLines.length)} lines`));
+    for (const line of call.detailLines) push(`  ${line}`);
     push("");
-    const prompt = this.promptExpanded ? readTextArtifact(agent.promptPath) : undefined;
+    const prompt = this.promptExpanded ? readTextArtifact(call.promptPath) : undefined;
     push(
       this.theme.accent(
-        `Prompt ${glyph.mid} ${agent.promptPath ? "recorded" : "not recorded"} ${glyph.mid} ${glyph.enter} ${this.promptExpanded ? "collapse" : "expand"}`,
+        `Prompt ${glyph.mid} ${call.promptPath ? "recorded" : "not recorded"} ${glyph.mid} ${glyph.enter} ${this.promptExpanded ? "collapse" : "expand"}`,
       ),
     );
     if (this.promptExpanded) for (const line of (prompt ?? "No prompt artifact recorded.").split("\n")) pushExact(`  ${line}`);
-    else push(this.theme.dim("  Prompt hidden. Press enter to show the exact prompt sent to this agent."));
-    push("");
-    const toolActivity = readToolActivityArtifact(agent.activityPath);
-    const recentToolActivity = toolActivity.slice(-3);
-    const activityWidth = Math.max(0, Math.min(112, innerWidth - 2));
-    push(this.theme.accent(`Activity ${glyph.mid} last ${String(recentToolActivity.length)} of ${String(toolActivity.length)} tool uses`));
-    for (const line of recentToolActivity) push(`  ${truncEnd(line, activityWidth)}`);
-    if (toolActivity.length === 0) push(this.theme.dim("  No tool usage recorded yet."));
+    else
+      push(
+        this.theme.dim(`  Prompt hidden. Press enter to show the exact prompt sent to this ${call.kind === "llm" ? "LLM call" : "agent"}.`),
+      );
+    if (call.kind === "agent") {
+      push("");
+      const toolActivity = readToolActivityArtifact(call.activityPath);
+      const recentToolActivity = toolActivity.slice(-3);
+      const activityWidth = Math.max(0, Math.min(112, innerWidth - 2));
+      push(
+        this.theme.accent(`Activity ${glyph.mid} last ${String(recentToolActivity.length)} of ${String(toolActivity.length)} tool uses`),
+      );
+      for (const line of recentToolActivity) push(`  ${truncEnd(line, activityWidth)}`);
+      if (toolActivity.length === 0) push(this.theme.dim("  No tool usage recorded yet."));
+    }
     push("");
     push(this.theme.accent("Output"));
-    for (const line of agentOutput(agent).split("\n")) pushExact(`  ${line}`);
+    for (const line of callOutput(call).split("\n")) pushExact(`  ${line}`);
     return lines;
   }
 
@@ -229,13 +236,12 @@ export class WorkflowInspector implements Component, Focusable {
   private currentPhase(): WorkflowUiPhase {
     const phases = this.phases();
     const selectedPhase = clamp(this.selectedPhase, 0, phases.length - 1);
-    return phases[selectedPhase] ?? { index: 0, name: "Workflow", status: "pending", agentsDone: 0, agentsTotal: 0, agents: [] };
+    return phases[selectedPhase] ?? { index: 0, name: "Workflow", status: "pending", callsDone: 0, callsTotal: 0, calls: [] };
   }
 
-  private currentAgent(): WorkflowUiAgent | undefined {
-    const agents = this.currentPhase().agents;
-    const selectedAgent = clamp(this.selectedAgent, 0, agents.length - 1);
-    return agents[selectedAgent];
+  private currentCall(): WorkflowUiCall | undefined {
+    const calls = this.currentPhase().calls;
+    return calls[clamp(this.selectedCall, 0, calls.length - 1)];
   }
 }
 
@@ -263,21 +269,22 @@ function phaseGlyph(phase: WorkflowUiPhase, tick: number, theme: WorkflowTuiThem
   return theme.pending(String(phase.index));
 }
 
-function agentGlyph(agent: WorkflowUiAgent, tick: number, theme: WorkflowTuiTheme): string {
-  if (agent.status === "completed") return theme.ok(glyph.done);
-  if (agent.status === "running") return theme.warn(spinnerFrame(tick));
+function callGlyph(call: WorkflowUiCall, tick: number, theme: WorkflowTuiTheme): string {
+  if (call.status === "completed") return theme.ok(glyph.done);
+  if (call.status === "running") return theme.warn(spinnerFrame(tick));
   return theme.danger("✗");
 }
 
-function statusWord(status: WorkflowUiAgent["status"]): string {
+function statusWord(status: WorkflowUiCall["status"]): string {
   if (status === "completed") return "Completed";
   if (status === "running") return "Running";
   return "Failed";
 }
 
-function agentPreviewRow(agent: WorkflowUiAgent, rowWidth: number, tick: number, theme: WorkflowTuiTheme): string {
-  const stats = `${fmtTokens(agent.inputTokens + agent.outputTokens)} tok ${glyph.mid} ${fmtTokens(agent.cachedTokens)} cached ${glyph.mid} ${fmtCostUsd(agent.cost)} ${glyph.mid} ${String(agent.toolCalls)} tools ${glyph.mid} ${fmtDuration(agent.durationSeconds)}`;
-  const left = `${agentGlyph(agent, tick, theme)} ${truncEnd(agent.displayName, Math.max(8, rowWidth - width(stats) - 14))}  ${theme.dim(agent.model)}`;
+function callPreviewRow(call: WorkflowUiCall, rowWidth: number, tick: number, theme: WorkflowTuiTheme): string {
+  const toolStats = call.kind === "agent" ? ` ${glyph.mid} ${String(call.toolCalls)} tools` : "";
+  const stats = `${fmtTokens(call.inputTokens + call.outputTokens)} tok ${glyph.mid} ${fmtTokens(call.cachedTokens)} cached ${glyph.mid} ${fmtCostUsd(call.cost)}${toolStats} ${glyph.mid} ${fmtDuration(call.durationSeconds)}`;
+  const left = `${callGlyph(call, tick, theme)} ${truncEnd(call.displayName, Math.max(8, rowWidth - width(stats) - 14))}  ${theme.dim(call.model)}`;
   return padTo(left, Math.max(0, rowWidth - width(stats))) + theme.dim(stats);
 }
 
@@ -315,11 +322,11 @@ function toolActivityLine(line: string): string {
   }
 }
 
-function agentOutput(agent: WorkflowUiAgent): string {
-  if (agent.error) return agent.error;
-  if (agent.status === "running") return agent.message ?? "Agent is still running.";
-  const text = readTextArtifact(agent.outputPath);
-  if (text === undefined) return agent.outputPath ? `Output artifact unavailable: ${agent.outputPath}` : "No output recorded.";
+function callOutput(call: WorkflowUiCall): string {
+  if (call.error) return call.error;
+  if (call.status === "running") return call.kind === "agent" ? (call.message ?? "Agent is still running.") : "LLM call is still running.";
+  const text = readTextArtifact(call.outputPath);
+  if (text === undefined) return call.outputPath ? `Output artifact unavailable: ${call.outputPath}` : "No output recorded.";
   return outputArtifactText(text);
 }
 

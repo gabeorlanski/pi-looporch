@@ -10,7 +10,7 @@ import type { WorkflowAgent, WorkflowSnapshot } from "../src/runtime/types.ts";
 import { readActiveWorkflowRuns, registerActiveWorkflowRun, removeActiveWorkflowRun } from "../src/workflow/active-runs.ts";
 import { writeWorkflowOutputManifest, writeWorkflowSnapshot } from "../src/workflow/outputs.ts";
 import { createExtensionHarness, type ExtensionHarness, waitForCondition, writeProjectWorkflow } from "./extension-harness.ts";
-import { unavailableLLM } from "./runtime-helpers.ts";
+import { llmCompletion, unavailableLLM } from "./runtime-helpers.ts";
 
 void test("existing_workflow_command_runs_directly_with_progress_updates", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
@@ -131,7 +131,7 @@ export default async function workflow() {
   const harness = createExtensionHarness({
     cwd: project,
     extensionDependencies: {
-      createLLM: () => () => Promise.resolve({ text: "Direct summary" }),
+      createLLM: () => () => Promise.resolve(llmCompletion("Direct summary")),
     },
   });
 
@@ -785,6 +785,7 @@ function runningWorkflowSnapshot(workflowName = "viewable"): WorkflowSnapshot {
     phases: ["running"],
     traces: [],
     agents: [],
+    llms: [],
     fanOuts: [],
     messages: [],
     status: "running",
@@ -832,6 +833,7 @@ function monitorWorkflowSnapshot(workflowName: string): WorkflowSnapshot {
         stepCount: 8,
       },
     ],
+    llms: [],
     fanOuts: [{ id: 1, label: "broken-test reviews", total: 2, done: 1, running: 1, error: 0 }],
     messages: [],
     status: "running",

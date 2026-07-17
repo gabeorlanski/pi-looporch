@@ -118,16 +118,20 @@ ends the child; results always include `message`, `name`, `steps`, and standard
 token `usage` metadata.
 
 Use `LLM(prompt, options?)` for one generation-only call with Pi's active model
-and authentication. Options include `system`, ordered prior `messages`, an object
-`schema`, and a Hugging Face-style Jinja `chatTemplate`. The prompt is appended
-as the final user message, then the complete list is rendered into one user
-prompt using a simple role-prefixed default template or the supplied override.
+and authentication. Options include `model`, `reasoning`, `system`, ordered prior
+`messages`, and an object `schema`. The prompt is appended as the final user
+message, then Pi passes the complete message list to the selected model API for
+provider-specific formatting. Omit `model` to use the active model.
 Results have `{ text, output, usage, model, provider, stopReason }`, with
 validated JSON in schema-call `output` and `null` otherwise. `LLM` has no tools,
-agent session, repair request, or child-agent concurrency cost.
+agent session, repair request, or child-agent concurrency cost. Direct calls
+appear in the workflow Inspector with their prompt, output, status, model, and
+provider-reported usage; that usage contributes to workflow token and cost totals.
 
 ```js
 const result = await LLM("Classify this release.", {
+  model: "anthropic/claude-sonnet-4-5",
+  reasoning: "high",
   system: "Return a concise assessment.",
   messages: [{ role: "user", content: "The previous release was stable." }],
   schema: {

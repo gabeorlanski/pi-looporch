@@ -33,6 +33,7 @@ export default async function workflow(input) {
     phases: [],
     traces: [],
     agents: [],
+    llms: [],
     fanOuts: [],
     messages: [],
     status: "running",

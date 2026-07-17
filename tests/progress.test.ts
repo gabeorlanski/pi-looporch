@@ -54,6 +54,7 @@ void test("progress summarizes status, input, tokens, and agents", () => {
         message: "using read",
       }),
     ],
+    llms: [],
     fanOuts: [{ id: 1, label: "file reviews", total: 2, running: 1, done: 1, error: 0 }],
     messages: [{ phaseIndex: 2, phase: "fanout", level: "info", message: "log visible in runtime log" }],
     status: "running",
@@ -82,6 +83,7 @@ void test("progress reports errors without completed agent rows", () => {
       agent({ id: 1, phaseIndex: 1, phase: "fanout", label: "done", status: "done" }),
       agent({ id: 2, phaseIndex: 1, phase: "fanout", label: "failed", status: "error", error: "failed" }),
     ],
+    llms: [],
     fanOuts: [],
     messages: [],
     status: "error",
@@ -134,6 +136,7 @@ void test("workflow_widget_and_inspector_render_within_width", () => {
         outputTokenCount: 300,
       }),
     ],
+    llms: [],
     fanOuts: [],
     messages: [{ phaseIndex: 2, phase: "fanout", agentId: 2, agentLabel: "review src/auth.ts", level: "info", message: "review started" }],
     status: "running",
@@ -184,6 +187,58 @@ void test("workflow_widget_and_inspector_render_within_width", () => {
   );
 });
 
+void test("inspector shows direct LLM calls and includes their usage", () => {
+  const model = new WorkflowInspectorModel({
+    workflowName: "generate",
+    description: "Generate a release summary",
+    plannedPhases: [{ title: "Generate" }],
+    phases: ["Generate"],
+    traces: [],
+    agents: [],
+    llms: [
+      {
+        id: 1,
+        phaseIndex: 1,
+        phase: "Generate",
+        startedAt: 0,
+        status: "done",
+        inputTokenCount: 1200,
+        cacheReadTokenCount: 400,
+        outputTokenCount: 300,
+        cost: { knownUsd: 0.08, complete: true },
+        model: "active-model",
+        provider: "active-provider",
+        stopReason: "stop",
+      },
+    ],
+    fanOuts: [],
+    messages: [],
+    status: "done",
+  });
+  const workflow = model.workflow();
+  assert.equal(workflow.inputTokens, 1200);
+  assert.equal(workflow.cachedTokens, 400);
+  assert.equal(workflow.outputTokens, 300);
+  assert.deepEqual(workflow.cost, { knownUsd: 0.08, complete: true });
+
+  const widget = new WorkflowWidget(
+    () => model,
+    plainWorkflowTuiTheme,
+    () => false,
+  ).render(120);
+  assert.ok(widget.some((line) => line.includes("in 1.2k") && line.includes("out 300") && line.includes("$0.08")));
+
+  const inspector = new WorkflowInspector(model, plainWorkflowTuiTheme, () => 24);
+  const phases = inspector.render(120).join("\n");
+  assert.match(phases, /1\/1 LLM/);
+  assert.match(phases, /LLM #1/);
+  inspector.handleInput("\r");
+  const detail = inspector.render(120).join("\n");
+  assert.match(detail, /type: direct LLM/);
+  assert.match(detail, /provider: active-provider/);
+  assert.match(detail, /stop reason: stop/);
+});
+
 void test("inspector does not duplicate a current phase after setup", () => {
   const model = new WorkflowInspectorModel({
     workflowName: "review",
@@ -196,6 +251,7 @@ void test("inspector does not duplicate a current phase after setup", () => {
       agent({ id: 2, phaseIndex: 1, phase: "Repository screen", label: "screen", status: "done" }),
       agent({ id: 3, phaseIndex: 2, phase: "Materialize and test", label: "test", status: "running" }),
     ],
+    llms: [],
     fanOuts: [],
     messages: [],
     status: "running",
@@ -215,6 +271,7 @@ void test("inspector preserves a planned phase after unplanned setup work", () =
     phases: [],
     traces: [],
     agents: [agent({ id: 1, phaseIndex: 0, label: "prepare", status: "running" })],
+    llms: [],
     fanOuts: [],
     messages: [],
     status: "running",
@@ -242,6 +299,7 @@ void test("inspector dynamically fits long titles and labels at every width", ()
         status: "running",
       }),
     ],
+    llms: [],
     fanOuts: [],
     messages: [],
     status: "running",
@@ -331,6 +389,7 @@ void test("inspector shows activity, output, and expandable prompts", async () =
           tools: ["read", "write"],
         }),
       ],
+      llms: [],
       fanOuts: [],
       messages: [],
       status: "done",
@@ -470,6 +529,7 @@ function workflowSnapshot(): WorkflowSnapshot {
     phases: ["collect"],
     traces: [],
     agents: [agent({ id: 1, phaseIndex: 1, phase: "collect", label: "inventory", status: "running", startedAt: Date.now() })],
+    llms: [],
     fanOuts: [],
     messages: [],
     status: "running",

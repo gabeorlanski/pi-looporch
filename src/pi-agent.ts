@@ -28,6 +28,7 @@ import { parseSessionTokens, workflowTokenUsageFromMessage } from "./session-usa
 import { createStructuredOutput } from "./structured-output.ts";
 import { resolveWorkflowAgentCwd } from "./workflow/paths.ts";
 import { readWorkflowSettings } from "./workflow/settings.ts";
+import { resolveWorkflowModel } from "./model-selection.ts";
 
 export interface PiWorkflowAgentOptions {
   cwd: string;
@@ -46,7 +47,7 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
     const modelRuntime =
       options.session?.modelRuntime ??
       (await ModelRuntime.create({ authPath: path.join(agentDir, "auth.json"), modelsPath: path.join(agentDir, "models.json") }));
-    const model = agentOptions.model ? resolveModel(modelRuntime, agentOptions.model) : undefined;
+    const model = agentOptions.model ? resolveWorkflowModel(modelRuntime.getModels(), agentOptions.model) : undefined;
     const projectCwd = path.resolve(options.cwd);
     const effectiveCwd = resolveWorkflowAgentCwd(options.cwd, agentOptions.cwd) ?? projectCwd;
     const workflowSettings = await readWorkflowSettings(projectCwd, agentDir);
@@ -239,13 +240,6 @@ function renderRuntimeCapabilityDiagnostics(diagnostics: readonly AgentCapabilit
 export { workflowAgentSessionLogDirectory } from "./session-logs.ts";
 export { workflowAgentLogEvent } from "./session-events.ts";
 export { parseSessionTokens } from "./session-usage.ts";
-
-function resolveModel(modelRuntime: ModelRuntime, spec: string): ReturnType<ModelRuntime["getModel"]> {
-  const modelSpec = spec.split(":", 1)[0] ?? spec;
-  const slash = modelSpec.indexOf("/");
-  if (slash >= 0) return modelRuntime.getModel(modelSpec.slice(0, slash), modelSpec.slice(slash + 1));
-  return modelRuntime.getModels().find((model) => model.id === modelSpec || model.name === modelSpec);
-}
 
 /** Deterministic tracker for translating Pi child-agent session events into workflow progress snapshots. */
 export interface WorkflowAgentProgressTracker {

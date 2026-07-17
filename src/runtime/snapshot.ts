@@ -11,6 +11,7 @@ export function createInitialWorkflowSnapshot(workflowName: string, metadata: Wo
     phases: [],
     traces: [],
     agents: [],
+    llms: [],
     fanOuts: [],
     messages: [],
     status: "running",

@@ -3,7 +3,13 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { errorMessage } from "../errors.ts";
-import type { WorkflowAgentSnapshot, WorkflowCost, WorkflowSnapshot, WorkflowToolActivitySnapshot } from "../runtime/types.ts";
+import type {
+  WorkflowAgentSnapshot,
+  WorkflowCost,
+  WorkflowLLMRequest,
+  WorkflowSnapshot,
+  WorkflowToolActivitySnapshot,
+} from "../runtime/types.ts";
 import { writeJsonFileAtomic, writeTextFileAtomic } from "./files.ts";
 
 type WorkflowOutputStatus = "done" | "error" | "running";
@@ -55,6 +61,10 @@ function workflowAgentActivityPath(outputsDir: string, agentId: number, label: s
   return path.join(workflowAgentArtifactDir(outputsDir, agentId, label), "activity.jsonl");
 }
 
+function llmArtifactDir(outputsDir: string, llmId: number): string {
+  return path.join(outputsDir, "llms", `llm-${String(llmId).padStart(3, "0")}`);
+}
+
 /** Provides the writeWorkflowFinalOutput function contract. */
 export async function writeWorkflowFinalOutput(outputsDir: string, output: unknown): Promise<string> {
   const outputPath = workflowFinalOutputPath(outputsDir);
@@ -89,6 +99,25 @@ export async function writeWorkflowAgentActivity(
   return activityPath;
 }
 
+/** Writes the exact normalized request for a direct LLM call. */
+export async function writeWorkflowLLMPrompt(outputsDir: string, llmId: number, request: WorkflowLLMRequest): Promise<string> {
+  const promptPath = path.join(llmArtifactDir(outputsDir, llmId), "prompt.json");
+  await writeJsonFileAtomic(promptPath, {
+    ...(request.system === undefined ? {} : { system: request.system }),
+    ...(request.model === undefined ? {} : { model: request.model }),
+    ...(request.reasoning === undefined ? {} : { reasoning: request.reasoning }),
+    messages: request.messages,
+  });
+  return promptPath;
+}
+
+/** Writes the completed provider response envelope for a direct LLM call. */
+export async function writeWorkflowLLMOutput(outputsDir: string, llmId: number, output: unknown): Promise<string> {
+  const outputPath = path.join(llmArtifactDir(outputsDir, llmId), "output.json");
+  await writeJsonFileAtomic(outputPath, output);
+  return outputPath;
+}
+
 /** Provides the readWorkflowOutputManifest function contract. */
 export async function readWorkflowOutputManifest(outputsDir: string): Promise<WorkflowOutputManifest> {
   return JSON.parse(await readFile(path.join(outputsDir, "manifest.json"), "utf8")) as WorkflowOutputManifest;
@@ -101,12 +130,15 @@ type PersistedWorkflowAgentSnapshot = Omit<WorkflowAgentSnapshot, "cacheReadToke
   costUsd?: unknown;
 };
 
-type PersistedWorkflowSnapshot = Omit<WorkflowSnapshot, "agents"> & { agents: PersistedWorkflowAgentSnapshot[] };
+type PersistedWorkflowSnapshot = Omit<WorkflowSnapshot, "agents" | "llms"> & {
+  agents: PersistedWorkflowAgentSnapshot[];
+  llms?: WorkflowSnapshot["llms"];
+};
 
 /** Provides the readWorkflowSnapshot function contract. */
 export async function readWorkflowSnapshot(outputsDir: string): Promise<WorkflowSnapshot> {
   const snapshot = JSON.parse(await readFile(workflowSnapshotPath(outputsDir), "utf8")) as PersistedWorkflowSnapshot;
-  return { ...snapshot, agents: snapshot.agents.map(normalizeWorkflowAgentSnapshot) };
+  return { ...snapshot, agents: snapshot.agents.map(normalizeWorkflowAgentSnapshot), llms: snapshot.llms ?? [] };
 }
 
 function normalizeWorkflowAgentSnapshot(agent: PersistedWorkflowAgentSnapshot): WorkflowAgentSnapshot {

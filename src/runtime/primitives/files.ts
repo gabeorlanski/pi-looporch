@@ -3,6 +3,7 @@ import path from "node:path";
 import { readWorkflowJson, readWorkflowText, writeWorkflowJson, writeWorkflowText } from "../../workflow/files.ts";
 import type { WorkflowPrimitive } from "../context.ts";
 import { renderWorkflowPrompt } from "../prompts.ts";
+import { workflowUsageTotals } from "../usage.ts";
 
 export const filePrimitive: WorkflowPrimitive<{
   readText: (filePath: string) => string;
@@ -68,7 +69,7 @@ export const environmentPrimitive: WorkflowPrimitive<{
         return runtime.snapshot.agents.length;
       },
       get tokenCount() {
-        return runtime.snapshot.agents.reduce((total, agent) => total + agent.inputTokenCount + agent.outputTokenCount, 0);
+        return workflowUsageTotals(runtime.snapshot).tokensTotal;
       },
     },
   }),

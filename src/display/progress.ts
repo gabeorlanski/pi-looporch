@@ -147,7 +147,7 @@ function netLine(snapshot: WorkflowSnapshot, stats: NetStats, width: number, the
 function netStats(snapshot: WorkflowSnapshot): NetStats {
   const completedAgents = snapshot.agents.filter((agent) => agent.status !== "running").length;
   return {
-    ...workflowUsageTotals(snapshot.agents),
+    ...workflowUsageTotals(snapshot),
     totalAgents: snapshot.agents.length,
     completedAgents,
     runningAgents: snapshot.agents.length - completedAgents,

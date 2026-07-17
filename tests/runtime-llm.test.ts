@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { workflowPrimitiveReference } from "../src/runtime/globals.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
-import { writeWorkflow } from "./runtime-helpers.ts";
+import type { WorkflowSnapshot } from "../src/runtime/types.ts";
+import { llmCompletion, writeWorkflow } from "./runtime-helpers.ts";
 
 void test("generated primitive docs expose LLM", () => {
   assert.deepEqual(
@@ -15,7 +16,7 @@ void test("generated primitive docs expose LLM", () => {
         primitive: "LLM",
         name: "LLM",
         signature: "LLM(prompt, options?)",
-        summary: "Makes one generation-only call with optional system instructions, prior messages, chat template, and schema.",
+        summary: "Makes one generation-only call with optional model, reasoning, system instructions, prior messages, and schema.",
       },
     ],
   );
@@ -32,18 +33,21 @@ export default async function workflow() {
 }`,
   );
   const requests: unknown[] = [];
+  const outputsDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-outputs-"));
 
   const result = await runWorkflowFromDirectory({
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "direct-llm",
     input: {},
+    outputsDir,
     agent: () => Promise.resolve("unused"),
     llm: (request: unknown) => {
       requests.push(request);
       return Promise.resolve({
         text: "Release summary",
         usage: { input: 12, output: 3, cacheRead: 2, cacheWrite: 0, total: 17 },
+        cost: { knownUsd: 0.04, complete: true },
         model: "active-model",
         provider: "active-provider",
         stopReason: "done",
@@ -53,7 +57,7 @@ export default async function workflow() {
 
   assert.deepEqual(requests, [
     {
-      prompt: "user: Summarize the release.\nassistant:",
+      messages: [{ role: "user", content: "Summarize the release." }],
     },
   ]);
   assert.deepEqual(result.result, {
@@ -65,14 +69,27 @@ export default async function workflow() {
     stopReason: "done",
   });
   assert.deepEqual(result.snapshot.agents, []);
+  const llm = result.snapshot.llms[0];
+  assert.equal(llm.status, "done");
+  assert.equal(llm.inputTokenCount, 12);
+  assert.equal(llm.cacheReadTokenCount, 2);
+  assert.equal(llm.outputTokenCount, 3);
+  assert.deepEqual(llm.cost, { knownUsd: 0.04, complete: true });
+  assert.equal(llm.model, "active-model");
+  assert.equal(llm.provider, "active-provider");
+  assert.deepEqual(JSON.parse(await readFile(llm.promptPath ?? "", "utf8")), {
+    messages: [{ role: "user", content: "Summarize the release." }],
+  });
+  const persistedOutput = JSON.parse(await readFile(llm.outputPath ?? "", "utf8")) as { text: unknown };
+  assert.equal(persistedOutput.text, "Release summary");
 });
 
-void test("LLM renders messages with a Jinja template", async () => {
+void test("LLM passes ordered messages to the model API", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
-    "templated-llm",
-    `export const metadata = { name: "templated-llm", description: "Templated completion", inputInstructions: "No input.", phases: [{ title: "Generate" }] };
+    "message-history-llm",
+    `export const metadata = { name: "message-history-llm", description: "Completion with message history", inputInstructions: "No input.", phases: [{ title: "Generate" }] };
 export default async function workflow() {
   return LLM("Current question", {
     system: "Be concise.",
@@ -80,7 +97,6 @@ export default async function workflow() {
       { role: "user", content: "Earlier question" },
       { role: "assistant", content: "Earlier answer" },
     ],
-    chatTemplate: "{% for message in messages %}[{{ message.role }}]{{ message.content }}{% endfor %}",
   });
 }`,
   );
@@ -89,24 +105,28 @@ export default async function workflow() {
   await runWorkflowFromDirectory({
     maxParallelAgents: 4,
     cwd: project,
-    workflowName: "templated-llm",
+    workflowName: "message-history-llm",
     input: {},
     agent: () => Promise.resolve("unused"),
     llm: (request: unknown) => {
       requests.push(request);
-      return Promise.resolve({ text: "answer" });
+      return Promise.resolve(llmCompletion("answer"));
     },
   });
 
   assert.deepEqual(requests, [
     {
       system: "Be concise.",
-      prompt: "[user]Earlier question[assistant]Earlier answer[user]Current question",
+      messages: [
+        { role: "user", content: "Earlier question" },
+        { role: "assistant", content: "Earlier answer" },
+        { role: "user", content: "Current question" },
+      ],
     },
   ]);
 });
 
-void test("LLM uses the default chat template and ignores model overrides", async () => {
+void test("LLM passes model and reasoning selection", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
@@ -120,14 +140,13 @@ export default async function workflow() {
       { role: "assistant", content: "Second" },
     ],
     model: "workflow-model",
-    provider: "workflow-provider",
-    apiKey: "workflow-secret",
+    reasoning: "high",
   });
 }`,
   );
   const requests: unknown[] = [];
 
-  await runWorkflowFromDirectory({
+  const result = await runWorkflowFromDirectory({
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "context-llm",
@@ -135,16 +154,24 @@ export default async function workflow() {
     agent: () => Promise.resolve("unused"),
     llm: (request) => {
       requests.push(request);
-      return Promise.resolve({ text: "answer" });
+      return Promise.resolve(llmCompletion("answer"));
     },
   });
 
   assert.deepEqual(requests, [
     {
       system: "System instructions",
-      prompt: "user: First\nassistant: Second\nuser: Current question\nassistant:",
+      model: "workflow-model",
+      reasoning: "high",
+      messages: [
+        { role: "user", content: "First" },
+        { role: "assistant", content: "Second" },
+        { role: "user", content: "Current question" },
+      ],
     },
   ]);
+  assert.equal(result.snapshot.llms[0].model, "workflow-model");
+  assert.equal(result.snapshot.llms[0].reasoning, "high");
 });
 
 void test("LLM returns validated structured output", async () => {
@@ -174,10 +201,11 @@ export default async function workflow() {
     agent: () => Promise.resolve("unused"),
     llm: (request) => {
       requests.push(request);
-      return Promise.resolve({
-        text: '{"stable":true,"summary":"ready"}',
-        usage: { input: 9, output: 5, cacheRead: 0, cacheWrite: 0, total: 14 },
-      });
+      return Promise.resolve(
+        llmCompletion('{"stable":true,"summary":"ready"}', {
+          usage: { input: 9, output: 5, cacheRead: 0, cacheWrite: 0, total: 14 },
+        }),
+      );
     },
   });
 
@@ -185,7 +213,7 @@ export default async function workflow() {
     {
       system:
         'Return only one JSON value matching this schema. Do not use Markdown fences.\n{"type":"object","properties":{"stable":{"type":"boolean"},"summary":{"type":"string"}},"required":["stable","summary"],"additionalProperties":false}',
-      prompt: "user: Classify the release.\nassistant:",
+      messages: [{ role: "user", content: "Classify the release." }],
     },
   ]);
   assert.deepEqual(result.result, {
@@ -209,6 +237,7 @@ export default async function workflow() {
 }`,
   );
   let calls = 0;
+  let finalSnapshot: WorkflowSnapshot | undefined;
 
   await assert.rejects(
     runWorkflowFromDirectory({
@@ -219,12 +248,23 @@ export default async function workflow() {
       agent: () => Promise.resolve("unused"),
       llm: () => {
         calls++;
-        return Promise.resolve({ text: "not json" });
+        return Promise.resolve(
+          llmCompletion("not json", {
+            usage: { input: 8, output: 2, cacheRead: 1, cacheWrite: 0, total: 10 },
+          }),
+        );
+      },
+      onSnapshot: (snapshot) => {
+        finalSnapshot = snapshot;
       },
     }),
     SyntaxError,
   );
   assert.equal(calls, 1);
+  assert.ok(finalSnapshot);
+  assert.equal(finalSnapshot.llms[0].status, "error");
+  assert.equal(finalSnapshot.llms[0].inputTokenCount, 8);
+  assert.equal(finalSnapshot.llms[0].outputTokenCount, 2);
 });
 
 void test("LLM rejects schema mismatches without repair", async () => {
@@ -255,7 +295,7 @@ export default async function workflow() {
       agent: () => Promise.resolve("unused"),
       llm: () => {
         calls++;
-        return Promise.resolve({ text: '{"count":"many"}' });
+        return Promise.resolve(llmCompletion('{"count":"many"}'));
       },
     }),
     /LLM structured output does not match its schema/,
@@ -284,7 +324,7 @@ export default async function workflow() {
       agent: () => Promise.resolve("unused"),
       llm: () => {
         called = true;
-        return Promise.resolve({ text: "unused" });
+        return Promise.resolve(llmCompletion("unused"));
       },
     }),
     /LLM prompt must be a string/,
@@ -313,7 +353,7 @@ export default async function workflow() {
       agent: () => Promise.resolve("unused"),
       llm: () => {
         called = true;
-        return Promise.resolve({ text: "unused" });
+        return Promise.resolve(llmCompletion("unused"));
       },
     }),
     /LLM messages\[0\] role must be user or assistant/,
@@ -395,12 +435,19 @@ export default async function workflow() {
     llm: async () => {
       await agentStarted;
       releaseAgent?.();
-      return { text: "direct done" };
+      return llmCompletion("direct done");
     },
   });
 
   assert.deepEqual(result.result, {
-    direct: { text: "direct done", output: null, usage: null, model: null, provider: null, stopReason: null },
+    direct: {
+      text: "direct done",
+      output: null,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      model: null,
+      provider: null,
+      stopReason: null,
+    },
     child: "child done",
   });
   assert.equal(result.snapshot.agents.length, 1);

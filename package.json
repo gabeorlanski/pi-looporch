@@ -62,7 +62,6 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@huggingface/jinja": "^0.5.9",
     "typebox": "^1.2.8",
     "typescript": "^5.0.0"
   },

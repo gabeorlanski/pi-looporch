@@ -55,6 +55,7 @@ function workflowSessionSummary(options: WorkflowSessionSummaryOptions): Record<
       delete summaryAgent.message;
       return summaryAgent;
     }),
+    llms: options.snapshot.llms,
     fanOuts: options.snapshot.fanOuts,
     ...(options.resultPath !== undefined ? { resultPath: options.resultPath } : {}),
     ...(options.error !== undefined ? { error: errorMessage(options.error) } : {}),

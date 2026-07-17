@@ -48,13 +48,15 @@ export function naturalLanguageRequestMessage(request: string, availableWorkflow
 
 /** Provides the agentTaskPrompt function contract. */
 export function agentTaskPrompt(prompt: string, options: WorkflowAgentOptions): string {
-  const task = renderPromptTemplate(agentTaskTemplate, {
-    context: JSON.stringify({
-      ...(options.label ? { label: options.label } : {}),
-      ...(options.taskFile ? { taskFile: options.taskFile } : {}),
-    }),
-    prompt,
+  const segments = agentTaskTemplate.split("{{prompt}}");
+  if (segments.length !== 2) throw new Error("agent task template must contain exactly one '{{prompt}}' placeholder");
+  const [beforePrompt, afterPrompt] = segments;
+  const context = JSON.stringify({
+    ...(options.label ? { label: options.label } : {}),
+    ...(options.taskFile ? { taskFile: options.taskFile } : {}),
   });
+  const task =
+    `${interpolatePromptTemplate(beforePrompt, { context })}${prompt}${interpolatePromptTemplate(afterPrompt, { context })}`.trim();
   return task.replace("{{structuredOutput}}", options.schema === undefined ? "" : structuredOutputPrompt(options.schema));
 }
 
@@ -83,9 +85,11 @@ export function workflowFailureHandoffPrompt(workflowName: string, failure: stri
 }
 
 function renderPromptTemplate(template: string, values: Record<string, string>): string {
-  return Object.entries(values)
-    .reduce((rendered, [key, value]) => rendered.replaceAll(`{{${key}}}`, escapePromptValue(value)), template)
-    .trim();
+  return interpolatePromptTemplate(template, values).trim();
+}
+
+function interpolatePromptTemplate(template: string, values: Record<string, string>): string {
+  return Object.entries(values).reduce((rendered, [key, value]) => rendered.replaceAll(`{{${key}}}`, escapePromptValue(value)), template);
 }
 
 function escapePromptValue(value: string): string {

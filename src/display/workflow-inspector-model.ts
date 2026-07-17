@@ -91,10 +91,11 @@ export class WorkflowInspectorModel {
 }
 
 function workflowPhases(snapshot: WorkflowSnapshot, now: number): WorkflowUiPhase[] {
-  const actualPhases = snapshot.phases.map((phase, index) => phaseFromSnapshot(snapshot, index + 1, phase, now));
   const setup = setupPhase(snapshot, now);
+  const plannedOffset = setup?.name === snapshot.plannedPhases[0]?.title ? 1 : 0;
+  const actualPhases = snapshot.phases.map((phase, index) => phaseFromSnapshot(snapshot, index + 1, phase, now, plannedOffset));
   const plannedPending = snapshot.plannedPhases
-    .slice(actualPhases.length)
+    .slice(actualPhases.length + plannedOffset)
     .map((phase, index) => pendingPhase(phase, actualPhases.length + index + 1));
   const phases = [...(setup ? [setup] : []), ...actualPhases, ...plannedPending];
   if (phases.length > 0) return phases;
@@ -116,12 +117,12 @@ function setupPhase(snapshot: WorkflowSnapshot, now: number): WorkflowUiPhase | 
   };
 }
 
-function phaseFromSnapshot(snapshot: WorkflowSnapshot, index: number, name: string, now: number): WorkflowUiPhase {
+function phaseFromSnapshot(snapshot: WorkflowSnapshot, index: number, name: string, now: number, plannedOffset: number): WorkflowUiPhase {
   const agents = snapshot.agents.filter((agent) => agent.phaseIndex === index).map((agent) => uiAgent(agent, now));
   return {
     index,
     name,
-    detail: snapshot.plannedPhases[index - 1]?.detail,
+    detail: snapshot.plannedPhases[index - 1 + plannedOffset]?.detail,
     status: phaseStatus(snapshot, index),
     agentsDone: agents.filter((agent) => agent.status !== "running").length,
     agentsTotal: agents.length,
@@ -157,13 +158,7 @@ function uiAgent(agent: WorkflowAgentSnapshot, now: number): WorkflowUiAgent {
     `phase: ${agent.phase ?? (agent.phaseIndex === 0 ? "Setup" : `phase ${String(agent.phaseIndex)}`)}`,
     `model: ${agent.model ?? "default"}`,
     `reasoning: ${agent.reasoning ?? "default"}`,
-    ...(agent.cwd ? [`cwd: ${agent.cwd}`] : []),
-    ...(agent.sessionDir ? [`session dir: ${agent.sessionDir}`] : []),
-    ...(agent.sessionFile ? [`session file: ${agent.sessionFile}`] : []),
-    ...(agent.eventsFile ? [`events file: ${agent.eventsFile}`] : []),
-    ...(agent.promptPath ? [`prompt: ${agent.promptPath}`] : []),
-    ...(agent.activityPath ? [`activity: ${agent.activityPath}`] : []),
-    ...(agent.outputPath ? [`output: ${agent.outputPath}`] : []),
+    `tools: ${agent.tools === undefined ? "inherited" : agent.tools.length === 0 ? "none" : agent.tools.join(", ")}`,
   ];
   return {
     id: agent.id,

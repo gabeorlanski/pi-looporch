@@ -135,6 +135,7 @@ export interface WorkflowAgentSnapshot {
   cwd?: string;
   model?: string;
   reasoning?: ReasoningLevel;
+  tools?: string[];
   status: "running" | "done" | "error";
   startedAt: number;
   endedAt?: number;

@@ -163,6 +163,124 @@ void test("workflow_widget_and_inspector_render_within_width", () => {
   assert.ok(narrowWidgetLines.some((line) => line.includes("out 300") && line.includes("$0.00+")));
   assert.ok(narrowInspectorLines.some((line) => line.includes("in 1.2k") && line.includes("cached 0")));
   assert.ok(narrowInspectorLines.some((line) => line.includes("out 300") && line.includes("$0.00+")));
+
+  const wideWidgetLines = new WorkflowWidget(
+    () => model,
+    plainWorkflowTuiTheme,
+    () => false,
+  ).render(240);
+  const wideMetrics = wideWidgetLines.find((line) => line.includes("in 1.2k")) ?? "";
+  assert.equal(wideWidgetLines.length, 2);
+  assert.doesNotMatch(wideMetrics.trimEnd(), /cached 0 {2,}.*out 300/);
+  assert.ok(wideWidgetLines.every((line) => visibleWidth(line) <= 240));
+  assert.ok(
+    new WorkflowWidget(
+      () => model,
+      plainWorkflowTuiTheme,
+      () => false,
+    )
+      .render(20)
+      .every((line) => visibleWidth(line) <= 20),
+  );
+});
+
+void test("inspector does not duplicate a current phase after setup", () => {
+  const model = new WorkflowInspectorModel({
+    workflowName: "review",
+    description: "Review auth-sensitive files",
+    plannedPhases: [{ title: "Setup" }, { title: "Repository screen" }, { title: "Materialize and test" }, { title: "Report" }],
+    phases: ["Repository screen", "Materialize and test"],
+    traces: [],
+    agents: [
+      agent({ id: 1, phaseIndex: 0, label: "prepare", status: "done" }),
+      agent({ id: 2, phaseIndex: 1, phase: "Repository screen", label: "screen", status: "done" }),
+      agent({ id: 3, phaseIndex: 2, phase: "Materialize and test", label: "test", status: "running" }),
+    ],
+    fanOuts: [],
+    messages: [],
+    status: "running",
+  });
+
+  assert.deepEqual(
+    model.workflow().phases.map((phase) => phase.name),
+    ["Setup", "Repository screen", "Materialize and test", "Report"],
+  );
+});
+
+void test("inspector preserves a planned phase after unplanned setup work", () => {
+  const model = new WorkflowInspectorModel({
+    workflowName: "review",
+    description: "Review auth-sensitive files",
+    plannedPhases: [{ title: "Run" }],
+    phases: [],
+    traces: [],
+    agents: [agent({ id: 1, phaseIndex: 0, label: "prepare", status: "running" })],
+    fanOuts: [],
+    messages: [],
+    status: "running",
+  });
+
+  assert.deepEqual(
+    model.workflow().phases.map((phase) => phase.name),
+    ["Setup", "Run"],
+  );
+});
+
+void test("inspector dynamically fits long titles and labels at every width", () => {
+  const model = new WorkflowInspectorModel({
+    workflowName: "a workflow with a deliberately oversized name that must not corrupt the inspector header",
+    description: "Review auth-sensitive files",
+    plannedPhases: [{ title: "Materialize and test a deliberately oversized phase name" }],
+    phases: ["Materialize and test a deliberately oversized phase name"],
+    traces: [],
+    agents: [
+      agent({
+        id: 1,
+        phaseIndex: 1,
+        phase: "Materialize and test a deliberately oversized phase name",
+        label: "an agent with a deliberately oversized label that should grow the agent pane without breaking the detail pane",
+        status: "running",
+      }),
+    ],
+    fanOuts: [],
+    messages: [],
+    status: "running",
+  });
+  const inspector = new WorkflowInspector(model, plainWorkflowTuiTheme, () => 18);
+
+  for (const terminalWidth of [20, 64, 100, 300]) {
+    assert.ok(inspector.render(terminalWidth).every((line) => visibleWidth(line) <= terminalWidth));
+  }
+  inspector.handleInput("\r");
+  for (const terminalWidth of [20, 64, 100, 300]) {
+    assert.ok(inspector.render(terminalWidth).every((line) => visibleWidth(line) <= terminalWidth));
+  }
+});
+
+void test("workflow widget colors input tokens and cost", () => {
+  const accented: string[] = [];
+  const warned: string[] = [];
+  const model = new WorkflowInspectorModel(workflowSnapshot());
+  const theme = {
+    ...plainWorkflowTuiTheme,
+    accent: (text: string) => {
+      accented.push(text);
+      return text;
+    },
+    warn: (text: string) => {
+      warned.push(text);
+      return text;
+    },
+  };
+
+  new WorkflowWidget(
+    () => model,
+    theme,
+    () => false,
+  ).render(120);
+
+  assert.ok(accented.includes("0"));
+  assert.ok(warned.includes("$0.00+"));
 });
 
 void test("inspector shows activity, output, and expandable prompts", async () => {
@@ -177,7 +295,10 @@ void test("inspector shows activity, output, and expandable prompts", async () =
       [
         { name: "find", arguments: { pattern: "*.ts" } },
         { name: "read", arguments: { path: "src/auth.ts" } },
-        { name: "bash", arguments: { command: `npm test ${"界".repeat(30)}` } },
+        {
+          name: "bash",
+          arguments: { command: `npm test ${"界".repeat(80)}`, ignored: "this argument should not appear in the summary" },
+        },
         { name: "write", arguments: { path: "out.txt" } },
       ]
         .map((entry) => JSON.stringify(entry))
@@ -203,8 +324,11 @@ void test("inspector shows activity, output, and expandable prompts", async () =
           promptPath,
           activityPath,
           outputPath,
+          cwd: "/tmp/project",
+          sessionDir: "/tmp/session-dir",
           sessionFile: "/tmp/session.jsonl",
           eventsFile: "/tmp/events.jsonl",
+          tools: ["read", "write"],
         }),
       ],
       fanOuts: [],
@@ -218,11 +342,14 @@ void test("inspector shows activity, output, and expandable prompts", async () =
   inspector.handleInput("\r");
   const collapsed = inspector.render(120).join("\n");
 
-  assert.match(collapsed, /session file: \/tmp\/session\.jsonl/);
-  assert.match(collapsed, /events file: \/tmp\/events\.jsonl/);
+  assert.match(collapsed, /tools: read, write/);
+  assert.doesNotMatch(collapsed, /\/tmp\/project|\/tmp\/session-dir|\/tmp\/session\.jsonl|\/tmp\/events\.jsonl/);
+  assert.doesNotMatch(collapsed, new RegExp(artifactsDir));
   assert.doesNotMatch(collapsed, /find \{"pattern":"\*\.ts"\}/);
   assert.match(collapsed, /read \{"path":"src\/auth\.ts"\}/);
-  assert.match(collapsed, /bash \{"command":"npm test/);
+  const bashActivityLine = collapsed.split("\n").find((line) => line.includes('bash {"command":"npm test'));
+  assert.match(bashActivityLine ?? "", /…/);
+  assert.doesNotMatch(collapsed, /this argument should not appear in the summary/);
   assert.match(collapsed, /write \{"path":"out\.txt"\}/);
   assert.match(collapsed, /EXACT OUTPUT/);
   assert.doesNotMatch(collapsed, /EXACT PROMPT/);
@@ -235,7 +362,7 @@ void test("inspector shows activity, output, and expandable prompts", async () =
 });
 
 void test("running workflow UI selects, inspects, and aborts", () => {
-  let editorText = "";
+  const editorText = "";
   let terminalInputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
   let widget: TestWorkflowComponent | undefined;
   let overlay: TestWorkflowComponent | undefined;
@@ -287,7 +414,7 @@ void test("running workflow UI selects, inspects, and aborts", () => {
   } as unknown as ExtensionCommandContext;
 
   updateRunningWorkflowUi(ctx, { runId: "run-1", snapshot: workflowSnapshot(), abortWorkflow: () => (aborted = true) });
-  assert.match(workflowStatus ?? "", /in 0 .* cached 0 .* out 0 .* \$0\.00/);
+  assert.equal(workflowStatus, undefined);
   updateRunningWorkflowUi(ctx, {
     runId: "run-1",
     snapshot: {
@@ -308,24 +435,17 @@ void test("running workflow UI selects, inspects, and aborts", () => {
       ],
     },
   });
-  assert.match(workflowStatus ?? "", /in 100 .* cached 50 .* out 30 .* \$0\.12/);
+  assert.equal(workflowStatus, undefined);
   updateRunningWorkflowUi(ctx, { runId: "run-2", snapshot: workflowSnapshot(), abortWorkflow: () => (aborted = true) });
-  assert.match(workflowStatus ?? "", /^2 workflows/);
-  assert.match(workflowStatus ?? "", /\$0\.12\+/);
+  assert.equal(workflowStatus, undefined);
   clearRunningWorkflowUi(ctx, "run-1");
-  assert.match(workflowStatus ?? "", /^Workflow/);
+  assert.equal(workflowStatus, undefined);
   assert.ok(terminalInputHandler);
   assert.ok(widget);
   const handler = terminalInputHandler;
-  const widgetComponent = widget;
-
   assert.deepEqual(handler("\u001B[B"), { consume: true });
-  assert.ok(widgetComponent.render(80).some((line) => line.includes("open inspector")));
-  assert.deepEqual(handler("\u001B[A"), { consume: true });
-  editorText = "not empty";
-  assert.equal(handler("\u001B[B"), undefined);
-  editorText = "";
   assert.deepEqual(handler("\u001B[B"), { consume: true });
+  assert.equal(handler("\u001B[1;1:3B"), undefined);
   assert.deepEqual(handler("\r"), { consume: true });
   assert.ok(overlay);
   const overlayComponent = overlay;

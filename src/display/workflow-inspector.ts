@@ -18,8 +18,6 @@ import {
 
 type Level = "phases" | "detail";
 
-const LEFT_W = 26;
-
 /** Provides the WorkflowInspector class contract. */
 export class WorkflowInspector implements Component, Focusable {
   focused = false;
@@ -57,17 +55,18 @@ export class WorkflowInspector implements Component, Focusable {
     const workflow = this.model.workflow();
     const statusTag =
       workflow.status === "error" ? this.theme.danger(" [error]") : workflow.status === "done" ? this.theme.ok(" [done]") : "";
-    const title = ` ${this.theme.accent(this.theme.bold(workflow.name))}${statusTag}`;
     const stats = `${String(workflow.agentsDone)}/${String(workflow.agentsTotal)} agents ${glyph.mid} ${fmtDuration(workflow.elapsed)}`;
-    const header = rightAlign(title, this.theme.dim(truncEnd(stats, Math.max(0, termWidth - width(title) - 1))), termWidth);
-    const usage = ` in ${fmtTokens(workflow.inputTokens)} ${glyph.mid} cached ${fmtTokens(workflow.cachedTokens)} ${glyph.mid} out ${fmtTokens(workflow.outputTokens)} ${glyph.mid} ${fmtCostUsd(workflow.cost)}`;
-    const usageLines =
-      width(usage) <= termWidth - 2
-        ? [this.theme.dim(usage)]
-        : [
-            this.theme.dim(` in ${fmtTokens(workflow.inputTokens)} ${glyph.mid} cached ${fmtTokens(workflow.cachedTokens)}`),
-            this.theme.dim(` out ${fmtTokens(workflow.outputTokens)} ${glyph.mid} ${fmtCostUsd(workflow.cost)}`),
-          ];
+    const renderedStats = this.theme.dim(truncEnd(stats, Math.floor(termWidth / 2)));
+    const title = truncEnd(
+      ` ${this.theme.accent(this.theme.bold(workflow.name))}${statusTag}`,
+      Math.max(0, termWidth - width(renderedStats) - 1),
+    );
+    const header = rightAlign(title, renderedStats, termWidth);
+    const inputUsage = `${this.theme.dim(" in ")}${this.theme.accent(fmtTokens(workflow.inputTokens))}${this.theme.dim(
+      ` ${glyph.mid} cached ${fmtTokens(workflow.cachedTokens)}`,
+    )}`;
+    const outputUsage = `${this.theme.dim(` ${glyph.mid} out ${fmtTokens(workflow.outputTokens)} ${glyph.mid} `)}${this.theme.warn(fmtCostUsd(workflow.cost))}`;
+    const usageLines = width(inputUsage + outputUsage) <= termWidth - 2 ? [inputUsage + outputUsage] : [inputUsage, outputUsage];
     const subtitle = padTo(` ${this.theme.dim(truncEnd(workflow.subtitle, termWidth - 2))}`, termWidth);
     const panelHeight = Math.max(3, height - 5 - (usageLines.length - 1));
     const body = this.level === "phases" ? this.renderPhases(termWidth, panelHeight) : this.renderDetail(termWidth, panelHeight);
@@ -129,35 +128,44 @@ export class WorkflowInspector implements Component, Focusable {
 
   private renderPhases(termWidth: number, height: number): string[] {
     const phases = this.phases();
+    const leftWidth = inspectorLeftWidth(
+      termWidth,
+      phases.map((phase) => phase.name),
+    );
+    const rightWidth = termWidth - leftWidth;
     const left = phases.slice(0, height - 2).map((phase, index) => {
       const selected = index === this.selectedPhase;
       const marker = selected ? this.theme.accent(glyph.marker) : " ";
       const count = phase.agentsTotal === 0 ? "" : `${String(phase.agentsDone)}/${String(phase.agentsTotal)}`;
       const name = phase.status === "pending" ? this.theme.pending(phase.name) : phase.name;
       let row =
-        padTo(`${marker}${phaseGlyph(phase, this.model.tick, this.theme)} ${name}`, LEFT_W - 3 - width(count)) + this.theme.dim(count);
-      if (selected) row = this.theme.selected(padTo(truncEnd(row, LEFT_W - 2), LEFT_W - 2));
+        padTo(`${marker}${phaseGlyph(phase, this.model.tick, this.theme)} ${name}`, leftWidth - 3 - width(count)) + this.theme.dim(count);
+      if (selected) row = this.theme.selected(padTo(truncEnd(row, leftWidth - 2), leftWidth - 2));
       return row;
     });
     const phase = this.currentPhase();
     const rightTitle = `${phase.name} ${glyph.mid} ${String(phase.agentsTotal)} agents`;
-    const rightWidth = Math.max(20, termWidth - LEFT_W);
     const body = phase.agents.length
       ? phase.agents.slice(0, height - 2).map((agent) => agentPreviewRow(agent, rightWidth - 2, this.model.tick, this.theme))
       : [this.theme.dim(phase.detail ?? "No agents launched for this phase yet.")];
-    return joinColumns(panel(this.theme, "Phases", left, LEFT_W, height), panel(this.theme, rightTitle, body, rightWidth, height));
+    return joinColumns(panel(this.theme, "Phases", left, leftWidth, height), panel(this.theme, rightTitle, body, rightWidth, height));
   }
 
   private renderDetail(termWidth: number, height: number): string[] {
     const phase = this.currentPhase();
+    const leftWidth = inspectorLeftWidth(
+      termWidth,
+      phase.agents.map((agent) => agent.displayName),
+    );
+    const rightWidth = termWidth - leftWidth;
     const left = phase.agents.slice(0, height - 2).map((agent, index) => {
       const selected = index === this.selectedAgent;
       const marker = selected ? this.theme.accent(glyph.marker) : " ";
-      let row = `${marker}${agentGlyph(agent, this.model.tick, this.theme)} ${truncEnd(agent.displayName, LEFT_W - 5)}`;
-      if (selected) row = this.theme.selected(padTo(truncEnd(row, LEFT_W - 2), LEFT_W - 2));
+      let row = `${marker}${agentGlyph(agent, this.model.tick, this.theme)} ${truncEnd(agent.displayName, leftWidth - 5)}`;
+      if (selected) row = this.theme.selected(padTo(truncEnd(row, leftWidth - 2), leftWidth - 2));
       return row;
     });
-    const rightInner = Math.max(18, termWidth - LEFT_W - 2);
+    const rightInner = Math.max(0, rightWidth - 2);
     const doc = this.buildDetailDoc(rightInner);
     const windowHeight = Math.max(1, height - 3);
     this.scroll = clamp(this.scroll, 0, Math.max(0, doc.length - windowHeight));
@@ -166,8 +174,8 @@ export class WorkflowInspector implements Component, Focusable {
     windowLines.push(rangeIndicator(this.scroll, windowHeight, doc.length, rightInner, this.theme));
     const agent = this.currentAgent();
     return joinColumns(
-      panel(this.theme, `${phase.name} ${glyph.mid} ${String(phase.agents.length)} agents`, left, LEFT_W, height),
-      panel(this.theme, agent ? agent.displayName : phase.name, windowLines, Math.max(20, termWidth - LEFT_W), height),
+      panel(this.theme, `${phase.name} ${glyph.mid} ${String(phase.agents.length)} agents`, left, leftWidth, height),
+      panel(this.theme, agent ? agent.displayName : phase.name, windowLines, rightWidth, height),
     );
   }
 
@@ -183,9 +191,11 @@ export class WorkflowInspector implements Component, Focusable {
     };
     push(`${agentGlyph(agent, this.model.tick, this.theme)} ${statusWord(agent.status)} ${glyph.mid} ${agent.model}`);
     push(
-      this.theme.dim(
-        `${fmtTokens(agent.inputTokens)} in ${glyph.mid} ${fmtTokens(agent.cachedTokens)} cached ${glyph.mid} ${fmtTokens(agent.outputTokens)} out ${glyph.mid} ${fmtCostUsd(agent.cost)} ${glyph.mid} ${String(agent.toolCalls)} tools ${glyph.mid} ${String(agent.steps)} steps ${glyph.mid} ${fmtDuration(agent.durationSeconds, true)}`,
-      ),
+      `${this.theme.accent(fmtTokens(agent.inputTokens))}${this.theme.dim(
+        ` in ${glyph.mid} ${fmtTokens(agent.cachedTokens)} cached ${glyph.mid} ${fmtTokens(agent.outputTokens)} out ${glyph.mid} `,
+      )}${this.theme.warn(fmtCostUsd(agent.cost))}${this.theme.dim(
+        ` ${glyph.mid} ${String(agent.toolCalls)} tools ${glyph.mid} ${String(agent.steps)} steps ${glyph.mid} ${fmtDuration(agent.durationSeconds, true)}`,
+      )}`,
     );
     push("");
     push(this.theme.accent(`Details ${glyph.mid} ${String(agent.detailLines.length)} lines`));
@@ -202,8 +212,9 @@ export class WorkflowInspector implements Component, Focusable {
     push("");
     const toolActivity = readToolActivityArtifact(agent.activityPath);
     const recentToolActivity = toolActivity.slice(-3);
+    const activityWidth = Math.max(0, Math.min(112, innerWidth - 2));
     push(this.theme.accent(`Activity ${glyph.mid} last ${String(recentToolActivity.length)} of ${String(toolActivity.length)} tool uses`));
-    for (const line of recentToolActivity) pushExact(`  ${line}`);
+    for (const line of recentToolActivity) push(`  ${truncEnd(line, activityWidth)}`);
     if (toolActivity.length === 0) push(this.theme.dim("  No tool usage recorded yet."));
     push("");
     push(this.theme.accent("Output"));
@@ -226,6 +237,14 @@ export class WorkflowInspector implements Component, Focusable {
     const selectedAgent = clamp(this.selectedAgent, 0, agents.length - 1);
     return agents[selectedAgent];
   }
+}
+
+function inspectorLeftWidth(termWidth: number, labels: string[]): number {
+  const rightMinimum = Math.min(20, Math.max(3, Math.floor(termWidth / 2)));
+  const maximum = Math.max(3, Math.min(42, termWidth - rightMinimum));
+  const minimum = Math.min(maximum, Math.max(3, Math.floor(termWidth / 3)));
+  const desired = Math.max(...labels.map((label) => width(label) + 4), width("Phases") + 4);
+  return clamp(desired, minimum, maximum);
 }
 
 function clamp(value: number, min: number, max: number): number {

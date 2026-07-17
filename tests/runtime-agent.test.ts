@@ -108,6 +108,7 @@ export default async function workflow() {
     ]),
   );
   assert.equal(result.snapshot.agents.length, 1);
+  assert.deepEqual(result.snapshot.agents[0]?.tools, ["read", "todo_write"]);
   assert.deepEqual(result.snapshot.traces, []);
 });
 

@@ -113,8 +113,8 @@ export function truncEnd(text: string, maxWidth: number): string {
 /** Provides the panel function contract. */
 export function panel(theme: WorkflowTuiTheme, title: string, body: string[], panelWidth: number, panelHeight: number): string[] {
   const innerWidth = Math.max(0, panelWidth - 2);
-  const titleText = ` ${title} `;
-  const titleSegment = ` ${theme.accent(theme.bold(title))} `;
+  const titleText = truncEnd(` ${title} `, innerWidth);
+  const titleSegment = theme.accent(theme.bold(titleText));
   const dashCount = Math.max(0, innerWidth - visibleWidth(titleText));
   const lines = [theme.border("┌") + titleSegment + theme.border(`${"─".repeat(dashCount)}┐`)];
   for (let index = 0; index < panelHeight - 2; index++) {

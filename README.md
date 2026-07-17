@@ -53,15 +53,12 @@ Running workflows show a compact widget below the editor. Press `Down` on an
 empty prompt to select it, `Enter` to inspect, and `Esc` or `Up` to return.
 
 ```text
-  ↓ select (on an empty prompt) to inspect
-  ◐ workflow review  reviewing src/auth.ts and tests/auth.test.ts
+  ↓ ◐ workflow review  reviewing src/auth.ts and tests/auth.test.ts
     2/5 agents done · 1m12s · in 18.4k · cached 12k · out 2.1k · $0.12
 ```
 
-While a workflow runs, the footer status bar shows the combined input, cached-read,
-output, and known USD cost for all current-session workflows. A trailing `+` means
-at least one observed provider response did not report a price. The active-workflow
-widget and inspector header show those same totals for the selected workflow.
+The active-workflow widget and inspector header show totals for the selected workflow.
+A trailing `+` means at least one observed provider response did not report a price.
 
 A passive project monitor also appears below the editor for workflows active in
 other Pi sessions for the same project. Use `/workflow-status [--json] [--all]
@@ -98,10 +95,16 @@ code runs in a sandbox with globals such as `LLM`, `agent`, `parallel`, `pipelin
 `mapreduce`, `verifier`, `phase`, `log`, `trace`, and file helpers.
 Reusable child prompts live in `prompts/*.txt` and launch through
 `agent({ template, values }, options)`; `renderPrompt` remains available for
-exceptional composition. Use a stable `<workflow_instructions>` prefix and put
-workflow-supplied task data in final typed sections such as `<workflow_task>`
-or `<workflow_inputs>`; this distinguishes it from user text and improves prompt
-cache reuse.
+exceptional composition. Use Markdown or plain text by default. Add a few
+stable domain-specific XML tags only when complex mixed instructions, context,
+examples, documents, or dynamic inputs need unambiguous boundaries; do not
+wrap every heading or sentence. Tags are delimiters, not a security boundary.
+For machine-readable results, prefer `schema` and `StructuredOutput`. The
+runtime owns `<workflow_instructions>`, `<workflow_task>`, `<workflow_context>`,
+and, for schema-enabled agents, `<structured_output_contract>` and
+`<structured_output_schema>`; do not reuse them in child prompt files. The
+rendered child task is embedded verbatim in that runtime envelope; runtime
+metadata remains escaped.
 
 `agent`, `mapreduce`, and `verifier` accept `extensions` and `tools`
 string lists. Omit either list to inherit workflow settings; use `[]` for none.

@@ -1,16 +1,14 @@
-<workflow_guidance topic="overview">
-<purpose>Choose and author a lightweight, reusable workflow.</purpose>
-<rules>
-<rule>Use an existing workflow when one fits; author a new workflow only when the request is reusable or multi-step enough to deserve a runbook.</rule>
-<rule>Before asking about missing purpose or contract details, inspect relevant project context and infer the workflow purpose, inputs/defaults, phases, child-agent roles, file reads, and result shape when they are reasonably clear.</rule>
-<rule>Draft the workflow under the default outside-project draft root {{draftRoot}}, then call propose_workflow with the workflow name.</rule>
-<rule>Keep workflow.js as orchestration code. Put reusable child-agent prompt text in prompts/*.txt and launch it with agent({ template, values }, options).</rule>
-<rule>Use LLM for one generation-only response without tools or a child session; use agent when the model needs tools, iterative work, or persistent child-agent state.</rule>
-<rule>Give agent-calling primitives explicit extensions/tools lists when they should not inherit project defaults; [] means none, and named extension tools imply their owner without exposing sibling tools.</rule>
-<rule>Design prompt files for reuse: keep static instructions and examples in a stable prefix, put only stage-specific data in a final typed section, and pass paths, IDs, counts, or compact manifests instead of repeated bulk context.</rule>
-<rule>Ask this tool for narrower topics only when needed: workflow-api, draft-directory, prompt-files, child-agents, structured-outputs, fanout, verification, artifacts.</rule>
-</rules>
-<workflow_primitive_reference>
+# Workflow overview
+
+Use an existing workflow when it fits. Author a new one only when the request is reusable or multi-step enough to need a runbook.
+
+- Before asking about missing details, inspect project context and infer the purpose, inputs/defaults, phases, child-agent roles, file reads, and result shape when reasonably clear.
+- Draft under `{{draftRoot}}`, then call `propose_workflow` with the workflow name.
+- Keep `workflow.js` for orchestration. Put reusable child prompts in `prompts/*.txt` and launch them with `agent({ template, values }, options)`.
+- Use `LLM` for one generation-only response without tools or a child session. Use `agent` when the model needs tools, iterative work, or persistent child-agent state.
+- Give agent-calling primitives explicit `extensions` or `tools` lists only when they should not inherit project defaults. `[]` means none; a named extension tool loads its owner without exposing sibling tools.
+- Keep static prompt instructions and examples stable. Pass only stage-specific paths, IDs, counts, or compact manifests as dynamic data.
+- Ask for `workflow-api`, `draft-directory`, `prompt-files`, `child-agents`, `structured-outputs`, `fanout`, `verification`, or `artifacts` only when that focused guidance is needed.
+
+## Supported workflow primitives
 {{primitiveReference}}
-</workflow_primitive_reference>
-</workflow_guidance>

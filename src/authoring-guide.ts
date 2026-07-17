@@ -45,7 +45,7 @@ export function workflowDesignGuidance(topic?: string): string {
 
 function workflowDesignTopicIndex(): string {
   return workflowDesignIndexTemplate
-    .replaceAll("{{topicList}}", designTopics.map((topic) => `<topic name="${topic.name}">${topic.summary}</topic>`).join("\n"))
+    .replaceAll("{{topicList}}", designTopics.map((topic) => `- **${topic.name}** — ${topic.summary}`).join("\n"))
     .replaceAll("{{primitiveReference}}", renderWorkflowPrimitiveReference());
 }
 

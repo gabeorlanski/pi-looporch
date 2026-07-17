@@ -1,13 +1,12 @@
 /** Provides running workflow ui behavior. */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { matchesKey, type TUI } from "@earendil-works/pi-tui";
+import { isKeyRelease, matchesKey, type TUI } from "@earendil-works/pi-tui";
 import { readActiveWorkflowSnapshots } from "../workflow/active-run-snapshots.ts";
 import type { WorkflowSnapshot } from "../runtime/types.ts";
-import { mergeWorkflowUsageTotals } from "../runtime/usage.ts";
 import { extensionSessionScope } from "./session-scope.ts";
 import { WorkflowInspector } from "./workflow-inspector.ts";
 import { WorkflowInspectorModel } from "./workflow-inspector-model.ts";
-import { fmtCostUsd, fmtTokens, glyph, workflowTuiTheme } from "./workflow-tui-format.ts";
+import { workflowTuiTheme } from "./workflow-tui-format.ts";
 import { WorkflowWidget } from "./workflow-widget.ts";
 
 const RUNNING_WORKFLOW_WIDGET = "pi-workflow-running";
@@ -100,7 +99,6 @@ export function updateRunningWorkflowUi(ctx: ExtensionContext, update: RunningWo
     }
     existing.activeRunId = update.runId;
   }
-  updateWorkflowStatus(ctx, state);
   requestRender(state);
 }
 
@@ -118,15 +116,11 @@ export function clearRunningWorkflowUi(ctx: ExtensionContext, runId?: string): v
   const state = runningWorkflowUiStates.get(ctx) ?? runningWorkflowUiStatesByScope.get(scope);
   if (state && runId) removeWorkflowRun(state, runId);
   if (state && state.runs.size > 0) {
-    updateWorkflowStatus(ctx, state);
     requestRender(state);
     return;
   }
   if (dynamicWorkflowCount(ctx) > 0) {
-    if (state) {
-      updateWorkflowStatus(ctx, state);
-      requestRender(state);
-    }
+    if (state) requestRender(state);
     return;
   }
   if (state?.animationTimer) clearInterval(state.animationTimer);
@@ -165,7 +159,7 @@ function installRunningWorkflowUi(ctx: ExtensionContext, update: RunningWorkflow
   runningWorkflowUiStatesByScope.set(extensionSessionScope(ctx), state);
   installWorkflowWidget(ctx, state);
   installWorkflowInputHandler(ctx, state);
-  updateWorkflowStatus(ctx, state);
+  ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, undefined);
   state.animationTimer = setInterval(() => {
     for (const run of state.runs.values()) run.model.advanceFrame();
     requestRender(state);
@@ -196,15 +190,13 @@ function installWorkflowWidget(ctx: ExtensionContext, state: RunningWorkflowUiSt
 
 function installWorkflowInputHandler(ctx: ExtensionContext, state: RunningWorkflowUiState): void {
   state.unsubscribeInput = ctx.ui.onTerminalInput((data) => {
-    if (state.overlayOpen) return undefined;
-    if (!state.armed) {
-      if (matchesKey(data, "down") && ctx.ui.getEditorText() === "") {
-        state.armed = true;
-        requestRender(state);
-        return { consume: true };
-      }
-      return undefined;
+    if (state.overlayOpen || isKeyRelease(data)) return undefined;
+    if (matchesKey(data, "down") && ctx.ui.getEditorText() === "") {
+      state.armed = true;
+      requestRender(state);
+      return { consume: true };
     }
+    if (!state.armed) return undefined;
     if (matchesKey(data, "enter")) {
       void openWorkflowInspector(ctx, state, activeRun(state));
       return { consume: true };
@@ -260,24 +252,6 @@ function activeRun(state: RunningWorkflowUiState): RunningWorkflowRunState {
   const run = state.runs.get(state.activeRunId) ?? state.runs.values().next().value;
   if (!run) throw new Error("Running workflow UI has no active workflow run");
   return run;
-}
-
-function updateWorkflowStatus(ctx: ExtensionContext, state: RunningWorkflowUiState): void {
-  const workflows = [...state.runs.values()].map((run) => run.model.workflow());
-  const usage = mergeWorkflowUsageTotals(
-    workflows.map((workflow) => ({
-      inputTokens: workflow.inputTokens,
-      cachedTokens: workflow.cachedTokens,
-      outputTokens: workflow.outputTokens,
-      tokensTotal: workflow.tokensTotal,
-      cost: workflow.cost,
-    })),
-  );
-  const prefix = workflows.length === 1 ? "Workflow" : `${String(workflows.length)} workflows`;
-  ctx.ui.setStatus(
-    RUNNING_WORKFLOW_STATUS,
-    `${prefix} ${glyph.mid} in ${fmtTokens(usage.inputTokens)} ${glyph.mid} cached ${fmtTokens(usage.cachedTokens)} ${glyph.mid} out ${fmtTokens(usage.outputTokens)} ${glyph.mid} ${fmtCostUsd(usage.cost)}`,
-  );
 }
 
 function requestRender(state: RunningWorkflowUiState): void {

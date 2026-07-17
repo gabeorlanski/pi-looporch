@@ -54,6 +54,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
       ...(agentCwd ? { cwd: agentCwd } : {}),
       model: agentOptions.model,
       reasoning: agentOptions.reasoning,
+      ...(agentOptions.tools !== undefined ? { tools: [...agentOptions.tools] } : {}),
       status: "running",
       startedAt: Date.now(),
       inputTokenCount: 0,

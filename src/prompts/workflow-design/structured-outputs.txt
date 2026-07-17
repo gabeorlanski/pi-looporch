@@ -1,6 +1,8 @@
 # Structured outputs
 
 - Use `agent({ template, values }, { schema })` when a child must return structured fields.
+- Use `LLM(prompt, { schema })` when structured data needs one generation without tools or a child session. It decodes and validates exactly one response with no repair call.
+- `LLM` always returns `text`, `output`, `usage`, `model`, `provider`, and `stopReason`. Raw calls use `output: null`; schema calls place the validated JSON value in `output`.
 - The schema is prepended to the child prompt in a `structured_output_schema` section and becomes the terminal `StructuredOutput` tool parameter contract. Describe each field's meaning inline with JSON Schema descriptions.
 - `StructuredOutput` validates keyword arguments, captures them, and ends the child session. A schema-enabled child that does not call it fails.
 - The agent result always includes `message`, `name`, `steps`, and `usage`. `message` is `null` when a terminal call omits it; `name`, `steps`, and `usage` are runtime-owned and cannot be schema properties.

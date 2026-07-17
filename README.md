@@ -91,7 +91,7 @@ A workflow directory contains `workflow.js` and optional prompt files:
 ```
 
 `workflow.js` exports static `metadata` and a default async function. Workflow
-code runs in a sandbox with globals such as `agent`, `parallel`, `pipeline`,
+code runs in a sandbox with globals such as `LLM`, `agent`, `parallel`, `pipeline`,
 `mapreduce`, `verifier`, `phase`, `log`, `trace`, and file helpers.
 Reusable child prompts live in `prompts/*.txt` and launch through
 `agent({ template, values }, options)`; `renderPrompt` remains available for
@@ -116,6 +116,28 @@ structured fields. The runtime prepends the schema and exposes a terminal
 `StructuredOutput` tool whose keyword arguments are validated by Pi. Calling it
 ends the child; results always include `message`, `name`, `steps`, and standard
 token `usage` metadata.
+
+Use `LLM(prompt, options?)` for one generation-only call with Pi's active model
+and authentication. Options include `system`, ordered prior `messages`, an object
+`schema`, and a Hugging Face-style Jinja `chatTemplate`. The prompt is appended
+as the final user message, then the complete list is rendered into one user
+prompt using a simple role-prefixed default template or the supplied override.
+Results have `{ text, output, usage, model, provider, stopReason }`, with
+validated JSON in schema-call `output` and `null` otherwise. `LLM` has no tools,
+agent session, repair request, or child-agent concurrency cost.
+
+```js
+const result = await LLM("Classify this release.", {
+  system: "Return a concise assessment.",
+  messages: [{ role: "user", content: "The previous release was stable." }],
+  schema: {
+    type: "object",
+    properties: { stable: { type: "boolean" }, summary: { type: "string" } },
+    required: ["stable", "summary"],
+    additionalProperties: false,
+  },
+});
+```
 
 Agents can call `workflow_design_guidance` for focused authoring help. Its
 primitive reference is generated from the runtime primitive registry so supported

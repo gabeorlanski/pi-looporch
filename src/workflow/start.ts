@@ -1,7 +1,7 @@
 /** Provides start behavior. */
 import { readFile } from "node:fs/promises";
 import { discoverWorkflows, type WorkflowReference, workflowRootsForProject } from "../discovery.ts";
-import type { WorkflowAgent, WorkflowSnapshot } from "../runtime/types.ts";
+import type { WorkflowAgent, WorkflowLLM, WorkflowSnapshot } from "../runtime/types.ts";
 import { createInitialWorkflowSnapshot } from "../runtime/snapshot.ts";
 import { startBackgroundWorkflowRun, type BackgroundWorkflowRun } from "./background-runs.ts";
 import { extractWorkflowInputContract, validateWorkflowInput, type WorkflowInputContract } from "./input-contract.ts";
@@ -54,6 +54,7 @@ export async function prepareWorkflowRun(options: {
 export async function startPreparedWorkflowRun(options: {
   prepared: PreparedWorkflowRun;
   agent: WorkflowAgent;
+  llm: WorkflowLLM;
   ownerSessionId: string;
   signal?: AbortSignal;
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
@@ -65,6 +66,7 @@ export async function startPreparedWorkflowRun(options: {
     workflowName: prepared.workflowName,
     input: prepared.input,
     agent: options.agent,
+    llm: options.llm,
     workflowRoots: prepared.workflowRoots,
     agentLogParentId: prepared.runId,
     maxParallelAgents: prepared.maxParallelAgents,

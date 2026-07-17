@@ -92,6 +92,40 @@ export interface WorkflowAgentReporter {
 /** Injected child-agent function used by the runtime; implementations must report progress and honor abort options. */
 export type WorkflowAgent = (prompt: string, options: WorkflowAgentOptions, reporter: WorkflowAgentReporter) => Promise<unknown>;
 
+/** Plain text message supplied to a direct workflow LLM completion. */
+export interface WorkflowLLMMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** Fully constructed request passed to the injected direct model-call adapter. */
+export interface WorkflowLLMRequest {
+  prompt: string;
+  system?: string;
+  signal?: AbortSignal;
+}
+
+/** Standard provider token usage exposed by direct workflow LLM calls. */
+export interface WorkflowLLMUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
+/** Completed direct model response returned by the injected adapter. */
+export interface WorkflowLLMCompletion {
+  text: string;
+  usage?: WorkflowLLMUsage;
+  model?: string;
+  provider?: string;
+  stopReason?: string;
+}
+
+/** Injected generation-only model call used by the workflow runtime. */
+export type WorkflowLLM = (request: WorkflowLLMRequest) => Promise<WorkflowLLMCompletion>;
+
 /** Live and final state for one child-agent launch inside a workflow run. */
 export interface WorkflowAgentSnapshot {
   id: number;
@@ -170,6 +204,7 @@ export interface RunWorkflowOptions {
   workflowName: string;
   input: unknown;
   agent: WorkflowAgent;
+  llm: WorkflowLLM;
   workflowRoots?: string[];
   agentLogParentId?: string;
   outputsDir?: string;

@@ -7,6 +7,7 @@ import { startBackgroundWorkflowRun } from "../src/workflow/background-runs.ts";
 import { workflowAgentSessionLogParentDirectory } from "../src/session-logs.ts";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
 import { readActiveWorkflowRuns } from "../src/workflow/active-runs.ts";
+import { unavailableLLM } from "./runtime-helpers.ts";
 
 async function writeWorkflow(project: string, name: string, source: string): Promise<void> {
   const workflowDir = path.join(project, ".pi", "workflows", name);
@@ -39,6 +40,7 @@ export default async function workflow() {
     workflowName: "slow",
     input: {},
     agent,
+    llm: unavailableLLM,
     maxParallelAgents: 1,
     ownerSessionId: "test-session",
   });
@@ -94,6 +96,7 @@ export default async function workflow() {
     workflowName: "aborted",
     input: {},
     agent,
+    llm: unavailableLLM,
     maxParallelAgents: 1,
     signal: controller.signal,
     ownerSessionId: "test-session",
@@ -139,6 +142,7 @@ export default async function workflow() {
     workflowName: "abort-running",
     input: {},
     agent,
+    llm: unavailableLLM,
     maxParallelAgents: 1,
     ownerSessionId: "test-session",
   });
@@ -175,6 +179,7 @@ export default async function workflow() {
     workflowName: "fail",
     input: {},
     agent,
+    llm: unavailableLLM,
     maxParallelAgents: 1,
     ownerSessionId: "test-session",
   });
@@ -207,6 +212,7 @@ export default async function workflow() {
     workflowName: "body-fail",
     input: {},
     agent,
+    llm: unavailableLLM,
     maxParallelAgents: 1,
     ownerSessionId: "test-session",
   });

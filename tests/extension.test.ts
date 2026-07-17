@@ -10,6 +10,7 @@ import type { WorkflowAgent, WorkflowSnapshot } from "../src/runtime/types.ts";
 import { readActiveWorkflowRuns, registerActiveWorkflowRun, removeActiveWorkflowRun } from "../src/workflow/active-runs.ts";
 import { writeWorkflowOutputManifest, writeWorkflowSnapshot } from "../src/workflow/outputs.ts";
 import { createExtensionHarness, type ExtensionHarness, waitForCondition, writeProjectWorkflow } from "./extension-harness.ts";
+import { unavailableLLM } from "./runtime-helpers.ts";
 
 void test("existing_workflow_command_runs_directly_with_progress_updates", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
@@ -115,6 +116,30 @@ export default async function workflow(input) {
   assert.match(handoff.text, /<workflow_paths>\n- Workflow result: .*final\.json/);
   assert.ok(harness.notifications.some((entry) => entry.message === "Workflow 'echo' complete." && entry.type === "info"));
   assert.deepEqual(JSON.parse(await readFile(workflowResultPathFrom(handoff.text), "utf8")), { message: "hello" });
+});
+
+void test("workflow commands provide LLM", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  await writeProjectWorkflow(
+    project,
+    "direct-completion",
+    `export const metadata = { name: "direct-completion", description: "Complete directly", inputInstructions: "No input.", phases: [{ title: "Generate" }] };
+export default async function workflow() {
+  return LLM("Summarize this.");
+}`,
+  );
+  const harness = createExtensionHarness({
+    cwd: project,
+    extensionDependencies: {
+      createLLM: () => () => Promise.resolve({ text: "Direct summary" }),
+    },
+  });
+
+  await harness.command("workflow", "direct-completion");
+  const handoff = await waitForOnlyUserTextMessage(harness);
+
+  assert.match(handoff.text, /"text": "Direct summary"/);
+  assert.match(handoff.text, /"output": null/);
 });
 
 void test("workflow completion follows up when busy", async () => {
@@ -299,6 +324,7 @@ export default async function workflow() {
     input: {},
     agentDir: path.join(project, "agent-dir"),
     agent,
+    llm: unavailableLLM,
     sendUserMessage: () => undefined,
   });
 

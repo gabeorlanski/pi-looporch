@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
-import { writeWorkflow } from "./runtime-helpers.ts";
+import { unavailableLLM, writeWorkflow } from "./runtime-helpers.ts";
 
 void test("workflow_renders_agent_template_task_at_launch", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
@@ -21,6 +21,7 @@ export default async function workflow({ file, focus }) {
   const agent: WorkflowAgent = (prompt, options) => Promise.resolve(`${options.label ?? "unlabeled"}:${prompt}`);
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "templated",
@@ -44,6 +45,7 @@ export default async function workflow({ file }) {
   );
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "manual-template",
@@ -71,6 +73,7 @@ export default async function workflow({ topic }) {
   const agent: WorkflowAgent = (prompt) => Promise.resolve(prompt);
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "external-prompt",
@@ -96,6 +99,7 @@ export default async function workflow() {
 
   await assert.rejects(
     runWorkflowFromDirectory({
+      llm: unavailableLLM,
       maxParallelAgents: 4,
       cwd: project,
       workflowName: "missing-template-value",
@@ -120,6 +124,7 @@ export default async function workflow() {
 
   await assert.rejects(
     runWorkflowFromDirectory({
+      llm: unavailableLLM,
       maxParallelAgents: 4,
       cwd: project,
       workflowName: "unknown-template-key",
@@ -144,6 +149,7 @@ export default async function workflow() {
 
   await assert.rejects(
     runWorkflowFromDirectory({
+      llm: unavailableLLM,
       maxParallelAgents: 4,
       cwd: project,
       workflowName: "unused-template-value",
@@ -168,6 +174,7 @@ export default async function workflow() {
 
   await assert.rejects(
     runWorkflowFromDirectory({
+      llm: unavailableLLM,
       maxParallelAgents: 4,
       cwd: project,
       workflowName: "malformed-template",
@@ -195,6 +202,7 @@ export default async function workflow() {
   const prompts: string[] = [];
 
   await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "stable-template-prefix",
@@ -238,6 +246,7 @@ export default async function workflow({ absolutePath }) {
   const agent: WorkflowAgent = () => Promise.resolve("unused");
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "write-files",
@@ -272,7 +281,7 @@ export default async function workflow() {
   const agent: WorkflowAgent = () => Promise.resolve("unused");
 
   await assert.rejects(
-    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "bad-write", input: {}, agent }),
+    runWorkflowFromDirectory({ llm: unavailableLLM, maxParallelAgents: 4, cwd: project, workflowName: "bad-write", input: {}, agent }),
     /writeText content must be a string/,
   );
 });
@@ -292,7 +301,14 @@ export default async function workflow({ topic }) {
   const agent: WorkflowAgent = () => Promise.resolve("unused");
 
   await assert.rejects(
-    runWorkflowFromDirectory({ maxParallelAgents: 4, cwd: project, workflowName: "legacy", input: { topic: "template" }, agent }),
+    runWorkflowFromDirectory({
+      llm: unavailableLLM,
+      maxParallelAgents: 4,
+      cwd: project,
+      workflowName: "legacy",
+      input: { topic: "template" },
+      agent,
+    }),
     /Prompt template not found: review\.txt/,
   );
 });

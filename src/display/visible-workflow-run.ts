@@ -3,7 +3,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { BackgroundWorkflowRun } from "../workflow/background-runs.ts";
 import { errorMessage } from "../errors.ts";
 import { workflowFailureHandoffPrompt } from "../prompt-templates.ts";
-import type { WorkflowAgent, WorkflowSnapshot } from "../runtime/types.ts";
+import type { WorkflowAgent, WorkflowLLM, WorkflowSnapshot } from "../runtime/types.ts";
 import { WorkflowInputError } from "../workflow/input-contract.ts";
 import { prepareWorkflowRun, startPreparedWorkflowRun, type PreparedWorkflowRun } from "../workflow/start.ts";
 import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "./running-workflow-ui.ts";
@@ -18,6 +18,7 @@ export interface StartVisibleWorkflowRunOptions {
   input: unknown;
   agentDir: string;
   agent: WorkflowAgent;
+  llm: WorkflowLLM;
   signal?: AbortSignal;
   abortWorkflow?: () => void;
   sendUserMessage: SendWorkflowUserMessage;
@@ -73,6 +74,7 @@ export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOp
     run = await startPreparedWorkflowRun({
       prepared,
       agent: options.agent,
+      llm: options.llm,
       ownerSessionId,
       signal: options.signal,
       onSnapshot: (snapshot) => {

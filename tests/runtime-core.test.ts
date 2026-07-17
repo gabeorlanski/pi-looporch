@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import type { WorkflowAgent } from "../src/runtime/types.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
-import { writeWorkflow } from "./runtime-helpers.ts";
+import { unavailableLLM, writeWorkflow } from "./runtime-helpers.ts";
 
 void test("workflow_runs_with_core_primitives", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
@@ -32,6 +32,7 @@ export default async function workflow({ files }) {
   };
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "review",
@@ -91,6 +92,7 @@ export default async function workflow() {
 
   await assert.rejects(
     runWorkflowFromDirectory({
+      llm: unavailableLLM,
       maxParallelAgents: 4,
       cwd: project,
       workflowName: "pipeline-object-stage",
@@ -119,6 +121,7 @@ export default async function workflow() {
   };
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "outputs",
@@ -168,6 +171,7 @@ export default async function workflow() {
   const agent: WorkflowAgent = () => Promise.resolve(undefined);
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "undefined-outputs",
@@ -197,6 +201,7 @@ export default async function workflow({ items }) {
   const agent: WorkflowAgent = () => Promise.resolve("unused");
 
   const result = await runWorkflowFromDirectory({
+    llm: unavailableLLM,
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "traceable",

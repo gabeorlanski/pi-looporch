@@ -1,10 +1,6 @@
 /** Provides workflow usage aggregation behavior. */
-import type { WorkflowAgentSnapshot, WorkflowCost } from "./types.ts";
-
-type UsageAgent = Pick<WorkflowAgentSnapshot, "inputTokenCount" | "outputTokenCount"> & {
-  cacheReadTokenCount?: number;
-  cost?: WorkflowCost;
-};
+import type { WorkflowCost, WorkflowSnapshot } from "./types.ts";
+import { workflowCalls } from "./calls.ts";
 
 export interface WorkflowUsageTotals {
   inputTokens: number;
@@ -15,18 +11,17 @@ export interface WorkflowUsageTotals {
 }
 
 /** Provides the workflowUsageTotals function contract. */
-export function workflowUsageTotals(agents: readonly UsageAgent[]): WorkflowUsageTotals {
-  return agents.reduce<WorkflowUsageTotals>(
-    (totals, agent) => {
-      const cost = agent.cost ?? unknownWorkflowCost();
+export function workflowUsageTotals(snapshot: Pick<WorkflowSnapshot, "agents" | "llms">): WorkflowUsageTotals {
+  return workflowCalls(snapshot).reduce<WorkflowUsageTotals>(
+    (totals, record) => {
       return {
-        inputTokens: totals.inputTokens + agent.inputTokenCount,
-        cachedTokens: totals.cachedTokens + (agent.cacheReadTokenCount ?? 0),
-        outputTokens: totals.outputTokens + agent.outputTokenCount,
-        tokensTotal: totals.tokensTotal + agent.inputTokenCount + agent.outputTokenCount,
+        inputTokens: totals.inputTokens + record.inputTokenCount,
+        cachedTokens: totals.cachedTokens + record.cacheReadTokenCount,
+        outputTokens: totals.outputTokens + record.outputTokenCount,
+        tokensTotal: totals.tokensTotal + record.inputTokenCount + record.outputTokenCount,
         cost: {
-          knownUsd: totals.cost.knownUsd + cost.knownUsd,
-          complete: totals.cost.complete && cost.complete,
+          knownUsd: totals.cost.knownUsd + record.cost.knownUsd,
+          complete: totals.cost.complete && record.cost.complete,
         },
       };
     },

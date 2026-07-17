@@ -6,7 +6,7 @@ Workflow authors currently use `agent` for all model-assisted work, even when th
 
 ## Solution
 
-Add an `LLM` workflow primitive for one direct, generation-only model request. It uses Pi's active model, provider, and authentication configuration. Authors provide a primary prompt plus optional system instructions and ordered prior messages; the primitive appends the primary prompt as the final user message and passes the complete history to Pi's model API.
+Add an `LLM` workflow primitive for one direct, generation-only model request. It uses Pi's active model by default and can select another model and reasoning level from Pi's configuration. Authors provide a primary prompt plus optional model, reasoning, system instructions, and ordered prior messages; the primitive appends the primary prompt as the final user message and passes the complete history to Pi's model API.
 
 Every call resolves to a consistent response envelope. Raw calls expose completed assistant text. Schema-enabled calls also expose validated structured output and reject malformed or nonconforming responses. `LLM` remains distinct from `agent`: it has no tools, extensions, agent session, child-agent launch record, repair loop, or streaming interface.
 
@@ -25,17 +25,19 @@ Every call resolves to a consistent response envelope. Raw calls expose complete
 11. As a workflow author, I want cancellation to reject the call promptly, so that cancelled workflows do not continue generating.
 12. As a workflow author, I want provider failures to surface as failures, so that workflow error handling receives actionable errors.
 13. As a workflow author, I want to compose `LLM` with existing phases, prompts, files, tracing, and parallel workflow logic, so that simple model calls fit naturally into workflow definitions.
-14. As an operator, I want direct LLM calls not to appear as child agents or consume child-agent concurrency, so that workflow run state accurately reflects orchestration work.
+14. As an operator, I want direct LLM calls to appear separately from child agents in the workflow Inspector without consuming child-agent concurrency, so that workflow run state and usage totals accurately reflect all model work.
+15. As a workflow author, I want to select a Pi model and reasoning level per call, so that direct generations use the appropriate capability and cost profile.
 
 ## Implementation Decisions
 
 - Register `LLM` as a workflow runtime global and include it in generated workflow primitive documentation.
 - `LLM` is a direct model-call primitive, not an alias or wrapper around the child-agent primitive.
-- The public request is prompt-first. It accepts a required primary prompt plus an optional system prompt, ordered additional/prior messages, and object schema. The primitive preserves supplied message order and appends the primary prompt as the final user message.
+- The public request is prompt-first. It accepts a required primary prompt plus an optional model, reasoning level, system prompt, ordered additional/prior messages, and object schema. The primitive preserves supplied message order and appends the primary prompt as the final user message.
 - The complete user/assistant message list is passed to Pi's model API for provider-specific formatting.
-- The runtime obtains model, provider, and authentication solely from Pi's active configuration. Version one provides no workflow-level model, provider, or credential override.
+- The runtime defaults to Pi's active model, resolves an explicit provider/model, model ID, or display name from Pi's catalog, and obtains authentication from Pi. Workflows cannot supply provider credentials.
 - The runtime introduces an injected direct model-call adapter at the workflow execution boundary. This is the seam between strict workflow request normalization and Pi library integration, and allows deterministic tests without real models.
 - Each invocation performs exactly one completed generation request. It does not create an agent session, perform capability resolution, use extensions or tools, consume a child-agent queue slot, or create an agent snapshot.
+- Each invocation creates a direct-LLM snapshot for the workflow Inspector, persists its normalized request and completed response as artifacts, and contributes provider-reported tokens and cost to workflow totals.
 - The primitive always returns a response envelope with stable semantic fields for assistant text, structured output, usage, selected model/provider, and termination metadata. Metadata remains represented consistently when the underlying provider does not supply it.
 - Without a schema, the envelope contains the completed assistant text and no structured output value.
 - With a schema, the primitive accepts the project's existing JSON-Schema-compatible object convention. It validates the decoded result before resolving and places the validated value in the envelope.
@@ -49,18 +51,19 @@ Every call resolves to a consistent response envelope. Raw calls expose complete
 - Use the highest existing seam: execute workflow definitions with an injected deterministic direct model-call adapter, following existing workflow-runtime and injected-adapter test patterns.
 - Verify primitive registration and generated documentation expose `LLM` to workflow definitions.
 - Verify request construction: system prompt inclusion, preservation of supplied message order, final placement of the primary prompt as a user message, and native message forwarding.
-- Verify active host configuration is passed to the adapter and that workflow calls cannot override model selection or credentials in version one.
+- Verify active-model defaults, explicit model selection, reasoning forwarding, missing-model failures, and Pi-managed authentication.
 - Verify raw calls return the expected stable envelope and structured calls return validated output plus completed text and available metadata.
 - Verify malformed JSON and schema mismatches reject, with no second call or repair attempt.
 - Verify provider failures and workflow cancellation reject through the workflow execution boundary.
 - Verify a direct call launches no tools or child agents, creates no agent snapshot/session, and does not consume child-agent concurrency.
+- Verify direct calls appear in the workflow Inspector and their provider-reported usage contributes to workflow totals, including calls whose structured-output validation fails after the provider response.
 
 ## Out of Scope
 
 - Tool use, extension loading, agent loops, child-agent capability selection, and agent-session persistence.
 - Token streaming or partial-response callbacks.
 - Automatic retries, structured-output repair prompts, or multi-request recovery.
-- Workflow-provided provider credentials, API keys, model selection, or provider selection.
+- Workflow-provided provider credentials or API keys.
 - Changes to the existing `agent` primitive or its terminal structured-output behavior.
 
 ## Further Notes

@@ -9,6 +9,7 @@ export function cloneSnapshot(snapshot: WorkflowSnapshot): WorkflowSnapshot {
     phases: [...snapshot.phases],
     traces: snapshot.traces.map((trace) => ({ ...trace, ...(trace.value !== undefined ? { value: cloneSerializable(trace.value) } : {}) })),
     agents: snapshot.agents.map((agent) => ({ ...agent, ...(agent.tools !== undefined ? { tools: [...agent.tools] } : {}) })),
+    llms: snapshot.llms.map((llm) => ({ ...llm })),
     fanOuts: snapshot.fanOuts.map((fanOut) => ({ ...fanOut })),
     messages: snapshot.messages.map((message) => ({ ...message })),
   };

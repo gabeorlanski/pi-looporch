@@ -1,5 +1,6 @@
-/** Child-agent reasoning effort labels accepted by workflow APIs and forwarded to Pi model sessions. */
-export type ReasoningLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+/** Reasoning effort labels accepted by workflow model calls. */
+export const reasoningLevels = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+export type ReasoningLevel = (typeof reasoningLevels)[number];
 
 /** Static phase metadata declared by workflow authors for run planning. */
 export interface WorkflowPhaseMetadata {
@@ -102,6 +103,8 @@ export interface WorkflowLLMMessage {
 export interface WorkflowLLMRequest {
   messages: WorkflowLLMMessage[];
   system?: string;
+  model?: string;
+  reasoning?: ReasoningLevel;
   signal?: AbortSignal;
 }
 
@@ -117,7 +120,8 @@ export interface WorkflowLLMUsage {
 /** Completed direct model response returned by the injected adapter. */
 export interface WorkflowLLMCompletion {
   text: string;
-  usage?: WorkflowLLMUsage;
+  usage: WorkflowLLMUsage;
+  cost: WorkflowCost;
   model?: string;
   provider?: string;
   stopReason?: string;
@@ -126,16 +130,13 @@ export interface WorkflowLLMCompletion {
 /** Injected generation-only model call used by the workflow runtime. */
 export type WorkflowLLM = (request: WorkflowLLMRequest) => Promise<WorkflowLLMCompletion>;
 
-/** Live and final state for one child-agent launch inside a workflow run. */
-export interface WorkflowAgentSnapshot {
+/** State shared by every model call recorded in a workflow snapshot. */
+export interface WorkflowCallSnapshot {
   id: number;
-  label: string;
   phaseIndex: number;
   phase?: string;
-  cwd?: string;
   model?: string;
   reasoning?: ReasoningLevel;
-  tools?: string[];
   status: "running" | "done" | "error";
   startedAt: number;
   endedAt?: number;
@@ -143,18 +144,34 @@ export interface WorkflowAgentSnapshot {
   cacheReadTokenCount: number;
   outputTokenCount: number;
   cost: WorkflowCost;
+  promptPath?: string;
+  outputPath?: string;
+  error?: string;
+}
+
+/** Live and final state for one child-agent launch inside a workflow run. */
+export type WorkflowAgentSnapshot = WorkflowCallSnapshot & {
+  label: string;
+  cwd?: string;
+  tools?: string[];
   toolCallCount: number;
   stepCount: number;
   fanOutId?: number;
-  promptPath?: string;
   activityPath?: string;
-  outputPath?: string;
   sessionDir?: string;
   sessionFile?: string;
   eventsFile?: string;
   message?: string;
-  error?: string;
-}
+};
+
+/** Live and final state for one direct generation-only model call. */
+export type WorkflowLLMSnapshot = WorkflowCallSnapshot & {
+  provider?: string;
+  stopReason?: string;
+};
+
+/** Canonical discriminated view of a recorded workflow model call. */
+export type WorkflowSnapshotCall = Readonly<WorkflowAgentSnapshot & { kind: "agent" }> | Readonly<WorkflowLLMSnapshot & { kind: "llm" }>;
 
 /** Aggregate progress for a workflow fan-out launched through the parallel primitive. */
 export interface WorkflowFanOutSnapshot {
@@ -192,6 +209,7 @@ export interface WorkflowSnapshot {
   phases: string[];
   traces: WorkflowTraceSnapshot[];
   agents: WorkflowAgentSnapshot[];
+  llms: WorkflowLLMSnapshot[];
   fanOuts: WorkflowFanOutSnapshot[];
   messages: WorkflowRunMessageSnapshot[];
   status: "running" | "done" | "error";

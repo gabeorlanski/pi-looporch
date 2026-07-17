@@ -41,6 +41,7 @@ void test("workflow_snapshot_normalizes_pre_usage_tracking_agents", async () => 
 
   assert.equal(snapshot.agents[0]?.cacheReadTokenCount, 0);
   assert.deepEqual(snapshot.agents[0]?.cost, { knownUsd: 0, complete: false });
+  assert.deepEqual(snapshot.llms, []);
 });
 
 void test("workflow_session_summary_saves_structured_run_metadata", async () => {
@@ -78,6 +79,7 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
         eventsFile: "/tmp/session-dir/events.jsonl",
       },
     ],
+    llms: [],
     fanOuts: [{ id: 1, label: "files", total: 1, running: 0, done: 1, error: 0 }],
     status: "done",
   };
@@ -90,6 +92,7 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
     traces: unknown;
     messages: unknown;
     agents: unknown;
+    llms: unknown;
     resultPath: string;
   };
 
@@ -127,5 +130,6 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
       eventsFile: "/tmp/session-dir/events.jsonl",
     },
   ]);
+  assert.deepEqual(summary.llms, []);
   assert.equal(summary.resultPath, resultPath);
 });

@@ -35,9 +35,10 @@ export default function piWorkflow(pi: ExtensionAPI, dependencies: PiWorkflowExt
     ((ctx: ExtensionContext) =>
       createPiWorkflowLLM({
         model: ctx.model,
+        getModels: () => ctx.modelRegistry.getAll(),
         getRequestAuth: async (model) => {
           const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-          if (!auth.ok) throw new Error(`Active Pi model authentication failed: ${auth.error}`);
+          if (!auth.ok) throw new Error(`Pi model authentication failed: ${auth.error}`);
           return {
             ...(auth.apiKey === undefined ? {} : { apiKey: auth.apiKey }),
             ...(auth.headers === undefined ? {} : { headers: auth.headers }),

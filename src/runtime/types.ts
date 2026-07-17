@@ -100,7 +100,7 @@ export interface WorkflowLLMMessage {
 
 /** Fully constructed request passed to the injected direct model-call adapter. */
 export interface WorkflowLLMRequest {
-  prompt: string;
+  messages: WorkflowLLMMessage[];
   system?: string;
   signal?: AbortSignal;
 }

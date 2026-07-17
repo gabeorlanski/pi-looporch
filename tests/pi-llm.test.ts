@@ -40,7 +40,11 @@ void test("LLM uses the active Pi model and auth", async () => {
 
   const result = await llm({
     system: "Be concise.",
-    prompt: "user: Question\nassistant: Answer\nuser: Follow-up\nassistant:",
+    messages: [
+      { role: "user", content: "Question" },
+      { role: "assistant", content: "Answer" },
+      { role: "user", content: "Follow-up" },
+    ],
     signal: controller.signal,
   });
 
@@ -49,7 +53,27 @@ void test("LLM uses the active Pi model and auth", async () => {
       selectedModel: model,
       context: {
         systemPrompt: "Be concise.",
-        messages: [{ role: "user", content: "user: Question\nassistant: Answer\nuser: Follow-up\nassistant:", timestamp: 0 }],
+        messages: [
+          { role: "user", content: "Question", timestamp: 0 },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "Answer" }],
+            api: "openai-responses",
+            provider: "active-provider",
+            model: "active-model",
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: "stop",
+            timestamp: 0,
+          },
+          { role: "user", content: "Follow-up", timestamp: 0 },
+        ],
         tools: [],
       },
       options: {
@@ -100,7 +124,7 @@ void test("LLM passes the normalized system prompt", async () => {
 
   await llm({
     system: "Use release data.",
-    prompt: "Classify it.",
+    messages: [{ role: "user", content: "Classify it." }],
   });
 
   assert.equal(systemPrompt, "Use release data.");
@@ -132,5 +156,5 @@ void test("LLM surfaces Pi provider errors", async () => {
       } as AssistantMessage),
   });
 
-  await assert.rejects(llm({ prompt: "Question" }), /provider unavailable/);
+  await assert.rejects(llm({ messages: [{ role: "user", content: "Question" }] }), /provider unavailable/);
 });

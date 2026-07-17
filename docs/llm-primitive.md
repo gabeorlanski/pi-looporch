@@ -6,7 +6,7 @@ Workflow authors currently use `agent` for all model-assisted work, even when th
 
 ## Solution
 
-Add an `LLM` workflow primitive for one direct, generation-only model request. It uses Pi's active model, provider, and authentication configuration. Authors provide a primary prompt plus optional system instructions, ordered prior messages, and a Hugging Face-style Jinja chat template; the primitive appends the primary prompt as the final user message and renders the complete history into one prompt.
+Add an `LLM` workflow primitive for one direct, generation-only model request. It uses Pi's active model, provider, and authentication configuration. Authors provide a primary prompt plus optional system instructions and ordered prior messages; the primitive appends the primary prompt as the final user message and passes the complete history to Pi's model API.
 
 Every call resolves to a consistent response envelope. Raw calls expose completed assistant text. Schema-enabled calls also expose validated structured output and reject malformed or nonconforming responses. `LLM` remains distinct from `agent`: it has no tools, extensions, agent session, child-agent launch record, repair loop, or streaming interface.
 
@@ -16,7 +16,7 @@ Every call resolves to a consistent response envelope. Raw calls expose complete
 2. As a workflow author, I want to provide system instructions, so that each direct call follows task-specific behavior.
 3. As a workflow author, I want to provide ordered prior messages, so that I can construct multi-turn context explicitly.
 4. As a workflow author, I want the primary prompt appended as the final user message, so that the current request is unambiguous.
-5. As a workflow author, I want a configurable Jinja chat template with a simple default, so that direct calls can use model-specific message formatting.
+5. As a workflow author, I want Pi's model API to format the message history, so that direct calls use the active provider's native chat format.
 6. As a workflow author, I want raw calls to return assistant text in a stable envelope, so that I can use free-form completions in subsequent workflow logic.
 7. As a workflow author, I want schema-enabled calls to return validated structured output in that envelope, so that downstream logic can consume reliable data.
 8. As a workflow author, I want malformed JSON and schema-invalid responses to reject, so that invalid structured data cannot silently continue through a workflow.
@@ -31,8 +31,8 @@ Every call resolves to a consistent response envelope. Raw calls expose complete
 
 - Register `LLM` as a workflow runtime global and include it in generated workflow primitive documentation.
 - `LLM` is a direct model-call primitive, not an alias or wrapper around the child-agent primitive.
-- The public request is prompt-first. It accepts a required primary prompt plus an optional system prompt, ordered additional/prior messages, chat template, and object schema. The primitive preserves supplied message order and appends the primary prompt as the final user message.
-- The complete user/assistant message list is always rendered into one user prompt through a simple role-prefixed default or the supplied Hugging Face-style Jinja template.
+- The public request is prompt-first. It accepts a required primary prompt plus an optional system prompt, ordered additional/prior messages, and object schema. The primitive preserves supplied message order and appends the primary prompt as the final user message.
+- The complete user/assistant message list is passed to Pi's model API for provider-specific formatting.
 - The runtime obtains model, provider, and authentication solely from Pi's active configuration. Version one provides no workflow-level model, provider, or credential override.
 - The runtime introduces an injected direct model-call adapter at the workflow execution boundary. This is the seam between strict workflow request normalization and Pi library integration, and allows deterministic tests without real models.
 - Each invocation performs exactly one completed generation request. It does not create an agent session, perform capability resolution, use extensions or tools, consume a child-agent queue slot, or create an agent snapshot.
@@ -48,7 +48,7 @@ Every call resolves to a consistent response envelope. Raw calls expose complete
 - Test externally observable workflow behavior rather than implementation details of the Pi library integration.
 - Use the highest existing seam: execute workflow definitions with an injected deterministic direct model-call adapter, following existing workflow-runtime and injected-adapter test patterns.
 - Verify primitive registration and generated documentation expose `LLM` to workflow definitions.
-- Verify request construction: system prompt inclusion, preservation of supplied message order, final placement of the primary prompt as a user message, and default/custom Jinja rendering.
+- Verify request construction: system prompt inclusion, preservation of supplied message order, final placement of the primary prompt as a user message, and native message forwarding.
 - Verify active host configuration is passed to the adapter and that workflow calls cannot override model selection or credentials in version one.
 - Verify raw calls return the expected stable envelope and structured calls return validated output plus completed text and available metadata.
 - Verify malformed JSON and schema mismatches reject, with no second call or repair attempt.

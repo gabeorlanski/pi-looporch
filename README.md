@@ -119,9 +119,8 @@ token `usage` metadata.
 
 Use `LLM(prompt, options?)` for one generation-only call with Pi's active model
 and authentication. Options include `system`, ordered prior `messages`, an object
-`schema`, and a Hugging Face-style Jinja `chatTemplate`. The prompt is appended
-as the final user message, then the complete list is rendered into one user
-prompt using a simple role-prefixed default template or the supplied override.
+`schema`. The prompt is appended as the final user message, then Pi passes the
+complete message list to the active model API for provider-specific formatting.
 Results have `{ text, output, usage, model, provider, stopReason }`, with
 validated JSON in schema-call `output` and `null` otherwise. `LLM` has no tools,
 agent session, repair request, or child-agent concurrency cost.

@@ -8,7 +8,6 @@ const sessionRequestTemplate = readFileSync(new URL("./prompts/session-request.t
 const workflowInputResolutionTemplate = readFileSync(new URL("./prompts/workflow-input-resolution.txt", import.meta.url), "utf8").trim();
 const agentTaskTemplate = readFileSync(new URL("./prompts/agent-task.txt", import.meta.url), "utf8").trim();
 const structuredOutputTemplate = readFileSync(new URL("./prompts/structured-output.txt", import.meta.url), "utf8").trim();
-export const defaultLLMChatTemplate = readFileSync(new URL("./prompts/llm-chat-template.txt", import.meta.url), "utf8").trim();
 const llmStructuredOutputTemplate = readFileSync(new URL("./prompts/llm-structured-output.txt", import.meta.url), "utf8").trim();
 const workflowCompletionHandoffTemplate = readFileSync(
   new URL("./prompts/workflow-completion-handoff.txt", import.meta.url),

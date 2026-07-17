@@ -15,7 +15,7 @@ void test("generated primitive docs expose LLM", () => {
         primitive: "LLM",
         name: "LLM",
         signature: "LLM(prompt, options?)",
-        summary: "Makes one generation-only call with optional system instructions, prior messages, chat template, and schema.",
+        summary: "Makes one generation-only call with optional system instructions, prior messages, and schema.",
       },
     ],
   );
@@ -53,7 +53,7 @@ export default async function workflow() {
 
   assert.deepEqual(requests, [
     {
-      prompt: "user: Summarize the release.\nassistant:",
+      messages: [{ role: "user", content: "Summarize the release." }],
     },
   ]);
   assert.deepEqual(result.result, {
@@ -67,7 +67,7 @@ export default async function workflow() {
   assert.deepEqual(result.snapshot.agents, []);
 });
 
-void test("LLM renders messages with a Jinja template", async () => {
+void test("LLM passes ordered messages to the model API", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
@@ -80,7 +80,6 @@ export default async function workflow() {
       { role: "user", content: "Earlier question" },
       { role: "assistant", content: "Earlier answer" },
     ],
-    chatTemplate: "{% for message in messages %}[{{ message.role }}]{{ message.content }}{% endfor %}",
   });
 }`,
   );
@@ -101,12 +100,16 @@ export default async function workflow() {
   assert.deepEqual(requests, [
     {
       system: "Be concise.",
-      prompt: "[user]Earlier question[assistant]Earlier answer[user]Current question",
+      messages: [
+        { role: "user", content: "Earlier question" },
+        { role: "assistant", content: "Earlier answer" },
+        { role: "user", content: "Current question" },
+      ],
     },
   ]);
 });
 
-void test("LLM uses the default chat template and ignores model overrides", async () => {
+void test("LLM ignores model overrides", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
@@ -142,7 +145,11 @@ export default async function workflow() {
   assert.deepEqual(requests, [
     {
       system: "System instructions",
-      prompt: "user: First\nassistant: Second\nuser: Current question\nassistant:",
+      messages: [
+        { role: "user", content: "First" },
+        { role: "assistant", content: "Second" },
+        { role: "user", content: "Current question" },
+      ],
     },
   ]);
 });
@@ -185,7 +192,7 @@ export default async function workflow() {
     {
       system:
         'Return only one JSON value matching this schema. Do not use Markdown fences.\n{"type":"object","properties":{"stable":{"type":"boolean"},"summary":{"type":"string"}},"required":["stable","summary"],"additionalProperties":false}',
-      prompt: "user: Classify the release.\nassistant:",
+      messages: [{ role: "user", content: "Classify the release." }],
     },
   ]);
   assert.deepEqual(result.result, {

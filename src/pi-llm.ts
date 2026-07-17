@@ -1,5 +1,5 @@
 /** Provides Pi direct model-call integration for workflow LLM completions. */
-import { completeSimple, type Api, type Model } from "@earendil-works/pi-ai/compat";
+import { completeSimple, type Api, type Message, type Model } from "@earendil-works/pi-ai/compat";
 import type { WorkflowLLM } from "./runtime/types.ts";
 
 /** Creates a generation-only workflow adapter using Pi's active model and authentication. */
@@ -16,11 +16,31 @@ export function createPiWorkflowLLM(options: {
     const model = options.model;
     if (!model) throw new Error("Direct LLM calls require an active Pi model");
     const auth = await options.getRequestAuth(model);
+    const messages: Message[] = request.messages.map((message) => {
+      if (message.role === "user") return { role: "user", content: message.content, timestamp: 0 };
+      return {
+        role: "assistant",
+        content: [{ type: "text", text: message.content }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop",
+        timestamp: 0,
+      };
+    });
     const response = await (options.complete ?? completeSimple)(
       model,
       {
         ...(request.system ? { systemPrompt: request.system } : {}),
-        messages: [{ role: "user", content: request.prompt, timestamp: 0 }],
+        messages,
         tools: [],
       },
       {

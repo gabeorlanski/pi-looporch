@@ -1,16 +1,14 @@
 /** Provides direct LLM completion behavior. */
-import { Template } from "@huggingface/jinja";
 import { Check } from "typebox/value";
 import type { WorkflowLLMMessage, WorkflowLLMRequest } from "../types.ts";
 import type { WorkflowPrimitive } from "../context.ts";
 import { requireWorkflowObjectSchema } from "../../workflow-schema.ts";
-import { defaultLLMChatTemplate, llmStructuredOutputPrompt } from "../../prompt-templates.ts";
+import { llmStructuredOutputPrompt } from "../../prompt-templates.ts";
 
 interface WorkflowLLMOptions {
   system?: string;
   messages?: WorkflowLLMMessage[];
   schema?: unknown;
-  chatTemplate?: string;
 }
 
 export const llmPrimitive: WorkflowPrimitive<{
@@ -21,17 +19,16 @@ export const llmPrimitive: WorkflowPrimitive<{
     {
       name: "LLM",
       signature: "LLM(prompt, options?)",
-      summary: "Makes one generation-only call with optional system instructions, prior messages, chat template, and schema.",
+      summary: "Makes one generation-only call with optional system instructions, prior messages, and schema.",
     },
   ],
   globals: ({ runtime }) => ({
     LLM: async (prompt: unknown, inputOptions: unknown = {}) => {
       if (typeof prompt !== "string") throw new TypeError("LLM prompt must be a string");
       if (!isRecord(inputOptions)) throw new TypeError("LLM options must be an object");
-      const { system, messages: priorMessages, schema, chatTemplate } = inputOptions;
+      const { system, messages: priorMessages, schema } = inputOptions;
       if (system !== undefined && typeof system !== "string") throw new TypeError("LLM system must be a string");
       if (priorMessages !== undefined && !Array.isArray(priorMessages)) throw new TypeError("LLM messages must be an array");
-      if (chatTemplate !== undefined && typeof chatTemplate !== "string") throw new TypeError("LLM chatTemplate must be a string");
       const objectSchema = schema === undefined ? undefined : requireWorkflowObjectSchema(schema, "LLM");
       const messages: WorkflowLLMMessage[] = [
         ...(priorMessages ?? []).map((message, index): WorkflowLLMMessage => {
@@ -46,7 +43,7 @@ export const llmPrimitive: WorkflowPrimitive<{
       const schemaPrompt = objectSchema === undefined ? undefined : llmStructuredOutputPrompt(objectSchema);
       const systemPrompt = [system, schemaPrompt].filter((part): part is string => part !== undefined).join("\n\n");
       const request: WorkflowLLMRequest = {
-        prompt: new Template(chatTemplate ?? defaultLLMChatTemplate).render({ messages }),
+        messages,
         ...(systemPrompt ? { system: systemPrompt } : {}),
         ...(runtime.options.signal === undefined ? {} : { signal: runtime.options.signal }),
       };

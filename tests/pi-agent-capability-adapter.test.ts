@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import type { LoadExtensionsResult } from "@earendil-works/pi-coding-agent";
-import { createPiWorkflowAgent } from "../src/pi-agent.ts";
-import { availableAgentExtensions } from "../src/pi-agent-capabilities.ts";
+import { createPiWorkflowAgent } from "../src/pi-agent/adapter.ts";
+import { availableAgentExtensions } from "../src/pi-agent/capabilities/catalog.ts";
 import {
   createCapabilityExtensionLoader,
   createCompletedSessionFactory,

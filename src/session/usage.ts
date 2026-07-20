@@ -1,7 +1,7 @@
 /** Provides session usage behavior. */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import type { WorkflowCost } from "./runtime/types.ts";
+import type { WorkflowCost } from "../runtime/types.ts";
 
 export interface TokenUsage {
   input: number;

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { workflowAgentSessionLogParentDirectory, writeWorkflowSessionSummary } from "../src/session-logs.ts";
+import { workflowAgentSessionLogParentDirectory, writeWorkflowSessionSummary } from "../src/session/logs.ts";
 import { readWorkflowSnapshot, workflowSnapshotPath } from "../src/workflow/outputs.ts";
 import type { WorkflowSnapshot } from "../src/runtime/types.ts";
 

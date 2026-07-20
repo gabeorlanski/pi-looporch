@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { loadSessionMessages } from "../src/session-transcript.ts";
+import { loadSessionMessages } from "../src/session/transcript.ts";
 
 void test("load_session_messages_ignores_missing_and_malformed_jsonl", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-transcript-"));

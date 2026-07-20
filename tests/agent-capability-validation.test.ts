@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { createAgentCapabilityCatalogProvider, type AgentCapabilityCatalogProvider } from "../src/pi-agent-capabilities.ts";
+import { createAgentCapabilityCatalogProvider, type AgentCapabilityCatalogProvider } from "../src/pi-agent/capabilities/catalog.ts";
 import { validateWorkflowAgentCapabilities } from "../src/workflow/agent-capability-validation.ts";
 
 function catalogProvider(

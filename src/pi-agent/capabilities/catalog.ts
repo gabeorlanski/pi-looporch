@@ -299,5 +299,3 @@ export function availableAgentExtensions(
     toolNames: [...extension.tools.keys()],
   }));
 }
-
-export * from "./pi-agent-capability-resolution.ts";

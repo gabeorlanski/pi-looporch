@@ -1,6 +1,6 @@
 /** Provides pi agent capability resolution behavior. */
-import type { AgentCapabilityCatalog, AgentCapabilityLoadError, AgentToolOwner, AvailableAgentExtension } from "./pi-agent-capabilities.ts";
-import type { CapabilitySelection } from "./workflow/settings.ts";
+import type { AgentCapabilityCatalog, AgentCapabilityLoadError, AgentToolOwner, AvailableAgentExtension } from "./catalog.ts";
+import type { CapabilitySelection } from "../../workflow/settings.ts";
 
 /** Inputs used to resolve one child agent's extension and tool access. */
 export interface ResolveAgentCapabilitiesOptions {

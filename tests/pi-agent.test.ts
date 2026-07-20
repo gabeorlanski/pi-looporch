@@ -3,15 +3,12 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { createPiWorkflowAgent } from "../src/pi-agent.ts";
+import { createPiWorkflowAgent } from "../src/pi-agent/adapter.ts";
 import type { WorkflowAgentProgress, WorkflowAgentReporter } from "../src/runtime/types.ts";
-import {
-  workflowAgentLogEvent,
-  parseSessionTokens,
-  workflowAgentSessionLogDirectory,
-  createWorkflowAgentProgressTracker,
-  workflowAgentFailureMessage,
-} from "../src/pi-agent.ts";
+import { createWorkflowAgentProgressTracker, workflowAgentFailureMessage } from "../src/pi-agent/adapter.ts";
+import { workflowAgentLogEvent } from "../src/session/events.ts";
+import { workflowAgentSessionLogDirectory } from "../src/session/logs.ts";
+import { parseSessionTokens } from "../src/session/usage.ts";
 
 void test("schema agents validate and return terminal output", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));

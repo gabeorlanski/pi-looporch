@@ -1,7 +1,7 @@
 /** Provides background runs behavior. */
 import type { RunWorkflowOptions, WorkflowRunResult, WorkflowSnapshot } from "../runtime/types.ts";
 import { runWorkflowFromDirectory } from "../runtime/run.ts";
-import { writeWorkflowSessionSummary } from "../session-logs.ts";
+import { writeWorkflowSessionSummary } from "../session/logs.ts";
 import { registerActiveWorkflowRun, removeActiveWorkflowRun } from "./active-runs.ts";
 import { createWorkflowOutputsDir, writeWorkflowSnapshot } from "./outputs.ts";
 

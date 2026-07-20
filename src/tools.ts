@@ -12,7 +12,7 @@ import { readWorkflowDraft } from "./workflow/drafts.ts";
 import { normalizeWorkflowName } from "./workflow/paths.ts";
 import { renderWorkflowStatus, renderWorkflowStatusJson } from "./display/workflow-status.ts";
 import { readSelectedWorkflowStatus, type WorkflowStatusQuery } from "./workflow/status.ts";
-import { createAgentCapabilityCatalogProvider, type AgentCapabilityCatalogProvider } from "./pi-agent-capabilities.ts";
+import { createAgentCapabilityCatalogProvider, type AgentCapabilityCatalogProvider } from "./pi-agent/capabilities/catalog.ts";
 import { validateWorkflowAgentCapabilities } from "./workflow/agent-capability-validation.ts";
 import { readWorkflowSettings } from "./workflow/settings.ts";
 

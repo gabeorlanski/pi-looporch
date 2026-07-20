@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { createPiWorkflowAgent } from "../src/pi-agent.ts";
+import { createPiWorkflowAgent } from "../src/pi-agent/adapter.ts";
 import { createExtensionHarness, waitForCondition, writeProjectWorkflow } from "./extension-harness.ts";
 
 void test("dummy workflow command initializes a schema child agent through Pi", async () => {

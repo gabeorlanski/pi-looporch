@@ -14,21 +14,23 @@ import {
   availableBaseAgentToolNames,
   availableAgentExtensions,
   buildAgentCapabilityCatalog,
-  parseAgentCapabilitySelection,
-  resolveAgentCapabilities,
   resolveAgentExtensionSelectors,
   type AgentCapabilityCatalog,
-  type AgentCapabilityResolutionDiagnostic,
   type AgentCapabilityCatalogProvider,
-} from "./pi-agent-capabilities.ts";
-import type { WorkflowAgent, WorkflowAgentReporter, WorkflowToolActivitySnapshot } from "./runtime/types.ts";
-import { createLoggedWorkflowAgentSession } from "./agent-session-logs.ts";
-import { agentTaskPrompt } from "./prompt-templates.ts";
-import { parseSessionTokens, workflowTokenUsageFromMessage } from "./session-usage.ts";
-import { createStructuredOutput } from "./structured-output.ts";
-import { resolveWorkflowAgentCwd } from "./workflow/paths.ts";
-import { readWorkflowSettings } from "./workflow/settings.ts";
-import { resolveWorkflowModel } from "./model-selection.ts";
+} from "./capabilities/catalog.ts";
+import {
+  parseAgentCapabilitySelection,
+  resolveAgentCapabilities,
+  type AgentCapabilityResolutionDiagnostic,
+} from "./capabilities/resolution.ts";
+import type { WorkflowAgent, WorkflowAgentReporter, WorkflowToolActivitySnapshot } from "../runtime/types.ts";
+import { createLoggedWorkflowAgentSession } from "../session/agent-logs.ts";
+import { agentTaskPrompt } from "../prompt-templates.ts";
+import { parseSessionTokens, workflowTokenUsageFromMessage } from "../session/usage.ts";
+import { createStructuredOutput } from "../structured-output.ts";
+import { resolveWorkflowAgentCwd } from "../workflow/paths.ts";
+import { readWorkflowSettings } from "../workflow/settings.ts";
+import { resolveWorkflowModel } from "../model-selection.ts";
 
 export interface PiWorkflowAgentOptions {
   cwd: string;
@@ -236,10 +238,6 @@ function renderRuntimeCapabilityDiagnostics(diagnostics: readonly AgentCapabilit
     }),
   ].join("\n");
 }
-
-export { workflowAgentSessionLogDirectory } from "./session-logs.ts";
-export { workflowAgentLogEvent } from "./session-events.ts";
-export { parseSessionTokens } from "./session-usage.ts";
 
 /** Deterministic tracker for translating Pi child-agent session events into workflow progress snapshots. */
 export interface WorkflowAgentProgressTracker {

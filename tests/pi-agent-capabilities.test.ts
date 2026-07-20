@@ -4,11 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import type { ToolInfo } from "@earendil-works/pi-coding-agent";
-import {
-  createParentAgentCapabilityCatalogProvider,
-  resolveAgentCapabilities,
-  type AgentCapabilityCatalog,
-} from "../src/pi-agent-capabilities.ts";
+import { createParentAgentCapabilityCatalogProvider, type AgentCapabilityCatalog } from "../src/pi-agent/capabilities/catalog.ts";
+import { resolveAgentCapabilities } from "../src/pi-agent/capabilities/resolution.ts";
 
 void test("extension tool selection infers its owner and exposes only the named tool", () => {
   assert.deepEqual(resolveAgentCapabilities({ extensions: [], tools: ["todo_write"], catalog: capabilityCatalog() }), {

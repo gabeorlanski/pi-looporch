@@ -1,7 +1,7 @@
 /** Provides agent capability validation behavior. */
 import * as ts from "typescript";
-import type { AgentCapabilityCatalog, AgentCapabilityCatalogProvider } from "../pi-agent-capabilities.ts";
-import { resolveAgentCapabilities } from "../pi-agent-capabilities.ts";
+import type { AgentCapabilityCatalog, AgentCapabilityCatalogProvider } from "../pi-agent/capabilities/catalog.ts";
+import { resolveAgentCapabilities } from "../pi-agent/capabilities/resolution.ts";
 import { collectWorkflowAgentCapabilityUses, type CapabilityDiagnostic, type CapabilityUse } from "./agent-capability-source.ts";
 import type { CapabilitySelection } from "./settings.ts";
 

@@ -57,7 +57,7 @@ npm run check
 - `workflow/draft-save.ts`: `GeneratedWorkflowDraft` validation and draft saving.
 - `discovery.ts`: `WorkflowReference`.
 - `tools.ts`: `WorkflowToolsOptions`.
-- `pi-agent.ts`: `PiWorkflowAgentOptions`.
+- `pi-agent/adapter.ts`: `PiWorkflowAgentOptions`.
 - `authoring-guide.ts`: on-demand workflow design guidance returned by the `workflow_design_guidance` tool.
 - `display/`: progress rendering, status rendering, running workflow widget/inspector lifecycle, and boundary messages.
 - `prompts/`: raw prompt templates loaded by `prompt-templates.ts`.

@@ -40,6 +40,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 ### Code Organization
 
 - Put pi command, TUI, and extension registration wiring in `extensions/`; put workflow orchestration logic in `src/`.
+- Keep Pi child-agent adapter and capability modules in `src/pi-agent/`; keep child-session logging, event metadata, usage parsing, and transcript reading in `src/session/`.
 - Put runtime implementation under `src/runtime/`, including workflow execution in `src/runtime/run.ts`; import runtime types from `src/runtime/types.ts` and workflow helpers from `src/workflow/`.
 - Keep workflow runtime primitives in `src/runtime/primitives/` and register their globals through the shared `WorkflowPrimitive` protocol instead of adding ad hoc branches to `src/runtime/globals.ts`.
 - Keep workflow object-schema validation and typing in `src/workflow-schema.ts` so primitives share one boundary.
@@ -121,7 +122,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Discovery: `src/discovery.ts` defines `WorkflowReference` and workflow root handling; workflow root settings come from `src/workflow/settings.ts`.
 - Settings: `src/workflow/settings.ts` defines workflow global/project settings parsing and persistence, including configured workflow roots and child-agent extension/tool defaults.
 - Tools: `src/tools.ts` defines `WorkflowToolsOptions` and tool creation.
-- Pi bridge: `src/pi-agent.ts` defines `PiWorkflowAgentOptions`; `src/pi-agent-capabilities.ts` builds extension/tool catalogs and `src/pi-agent-capability-resolution.ts` owns typed access resolution; session event filtering, token usage, and logged child-session persistence live in `src/session-events.ts`, `src/session-usage.ts`, and `src/agent-session-logs.ts`.
+- Pi bridge: `src/pi-agent/adapter.ts` defines `PiWorkflowAgentOptions`; `src/pi-agent/capabilities/catalog.ts` builds extension/tool catalogs and `src/pi-agent/capabilities/resolution.ts` owns typed access resolution; session event filtering, token usage, and logged child-session persistence live in `src/session/events.ts`, `src/session/usage.ts`, and `src/session/agent-logs.ts`.
 - Prompt templates: `src/prompts/*.txt` contains raw agent prompt copy; `src/prompt-templates.ts` binds typed data into those templates.
 - Authoring guide: `src/authoring-guide.ts` owns on-demand workflow design guidance returned by `workflow_design_guidance`; routing prompts should stay compact and point agents to the tool instead of embedding verbose examples.
 - Display: `src/display/` contains progress/message renderers plus the running-workflow widget, inspector, and visible-run UI lifecycle.
@@ -137,8 +138,8 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Inspect active workflow status: data comes from `src/workflow/status.ts`, active records from `src/workflow/active-runs.ts`, snapshots from `src/workflow/active-run-snapshots.ts`, rendering from `src/display/workflow-status.ts`, slash command parsing from `extensions/commands/status.ts`, and tool wiring from `src/tools.ts`.
 - Inspect workflow UI: running widget lifecycle lives in `src/display/running-workflow-ui.ts`, command/tool visible-run startup in `src/display/visible-workflow-run.ts`, compact widget rendering in `src/display/workflow-widget.ts`, and detail inspector rendering in `src/display/workflow-inspector.ts`.
 - Inspect outputs and artifacts: `src/workflow/outputs.ts` writes final output, snapshots, manifests, child-agent prompts, child-agent output, and tool activity artifacts.
-- Inspect session logs and cost review: `src/session-logs.ts` writes workflow summaries, `src/agent-session-logs.ts` creates child-agent session logs, `src/session-events.ts` filters event metadata, `src/session-transcript.ts` reads session JSONL, `src/session-usage.ts` parses token usage, and `src/log-review.ts` builds `/workflow-review`.
-- Inspect pi child-agent integration: `src/pi-agent.ts` adapts pi sessions to `WorkflowAgent`, applies child-agent extension/tool selections, reports progress, and re-exports log/session helpers; catalogs live in `src/pi-agent-capabilities.ts` and typed ownership resolution lives in `src/pi-agent-capability-resolution.ts`.
+- Inspect session logs and cost review: `src/session/logs.ts` writes workflow summaries, `src/session/agent-logs.ts` creates child-agent session logs, `src/session/events.ts` filters event metadata, `src/session/transcript.ts` reads session JSONL, `src/session/usage.ts` parses token usage, and `src/log-review.ts` builds `/workflow-review`.
+- Inspect pi child-agent integration: `src/pi-agent/adapter.ts` adapts pi sessions to `WorkflowAgent`, applies child-agent extension/tool selections, and reports progress; catalogs live in `src/pi-agent/capabilities/catalog.ts` and typed ownership resolution lives in `src/pi-agent/capabilities/resolution.ts`.
 
 ## Repository map
 
@@ -166,8 +167,8 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - `src/workflow/agent-capability-validation.ts`: proposal-time capability validation against real Pi extension/tool metadata.
 - `src/input.ts`: direct slash-command input parsing only.
 - `src/tools.ts`: `run_workflow`, `workflow_design_guidance`, and `propose_workflow` tool definitions.
-- `src/session-events.ts`, `src/session-usage.ts`, `src/agent-session-logs.ts`: child-agent session event filtering, token usage parsing, and persisted child-session setup.
-- `src/session-logs.ts`, `src/session-transcript.ts`, `src/log-review.ts`: workflow session summary paths, session JSONL reading, and cost-review reports.
+- `src/session/events.ts`, `src/session/usage.ts`, `src/session/agent-logs.ts`: child-agent session event filtering, token usage parsing, and persisted child-session setup.
+- `src/session/logs.ts`, `src/session/transcript.ts`, `src/log-review.ts`: workflow session summary paths, session JSONL reading, and cost-review reports.
 - `src/display/`: progress rendering, status rendering, running widget lifecycle, visible-run startup, and inspector UI.
 - `src/prompts/`: raw prompt templates for agent-facing instructions.
 - `tests/`: deterministic coverage for each core module.

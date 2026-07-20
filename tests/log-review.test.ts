@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { workflowLogReviewMessage } from "../src/log-review.ts";
-import { workflowAgentSessionLogParentDirectory } from "../src/session-logs.ts";
+import { workflowAgentSessionLogParentDirectory } from "../src/session/logs.ts";
 
 void test("log review reports tokens, tools, and repeated commands", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-log-review-"));

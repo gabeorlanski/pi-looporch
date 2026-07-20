@@ -3,9 +3,9 @@ import { appendFileSync } from "node:fs";
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import type { WorkflowAgentSessionLog } from "./runtime/types.ts";
-import { workflowAgentSessionLogDirectory } from "./session-logs.ts";
-import { workflowAgentLogEvent } from "./session-events.ts";
+import type { WorkflowAgentSessionLog } from "../runtime/types.ts";
+import { workflowAgentSessionLogDirectory } from "./logs.ts";
+import { workflowAgentLogEvent } from "./events.ts";
 
 export interface LoggedWorkflowAgentSession {
   sessionManager: SessionManager;

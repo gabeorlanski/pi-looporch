@@ -4,6 +4,7 @@ import { workflowCompletionHandoffPrompt } from "../prompt-templates.ts";
 const PROMPT_RESULT_LIMIT = 16_000;
 
 export interface WorkflowCompletionInfo {
+  runId: string;
   workflowName: string;
   result: unknown;
   outputsDir?: string;
@@ -14,7 +15,13 @@ export interface WorkflowCompletionInfo {
 /** Provides the workflowCompletionReviewPrompt function contract. */
 export function workflowCompletionReviewPrompt(info: WorkflowCompletionInfo): string {
   return workflowCompletionHandoffPrompt(
-    { workflowName: info.workflowName, resultPath: info.resultPath, outputsDir: info.outputsDir, sessionLogDir: info.sessionLogDir },
+    {
+      workflowName: info.workflowName,
+      runId: info.runId,
+      resultPath: info.resultPath,
+      outputsDir: info.outputsDir,
+      sessionLogDir: info.sessionLogDir,
+    },
     renderWorkflowResultSection(info.result, PROMPT_RESULT_LIMIT, info.resultPath),
     workflowCompletionLocations(info).join("\n"),
   );

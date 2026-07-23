@@ -3,16 +3,25 @@ import type { RunWorkflowOptions, WorkflowRunResult, WorkflowSnapshot } from "..
 import { runWorkflowFromDirectory } from "../runtime/run.ts";
 import { writeWorkflowSessionSummary } from "../session/logs.ts";
 import { registerActiveWorkflowRun, removeActiveWorkflowRun } from "./active-runs.ts";
-import { createWorkflowOutputsDir, writeWorkflowSnapshot } from "./outputs.ts";
+import { writeWorkflowSnapshot } from "./outputs.ts";
+import { createCheckpointCache } from "./checkpoints.ts";
+import { writeRunRecord, type RunRecord } from "./run-record.ts";
+import { workflowRunDirectory } from "./run-storage.ts";
 
 /** Options for starting a workflow as a persisted background run owned by a Pi session. */
-export interface StartBackgroundWorkflowRunOptions extends RunWorkflowOptions {
+export type WorkflowRunAttempt =
+  | { kind: "new" }
+  | { kind: "resume"; startedAt: number; resumeCount: number; releaseClaim: () => Promise<void> };
+
+export type StartBackgroundWorkflowRunOptions = Omit<RunWorkflowOptions, "outputsDir" | "checkpoints"> & {
   runId: string;
   ownerSessionId: string;
-}
+  attempt: WorkflowRunAttempt;
+};
 
 /** Terminal background workflow result plus the persisted child-session summary directory. */
 export interface BackgroundWorkflowRunResult extends WorkflowRunResult {
+  runId: string;
   sessionLogDir: string;
 }
 
@@ -28,12 +37,26 @@ export interface BackgroundWorkflowRun {
 
 /** Starts a workflow run, registers it as active, writes snapshots, and cleans up the active record on completion. */
 export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflowRunOptions): Promise<BackgroundWorkflowRun> {
-  const outputsDir = options.outputsDir ?? (await createWorkflowOutputsDir(options.runId));
+  const outputsDir = workflowRunDirectory(options.cwd, options.ownerSessionId, options.runId);
+  const checkpoints = await createCheckpointCache(outputsDir, options.attempt.kind === "resume");
+  const startedAt = options.attempt.kind === "resume" ? options.attempt.startedAt : Date.now();
+  const runRecord: RunRecord = {
+    runId: options.runId,
+    workflowName: options.workflowName,
+    cwd: options.cwd,
+    input: options.input,
+    ownerSessionId: options.ownerSessionId,
+    ownerProcessId: process.pid,
+    startedAt,
+    resumeCount: options.attempt.kind === "resume" ? options.attempt.resumeCount : 0,
+    status: "running",
+  };
+  await writeRunRecord(outputsDir, runRecord);
   await registerActiveWorkflowRun(options.cwd, {
     runId: options.runId,
     workflowName: options.workflowName,
     outputsDir,
-    startedAt: Date.now(),
+    startedAt,
     ownerSessionId: options.ownerSessionId,
   });
   const controller = new AbortController();
@@ -46,6 +69,7 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
   const finished = runWorkflowFromDirectory({
     ...options,
     outputsDir,
+    checkpoints,
     signal: controller.signal,
     onSnapshot: (snapshot) => {
       latestSnapshot = snapshot;
@@ -54,8 +78,11 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
     },
   })
     .then(async (result) => {
+      runRecord.status = "done";
+      await writeRunRecord(outputsDir, runRecord);
       return {
         ...result,
+        runId: options.runId,
         sessionLogDir: await writeWorkflowSessionSummary({
           cwd: options.cwd,
           parentId: options.runId,
@@ -65,6 +92,8 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
       };
     })
     .catch(async (error: unknown) => {
+      runRecord.status = controller.signal.aborted ? "aborted" : "error";
+      await writeRunRecord(outputsDir, runRecord);
       if (latestSnapshot) {
         await writeWorkflowSessionSummary({
           cwd: options.cwd,
@@ -78,7 +107,11 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
     .finally(async () => {
       removeParentAbortListener();
       await snapshotWrite;
-      await removeActiveWorkflowRun(options.cwd, options.runId);
+      try {
+        await removeActiveWorkflowRun(options.cwd, options.runId, options.ownerSessionId);
+      } finally {
+        if (options.attempt.kind === "resume") await options.attempt.releaseClaim();
+      }
     });
   return {
     runId: options.runId,

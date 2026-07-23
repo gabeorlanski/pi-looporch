@@ -5,17 +5,15 @@ import { errorMessage } from "../errors.ts";
 import { workflowFailureHandoffPrompt } from "../prompt-templates.ts";
 import type { WorkflowAgent, WorkflowLLM, WorkflowSnapshot } from "../runtime/types.ts";
 import { WorkflowInputError } from "../workflow/input-contract.ts";
-import { prepareWorkflowRun, startPreparedWorkflowRun, type PreparedWorkflowRun } from "../workflow/start.ts";
+import { prepareWorkflowResume, prepareWorkflowRun, startPreparedWorkflowRun, type PreparedWorkflowRun } from "../workflow/start.ts";
 import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "./running-workflow-ui.ts";
 import { extensionSessionScope } from "./session-scope.ts";
 import { workflowCompletionReviewPrompt } from "./workflow-completion.ts";
 import { sendWorkflowUserMessage, type SendWorkflowUserMessage } from "./workflow-user-message.ts";
 
-export interface StartVisibleWorkflowRunOptions {
+interface VisibleWorkflowRunOptions {
   ctx: ExtensionContext;
   cwd: string;
-  workflowName: string;
-  input: unknown;
   agentDir: string;
   agent: WorkflowAgent;
   llm: WorkflowLLM;
@@ -25,10 +23,19 @@ export interface StartVisibleWorkflowRunOptions {
   onSnapshot?: (snapshot: WorkflowSnapshot, prepared: PreparedWorkflowRun, run: BackgroundWorkflowRun) => void;
 }
 
+export interface StartVisibleWorkflowRunOptions extends VisibleWorkflowRunOptions {
+  workflowName: string;
+  input: unknown;
+}
+
 export interface VisibleWorkflowRun {
   prepared: PreparedWorkflowRun;
   run: BackgroundWorkflowRun;
   isSessionClosing: () => boolean;
+}
+
+export interface ResumeVisibleWorkflowRunOptions extends VisibleWorkflowRunOptions {
+  runId: string;
 }
 
 interface TrackedVisibleWorkflowRun extends VisibleWorkflowRun {
@@ -40,6 +47,30 @@ const visibleWorkflowRunsByScope = new Map<string, Map<string, TrackedVisibleWor
 
 /** Provides the startVisibleWorkflowRun function contract. */
 export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOptions): Promise<VisibleWorkflowRun> {
+  const prepared = await prepareWorkflowRun({
+    cwd: options.cwd,
+    workflowName: options.workflowName,
+    input: options.input,
+    agentDir: options.agentDir,
+  });
+  return startVisiblePreparedWorkflowRun(options, prepared);
+}
+
+/** Resumes a failed or aborted visible workflow run in its owning live Pi session. */
+export async function resumeVisibleWorkflowRun(options: ResumeVisibleWorkflowRunOptions): Promise<VisibleWorkflowRun> {
+  const prepared = await prepareWorkflowResume({
+    cwd: options.cwd,
+    runId: options.runId,
+    ownerSessionId: options.ctx.sessionManager.getSessionId(),
+    agentDir: options.agentDir,
+  });
+  return startVisiblePreparedWorkflowRun(options, prepared);
+}
+
+async function startVisiblePreparedWorkflowRun(
+  options: StartVisibleWorkflowRunOptions | ResumeVisibleWorkflowRunOptions,
+  prepared: PreparedWorkflowRun,
+): Promise<VisibleWorkflowRun> {
   const showRunningUi = options.ctx.mode === "tui";
   const ownerSessionId = options.ctx.sessionManager.getSessionId();
   const scope = extensionSessionScope(options.ctx);
@@ -56,12 +87,6 @@ export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOp
     if (showRunningUi) clearRunningWorkflowUi(options.ctx, runId);
   };
   try {
-    const prepared = await prepareWorkflowRun({
-      cwd: options.cwd,
-      workflowName: options.workflowName,
-      input: options.input,
-      agentDir: options.agentDir,
-    });
     runId = prepared.runId;
     const abortWorkflow = options.abortWorkflow ?? (() => run?.abort());
     if (showRunningUi) {
@@ -135,7 +160,8 @@ async function settleVisibleWorkflowRun(
       }
     }
   } catch (error) {
-    if (!visible.isSessionClosing()) failVisibleWorkflowRun(ctx, visible.prepared.workflowName, error, sendUserMessage);
+    if (!visible.isSessionClosing())
+      failVisibleWorkflowRun(ctx, visible.prepared.workflowName, visible.prepared.runId, error, sendUserMessage);
   } finally {
     visible.cleanup();
   }
@@ -144,13 +170,14 @@ async function settleVisibleWorkflowRun(
 function failVisibleWorkflowRun(
   ctx: ExtensionContext,
   workflowName: string,
+  runId: string,
   error: unknown,
   sendUserMessage: SendWorkflowUserMessage,
 ): void {
   const message = error instanceof WorkflowInputError ? error.message : `Workflow '${workflowName}' failed: ${errorMessage(error)}`;
   try {
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
-    sendWorkflowUserMessage(ctx, sendUserMessage, workflowFailureHandoffPrompt(workflowName, message));
+    sendWorkflowUserMessage(ctx, sendUserMessage, workflowFailureHandoffPrompt(workflowName, message, runId));
   } catch (handlingError) {
     ctx.ui.notify(`Workflow '${workflowName}' failed, but failure handling failed: ${errorMessage(handlingError)}`, "error");
   }

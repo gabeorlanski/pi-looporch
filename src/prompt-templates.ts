@@ -79,8 +79,8 @@ export function workflowCompletionHandoffPrompt(metadata: unknown, result: strin
 }
 
 /** Renders a typed automated handoff after a workflow fails. */
-export function workflowFailureHandoffPrompt(workflowName: string, failure: string): string {
-  return renderPromptTemplate(workflowFailureHandoffTemplate, { workflowName, failure });
+export function workflowFailureHandoffPrompt(workflowName: string, failure: string, runId: string): string {
+  return renderPromptTemplate(workflowFailureHandoffTemplate, { workflowName, runId, failure });
 }
 
 function renderPromptTemplate(template: string, values: Record<string, string>): string {

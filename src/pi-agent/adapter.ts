@@ -44,7 +44,7 @@ export interface PiWorkflowAgentOptions {
 
 /** Provides the createPiWorkflowAgent function contract. */
 export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): WorkflowAgent {
-  return async (prompt, agentOptions, reporter) => {
+  const agent: WorkflowAgent = async (prompt, agentOptions, reporter) => {
     const agentDir = getAgentDir();
     const modelRuntime =
       options.session?.modelRuntime ??
@@ -226,6 +226,21 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       session.dispose();
     }
   };
+  agent.cacheContext = (agentOptions) => {
+    const agentDir = getAgentDir();
+    const effectiveCwd = resolveWorkflowAgentCwd(options.cwd, agentOptions.cwd) ?? path.resolve(options.cwd);
+    const settingsManager = options.session?.settingsManager ?? SettingsManager.create(effectiveCwd, agentDir);
+    const sessionModel = options.session?.model;
+    return {
+      model:
+        agentOptions.model ??
+        (sessionModel
+          ? { provider: sessionModel.provider, id: sessionModel.id }
+          : { provider: settingsManager.getDefaultProvider(), id: settingsManager.getDefaultModel() }),
+      reasoning: agentOptions.reasoning ?? options.session?.thinkingLevel ?? settingsManager.getDefaultThinkingLevel(),
+    };
+  };
+  return agent;
 }
 
 function renderRuntimeCapabilityDiagnostics(diagnostics: readonly AgentCapabilityResolutionDiagnostic[]): string {

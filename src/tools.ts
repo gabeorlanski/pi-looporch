@@ -1,7 +1,7 @@
 /** Provides tools behavior. */
 import { Type } from "typebox";
 import { defineTool, getAgentDir, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
+import { resumeVisibleWorkflowRun, startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
 import type { SendWorkflowUserMessage } from "./display/workflow-user-message.ts";
 import { workflowFinalOutputPath } from "./workflow/outputs.ts";
 import type { WorkflowAgent, WorkflowLLM } from "./runtime/types.ts";
@@ -34,7 +34,9 @@ export interface WorkflowRunToolOptions {
 /** Builds the public tool surface for running, authoring guidance, and proposing workflows. */
 export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefinition[] {
   return [
-    ...(options.run === undefined ? [] : [createRunWorkflowTool(options.cwd, options.run)]),
+    ...(options.run === undefined
+      ? []
+      : [createRunWorkflowTool(options.cwd, options.run), createResumeWorkflowTool(options.cwd, options.run)]),
     createWorkflowStatusTool(options),
     createGuidanceTool(),
     createProposeWorkflowTool(options),
@@ -45,8 +47,8 @@ function createRunWorkflowTool(cwdOverride: string | undefined, options: Workflo
   return defineTool({
     name: "run_workflow",
     label: "Run Workflow",
-    description: "Run an existing project workflow by name.",
-    promptSnippet: "run_workflow: Run an existing project workflow by name.",
+    description: "Run an existing project workflow and return a run ID that can resume failed or aborted runs.",
+    promptSnippet: "run_workflow: Run a workflow and keep its returned run ID for resume_workflow after failure or abort.",
     parameters: Type.Object({
       name: Type.String({ description: "Existing workflow name to run" }),
       input: Type.Optional(Type.Any({ description: "JSON-serializable workflow input" })),
@@ -78,7 +80,47 @@ function createRunWorkflowTool(cwdOverride: string | undefined, options: Workflo
         content: [
           {
             type: "text",
-            text: `Workflow ${workflowName} started in the background.\n\nWorkflow outputs: ${visible.run.outputsDir}\nWorkflow result: ${workflowFinalOutputPath(visible.run.outputsDir)}`,
+            text: `Workflow ${workflowName} started in the background.\n\nWorkflow run ID: ${visible.run.runId}\nWorkflow outputs: ${visible.run.outputsDir}\nWorkflow result: ${workflowFinalOutputPath(visible.run.outputsDir)}`,
+          },
+        ],
+        details: runningWorkflowToolDetails(visible.prepared.workflowName, visible.prepared.runId, visible.run.outputsDir),
+      };
+    },
+  });
+}
+
+function createResumeWorkflowTool(cwdOverride: string | undefined, options: WorkflowRunToolOptions): ToolDefinition {
+  return defineTool({
+    name: "resume_workflow",
+    label: "Resume Workflow",
+    description: "Resume a failed or aborted workflow run from its completed model calls in this session.",
+    promptSnippet: "resume_workflow: Resume a failed or aborted workflow run by run ID in the current session.",
+    parameters: Type.Object({
+      runId: Type.String({ description: "Run ID returned by run_workflow or a workflow failure handoff" }),
+    }),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const cwd = cwdOverride ?? ctx.cwd;
+      const visible = await resumeVisibleWorkflowRun({
+        ctx,
+        cwd,
+        runId: params.runId,
+        agentDir: getAgentDir(),
+        agent: options.agentForContext(ctx),
+        llm: options.llmForContext(ctx),
+        signal,
+        sendUserMessage: options.sendUserMessageForContext(ctx),
+        onSnapshot: (snapshot, prepared, run) => {
+          onUpdate?.({
+            content: [{ type: "text", text: progressDisplay(snapshot).text }],
+            details: runningWorkflowToolDetails(prepared.workflowName, prepared.runId, run.outputsDir),
+          });
+        },
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Workflow ${visible.prepared.workflowName} resumed in the background.\n\nWorkflow run ID: ${visible.run.runId}\nWorkflow outputs: ${visible.run.outputsDir}\nWorkflow result: ${workflowFinalOutputPath(visible.run.outputsDir)}`,
           },
         ],
         details: runningWorkflowToolDetails(visible.prepared.workflowName, visible.prepared.runId, visible.run.outputsDir),

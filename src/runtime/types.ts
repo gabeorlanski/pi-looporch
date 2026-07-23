@@ -91,7 +91,10 @@ export interface WorkflowAgentReporter {
 }
 
 /** Injected child-agent function used by the runtime; implementations must report progress and honor abort options. */
-export type WorkflowAgent = (prompt: string, options: WorkflowAgentOptions, reporter: WorkflowAgentReporter) => Promise<unknown>;
+export interface WorkflowAgent {
+  (prompt: string, options: WorkflowAgentOptions, reporter: WorkflowAgentReporter): Promise<unknown>;
+  cacheContext?: (options: WorkflowAgentOptions) => unknown;
+}
 
 /** Plain text message supplied to a direct workflow LLM completion. */
 export interface WorkflowLLMMessage {
@@ -128,7 +131,10 @@ export interface WorkflowLLMCompletion {
 }
 
 /** Injected generation-only model call used by the workflow runtime. */
-export type WorkflowLLM = (request: WorkflowLLMRequest) => Promise<WorkflowLLMCompletion>;
+export interface WorkflowLLM {
+  (request: WorkflowLLMRequest): Promise<WorkflowLLMCompletion>;
+  cacheContext?: (request: WorkflowLLMRequest) => unknown;
+}
 
 /** State shared by every model call recorded in a workflow snapshot. */
 export interface WorkflowCallSnapshot {
@@ -172,6 +178,35 @@ export type WorkflowLLMSnapshot = WorkflowCallSnapshot & {
 
 /** Canonical discriminated view of a recorded workflow model call. */
 export type WorkflowSnapshotCall = Readonly<WorkflowAgentSnapshot & { kind: "agent" }> | Readonly<WorkflowLLMSnapshot & { kind: "llm" }>;
+
+/** Persisted successful model call that can be returned during deterministic workflow replay. */
+export type Checkpoint =
+  | {
+      kind: "agent";
+      executionId: string;
+      requestHash: string;
+      result: unknown;
+      snapshot: WorkflowAgentSnapshot;
+    }
+  | {
+      kind: "llm";
+      executionId: string;
+      requestHash: string;
+      result: unknown;
+      snapshot: WorkflowLLMSnapshot;
+    };
+
+/** Runtime-facing cache used by model-call primitives. */
+export interface CheckpointCache {
+  get(kind: Checkpoint["kind"], executionId: string, requestHash: string): Promise<Checkpoint | undefined>;
+  put(checkpoint: Checkpoint): Promise<void>;
+}
+
+/** Effective workflow-level defaults applied to child-agent calls. */
+export interface WorkflowAgentDefaults {
+  extensions: "all" | string[];
+  tools: "all" | string[];
+}
 
 /** Aggregate progress for a workflow fan-out launched through the parallel primitive. */
 export interface WorkflowFanOutSnapshot {
@@ -227,6 +262,8 @@ export interface RunWorkflowOptions {
   agentLogParentId?: string;
   outputsDir?: string;
   maxParallelAgents: number;
+  agentDefaults?: WorkflowAgentDefaults;
+  checkpoints?: CheckpointCache;
   signal?: AbortSignal;
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
 }

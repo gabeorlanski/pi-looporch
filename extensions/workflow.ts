@@ -20,6 +20,7 @@ import { readWorkflowInputContract } from "../src/workflow/start.ts";
 import { reviewWorkflowCommand } from "./commands/review.ts";
 import { workflowSettingsCommand } from "./commands/settings.ts";
 import { workflowStatusCommand } from "./commands/status.ts";
+import { removeWorkflowSessionDirectory } from "../src/workflow/run-storage.ts";
 
 /** Injectable Pi agent construction used by extension command and tool launches. */
 export interface PiWorkflowExtensionDependencies {
@@ -116,6 +117,7 @@ export default function piWorkflow(pi: ExtensionAPI, dependencies: PiWorkflowExt
   pi.on("session_shutdown", async (_event, ctx) => {
     stopWorkflowMonitorWidget(ctx);
     await abortVisibleWorkflowRuns(ctx);
+    await removeWorkflowSessionDirectory(ctx.cwd, ctx.sessionManager.getSessionId());
   });
 }
 
@@ -203,7 +205,7 @@ async function runExistingWorkflowCommand(
     sendWorkflowUserMessage(
       ctx,
       (content, options) => pi.sendUserMessage(content, options),
-      workflowFailureHandoffPrompt(workflowName, message),
+      workflowFailureHandoffPrompt(workflowName, message, "unavailable"),
     );
   }
 }

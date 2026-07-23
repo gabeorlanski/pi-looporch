@@ -18,19 +18,19 @@ export async function readActiveWorkflowSnapshots(cwd: string, ownerSessionId: s
 
 async function readActiveWorkflowSnapshot(cwd: string, record: ActiveWorkflowRunRecord): Promise<ActiveWorkflowSnapshot | undefined> {
   if (record.ownerProcessId !== process.pid) {
-    await removeActiveWorkflowRun(cwd, record.runId);
+    await removeActiveWorkflowRun(cwd, record.runId, record.ownerSessionId);
     return undefined;
   }
   try {
     const manifest = await readWorkflowOutputManifest(record.outputsDir);
     if (manifest.status !== "running") {
-      await removeActiveWorkflowRun(cwd, record.runId);
+      await removeActiveWorkflowRun(cwd, record.runId, record.ownerSessionId);
       return undefined;
     }
     return { runId: record.runId, snapshot: await readWorkflowSnapshot(record.outputsDir) };
   } catch (error) {
     if (isMissingFileError(error)) return undefined;
-    await removeActiveWorkflowRun(cwd, record.runId);
+    await removeActiveWorkflowRun(cwd, record.runId, record.ownerSessionId);
     return undefined;
   }
 }

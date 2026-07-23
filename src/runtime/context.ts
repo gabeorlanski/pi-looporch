@@ -48,6 +48,7 @@ export interface ActiveWorkflowRuntime {
   options: RunWorkflowOptions;
   snapshot: WorkflowSnapshot;
   agentLaunchQueue: AgentLaunchQueue;
+  executionCounters: Map<string, number>;
   emit: () => void;
 }
 
@@ -73,3 +74,21 @@ export interface WorkflowPrimitive<TGlobals extends Record<string, unknown> = Re
 
 /** Async-local identifier that associates nested child-agent launches with the active fan-out. */
 export const fanOutScope = new AsyncLocalStorage<number>();
+
+/** Async-local deterministic execution scope used for resumable model-call identities. */
+export const executionScope = new AsyncLocalStorage<string>();
+
+/** Assigns the next deterministic execution identity within the current workflow scope. */
+export function nextExecutionId(
+  runtime: ActiveWorkflowRuntime,
+  kind: "agent" | "llm" | "parallel" | "pipeline",
+  identityHash?: string,
+): string {
+  const scope = executionScope.getStore() ?? "root";
+  const counter = identityHash === undefined ? scope : `${scope}/${kind}/${identityHash}`;
+  const ordinal = (runtime.executionCounters.get(counter) ?? 0) + 1;
+  runtime.executionCounters.set(counter, ordinal);
+  return identityHash === undefined
+    ? `${scope}/${String(ordinal).padStart(4, "0")}-${kind}`
+    : `${scope}/${kind}-${identityHash}-${String(ordinal).padStart(4, "0")}`;
+}

@@ -391,19 +391,14 @@ void test("session start restores the running workflow widget", async () => {
 void test("session_start_removes_active_workflow_from_dead_process", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const outputsDir = path.join(project, "outputs", "dead-process-run");
-  await mkdir(path.join(project, ".pi", "workflow-runs", "active"), { recursive: true });
-  await writeFile(
-    path.join(project, ".pi", "workflow-runs", "active", "run-dead-process.json"),
-    `${JSON.stringify({
-      runId: "run-dead-process",
-      workflowName: "dead-process",
-      outputsDir,
-      startedAt: Date.now(),
-      ownerSessionId: "test-session",
-      ownerProcessId: -1,
-    })}\n`,
-    "utf8",
-  );
+  await registerActiveWorkflowRun(project, {
+    runId: "run-dead-process",
+    workflowName: "dead-process",
+    outputsDir,
+    startedAt: Date.now(),
+    ownerSessionId: "test-session",
+    ownerProcessId: -1,
+  });
   await writeWorkflowOutputManifest({
     outputsDir,
     workflowName: "dead-process",
@@ -580,11 +575,11 @@ export default async function workflow() {
 
   assert.deepEqual(harness.notifications.at(-1), { message: "Workflow 'fail' failed: workflow exploded", type: "error" });
   assert.deepEqual(harness.sentMessages, []);
-  assert.deepEqual(harness.sentUserMessages[0], {
-    message:
-      "<workflow_handoff event=\"failed\">\n<workflow_name>fail</workflow_name>\n<workflow_failure>Workflow 'fail' failed: workflow exploded</workflow_failure>\n</workflow_handoff>",
-    options: undefined,
-  });
+  assert.equal(harness.sentUserMessages[0]?.options, undefined);
+  assert.match(
+    String(harness.sentUserMessages[0]?.message),
+    /^<workflow_handoff event="failed">\n<workflow_instructions>If workflow_run_id is not "unavailable", call resume_workflow with that ID to replay unchanged completed model calls and continue from the first changed or incomplete call\.<\/workflow_instructions>\n<workflow_run_id>.+<\/workflow_run_id>\n<workflow_name>fail<\/workflow_name>\n<workflow_failure>Workflow 'fail' failed: workflow exploded<\/workflow_failure>\n<\/workflow_handoff>$/,
+  );
   assert.equal(harness.widgetUpdates.at(-1), undefined);
 });
 

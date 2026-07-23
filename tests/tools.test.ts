@@ -160,7 +160,7 @@ export default async function workflow(input) {
   const details = result.details as { workflowName: string; status: string; outputsDir: string; resultPath: string };
   assert.equal(details.workflowName, "echo");
   assert.equal(details.status, "running");
-  assert.match(details.outputsDir, /pi-workflow-.*echo/);
+  assert.match(details.outputsDir, /\/tmp\/pi-looporch\/.+\/tool-session\/runs\/.+echo/);
   assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /Workflow echo started in the background/);
   await waitForCondition(() => updates.some((update) => update.includes("workflow echo") && update.includes("#1 helper")));
   await waitForCondition(() => sentUserMessages.length === 1);
@@ -217,13 +217,12 @@ export default async function workflow() {
   await waitForCondition(() => notifications.some((notification) => notification.type === "error"));
 
   assert.deepEqual(notifications, [{ message: "Workflow 'fail' failed: tool exploded", type: "error" }]);
-  assert.deepEqual(sentUserMessages, [
-    {
-      message:
-        "<workflow_handoff event=\"failed\">\n<workflow_name>fail</workflow_name>\n<workflow_failure>Workflow 'fail' failed: tool exploded</workflow_failure>\n</workflow_handoff>",
-      options: undefined,
-    },
-  ]);
+  assert.equal(sentUserMessages.length, 1);
+  assert.equal(sentUserMessages[0]?.options, undefined);
+  assert.match(
+    sentUserMessages[0]?.message ?? "",
+    /^<workflow_handoff event="failed">\n<workflow_instructions>If workflow_run_id is not "unavailable", call resume_workflow with that ID to replay unchanged completed model calls and continue from the first changed or incomplete call\.<\/workflow_instructions>\n<workflow_run_id>.+<\/workflow_run_id>\n<workflow_name>fail<\/workflow_name>\n<workflow_failure>Workflow 'fail' failed: tool exploded<\/workflow_failure>\n<\/workflow_handoff>$/,
+  );
 });
 
 void test("run tool skips notifications after shutdown", async () => {

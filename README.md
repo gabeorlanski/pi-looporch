@@ -47,6 +47,12 @@ When a workflow finishes, pi-workflow posts the final result or report, keeps
 the output paths visible, and asks the current agent to review and summarize the
 result for you.
 
+`run_workflow` returns a run ID. If that run fails or is aborted, the current
+agent can call `resume_workflow` with the ID. Resume replays the current workflow
+source with its original input, returns unchanged completed `agent` and `LLM`
+calls from the run cache, and executes normally from the first changed or
+incomplete call. Resume is available only in the same live Pi session.
+
 ## TUI
 
 Running workflows show a compact widget below the editor. Press `Down` on an
@@ -149,6 +155,11 @@ globals stay synchronized with implementation. Agents call `propose_workflow` to
 save complete generated workflow draft directories and `workflow_status` to check
 active project workflow progress. `propose_workflow` validates child-agent
 capabilities against Pi's installed extensions and tools before saving.
+
+Workflow outputs and resume caches live under
+`/tmp/pi-looporch/<project-slug>/<session-id>/runs/<run-id>/` and are removed
+when the session ends. Canonical child-agent transcripts remain in Pi's normal
+session store.
 
 ## Settings
 

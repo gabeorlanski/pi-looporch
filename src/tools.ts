@@ -47,8 +47,8 @@ function createRunWorkflowTool(cwdOverride: string | undefined, options: Workflo
   return defineTool({
     name: "run_workflow",
     label: "Run Workflow",
-    description: "Run an existing project workflow by name.",
-    promptSnippet: "run_workflow: Run an existing project workflow by name.",
+    description: "Run an existing project workflow and return a run ID that can resume failed or aborted runs.",
+    promptSnippet: "run_workflow: Run a workflow and keep its returned run ID for resume_workflow after failure or abort.",
     parameters: Type.Object({
       name: Type.String({ description: "Existing workflow name to run" }),
       input: Type.Optional(Type.Any({ description: "JSON-serializable workflow input" })),

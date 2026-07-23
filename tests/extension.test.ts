@@ -578,7 +578,7 @@ export default async function workflow() {
   assert.equal(harness.sentUserMessages[0]?.options, undefined);
   assert.match(
     String(harness.sentUserMessages[0]?.message),
-    /^<workflow_handoff event="failed">\n<workflow_run_id>.+<\/workflow_run_id>\n<workflow_name>fail<\/workflow_name>\n<workflow_failure>Workflow 'fail' failed: workflow exploded<\/workflow_failure>\n<\/workflow_handoff>$/,
+    /^<workflow_handoff event="failed">\n<workflow_instructions>If workflow_run_id is not "unavailable", call resume_workflow with that ID to replay unchanged completed model calls and continue from the first changed or incomplete call\.<\/workflow_instructions>\n<workflow_run_id>.+<\/workflow_run_id>\n<workflow_name>fail<\/workflow_name>\n<workflow_failure>Workflow 'fail' failed: workflow exploded<\/workflow_failure>\n<\/workflow_handoff>$/,
   );
   assert.equal(harness.widgetUpdates.at(-1), undefined);
 });

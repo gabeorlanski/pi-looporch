@@ -1,6 +1,6 @@
 /** Provides parallel behavior. */
 import type { WorkflowFanOutSnapshot } from ".././types.ts";
-import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
+import { fanOutScope, executionScope, nextExecutionId, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
 import { throwIfWorkflowAborted } from "../abort.ts";
 
@@ -33,6 +33,7 @@ export async function runParallel<T, R>(
   label: string | undefined,
 ): Promise<R[]> {
   throwIfWorkflowAborted(runtime.options.signal);
+  const executionId = nextExecutionId(runtime, "parallel");
   const fanOut: WorkflowFanOutSnapshot = {
     id: runtime.snapshot.fanOuts.length + 1,
     label: label ?? `parallel ${String(runtime.snapshot.fanOuts.length + 1)}`,
@@ -56,7 +57,9 @@ export async function runParallel<T, R>(
       runtime.emit();
     }
     try {
-      const result = await fanOutScope.run(fanOut.id, () => worker(item, index));
+      const result = await executionScope.run(`${executionId}/item-${String(index).padStart(4, "0")}`, () =>
+        fanOutScope.run(fanOut.id, () => worker(item, index)),
+      );
       fanOut.done++;
       return result;
     } catch (error) {

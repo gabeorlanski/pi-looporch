@@ -33,6 +33,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     },
     snapshot,
     agentLaunchQueue: createAgentLaunchQueue(maxParallelAgents),
+    executionCounters: new Map(),
     emit: () => options.onSnapshot?.(cloneSnapshot(snapshot)),
   };
   const compiled = compileWorkflow(source, entryFile, workflowGlobals(runtime, workflowDir));

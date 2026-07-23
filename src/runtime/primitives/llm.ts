@@ -7,13 +7,15 @@ import {
   type WorkflowLLMRequest,
   type WorkflowLLMSnapshot,
 } from "../types.ts";
-import type { WorkflowPrimitive } from "../context.ts";
+import { nextExecutionId, type WorkflowPrimitive } from "../context.ts";
 import { requireWorkflowObjectSchema } from "../../workflow-schema.ts";
 import { llmStructuredOutputPrompt } from "../../prompt-templates.ts";
 import { appendRunMessage } from "../messages.ts";
 import { errorMessage } from "../../errors.ts";
 import { writeWorkflowLLMOutput, writeWorkflowLLMPrompt } from "../../workflow/outputs.ts";
 import { unknownWorkflowCost } from "../usage.ts";
+import { checkpointHash } from "../checkpoint-hash.ts";
+import { cloneSerializable } from "../serialization.ts";
 
 interface WorkflowLLMOptions {
   system?: string;
@@ -66,6 +68,44 @@ export const llmPrimitive: WorkflowPrimitive<{
         ...(reasoningLevel === undefined ? {} : { reasoning: reasoningLevel }),
         ...(runtime.options.signal === undefined ? {} : { signal: runtime.options.signal }),
       };
+      const cacheRequest = {
+        messages: request.messages,
+        system: request.system,
+        model: request.model,
+        reasoning: request.reasoning,
+      };
+      const executionId = nextExecutionId(runtime, "llm", checkpointHash(cacheRequest));
+      const requestHash = checkpointHash({
+        ...cacheRequest,
+        adapter: await runtime.options.llm.cacheContext?.(request),
+      });
+      const checkpoint = await runtime.options.checkpoints?.get("llm", executionId, requestHash);
+      if (checkpoint?.kind === "llm") {
+        const phase = runtime.snapshot.phases.at(-1);
+        const llm: WorkflowLLMSnapshot = {
+          ...checkpoint.snapshot,
+          id: runtime.snapshot.llms.length + 1,
+          phaseIndex: runtime.snapshot.phases.length,
+          ...(phase ? { phase } : {}),
+          status: "done",
+        };
+        if (!phase) delete llm.phase;
+        runtime.snapshot.llms.push(llm);
+        appendRunMessage(runtime, {
+          phaseIndex: llm.phaseIndex,
+          ...(llm.phase ? { phase: llm.phase } : {}),
+          level: "info",
+          message: `LLM #${String(llm.id)} started`,
+        });
+        appendRunMessage(runtime, {
+          phaseIndex: llm.phaseIndex,
+          ...(llm.phase ? { phase: llm.phase } : {}),
+          level: "info",
+          message: `LLM #${String(llm.id)} done`,
+        });
+        runtime.emit();
+        return cloneSerializable(checkpoint.result);
+      }
       const llm: WorkflowLLMSnapshot = {
         id: runtime.snapshot.llms.length + 1,
         phaseIndex: runtime.snapshot.phases.length,
@@ -105,6 +145,14 @@ export const llmPrimitive: WorkflowPrimitive<{
         }
         const output: unknown = objectSchema === undefined ? null : (JSON.parse(completion.text) as unknown);
         if (objectSchema !== undefined && !Check(objectSchema, output)) throw new Error("LLM structured output does not match its schema");
+        const result = {
+          text: completion.text,
+          output,
+          usage: completion.usage,
+          model: completion.model ?? null,
+          provider: completion.provider ?? null,
+          stopReason: completion.stopReason ?? null,
+        };
         llm.status = "done";
         llm.endedAt = Date.now();
         appendRunMessage(runtime, {
@@ -113,15 +161,17 @@ export const llmPrimitive: WorkflowPrimitive<{
           level: "info",
           message: `LLM #${String(llm.id)} done`,
         });
+        if (runtime.options.checkpoints) {
+          await runtime.options.checkpoints.put({
+            kind: "llm",
+            executionId,
+            requestHash,
+            result,
+            snapshot: { ...llm },
+          });
+        }
         runtime.emit();
-        return {
-          text: completion.text,
-          output,
-          usage: completion.usage,
-          model: completion.model ?? null,
-          provider: completion.provider ?? null,
-          stopReason: completion.stopReason ?? null,
-        };
+        return result;
       } catch (error) {
         llm.status = "error";
         llm.endedAt = Date.now();

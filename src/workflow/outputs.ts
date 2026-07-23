@@ -1,6 +1,5 @@
 /** Provides outputs behavior. */
-import { mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage } from "../errors.ts";
 import type {
@@ -28,11 +27,6 @@ export interface WorkflowOutputManifest {
   resultPath?: string;
   error?: string;
   outputs: WorkflowOutputManifestEntry[];
-}
-
-/** Provides the createWorkflowOutputsDir function contract. */
-export async function createWorkflowOutputsDir(runId: string): Promise<string> {
-  return mkdtemp(path.join(tmpdir(), `pi-workflow-${runId}-`));
 }
 
 /** Provides the workflowFinalOutputPath function contract. */

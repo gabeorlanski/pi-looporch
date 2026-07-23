@@ -1,5 +1,5 @@
 /** Provides pipeline behavior. */
-import type { ActiveWorkflowRuntime, PipelineStage, WorkflowPrimitive } from "../context.ts";
+import { executionScope, nextExecutionId, type ActiveWorkflowRuntime, type PipelineStage, type WorkflowPrimitive } from "../context.ts";
 import { throwIfWorkflowAborted } from "../abort.ts";
 
 export const pipelinePrimitive: WorkflowPrimitive<{ pipeline: <T>(items: readonly T[], stages: PipelineStage<T>[]) => Promise<T[]> }> = {
@@ -12,8 +12,14 @@ export const pipelinePrimitive: WorkflowPrimitive<{ pipeline: <T>(items: readonl
     },
   ],
   globals: ({ runtime }) => ({
-    pipeline: <T>(items: readonly T[], stages: PipelineStage<T>[]) =>
-      Promise.all(items.map((item, index) => runPipelineItem(runtime, item, index, stages))),
+    pipeline: <T>(items: readonly T[], stages: PipelineStage<T>[]) => {
+      const executionId = nextExecutionId(runtime, "pipeline");
+      return Promise.all(
+        items.map((item, index) =>
+          executionScope.run(`${executionId}/item-${String(index).padStart(4, "0")}`, () => runPipelineItem(runtime, item, index, stages)),
+        ),
+      );
+    },
   }),
 };
 

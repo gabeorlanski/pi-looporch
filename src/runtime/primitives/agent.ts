@@ -11,11 +11,12 @@ import type {
 import { errorMessage } from "../../errors.ts";
 import { resolveWorkflowAgentCwd } from "../../workflow/paths.ts";
 import { writeWorkflowAgentActivity, writeWorkflowAgentOutput, writeWorkflowAgentPrompt } from "../../workflow/outputs.ts";
-import { fanOutScope, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
+import { fanOutScope, nextExecutionId, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
 import { cloneSerializable } from "../serialization.ts";
 import { renderWorkflowAgentTask } from "../prompts.ts";
 import { throwIfWorkflowAborted } from "../abort.ts";
+import { checkpointHash } from "../checkpoint-hash.ts";
 
 export const agentPrimitive: WorkflowPrimitive<{
   agent: (task: WorkflowAgentTask, agentOptions?: WorkflowAgentOptions) => Promise<unknown>;
@@ -37,24 +38,84 @@ export const agentPrimitive: WorkflowPrimitive<{
 
 /** Provides the runAgent function contract. */
 export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
-  return runRawAgent(runtime, prompt, agentOptions);
-}
-
-async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
   throwIfWorkflowAborted(runtime.options.signal);
-  const agentCwd = resolveWorkflowAgentCwd(runtime.options.cwd, agentOptions.cwd);
+  const callOptions: WorkflowAgentOptions = {
+    ...agentOptions,
+    ...(agentOptions.extensions === undefined &&
+    runtime.options.agentDefaults?.extensions !== undefined &&
+    runtime.options.agentDefaults.extensions !== "all"
+      ? { extensions: [...runtime.options.agentDefaults.extensions] }
+      : {}),
+    ...(agentOptions.tools === undefined &&
+    runtime.options.agentDefaults?.tools !== undefined &&
+    runtime.options.agentDefaults.tools !== "all"
+      ? { tools: [...runtime.options.agentDefaults.tools] }
+      : {}),
+  };
+  const agentCwd = resolveWorkflowAgentCwd(runtime.options.cwd, callOptions.cwd);
+  const request = {
+    prompt,
+    options: {
+      label: callOptions.label,
+      cwd: agentCwd,
+      model: callOptions.model,
+      reasoning: callOptions.reasoning,
+      taskFile: callOptions.taskFile,
+      schema: callOptions.schema,
+      extensions: callOptions.extensions ?? "all",
+      tools: callOptions.tools ?? "all",
+    },
+  };
+  const executionId = nextExecutionId(runtime, "agent", checkpointHash(request));
+  const requestHash = checkpointHash({
+    ...request,
+    adapter: await runtime.options.agent.cacheContext?.(callOptions),
+  });
+  const checkpoint = await runtime.options.checkpoints?.get("agent", executionId, requestHash);
+  if (checkpoint?.kind === "agent") {
+    const phase = runtime.snapshot.phases.at(-1);
+    const agent: WorkflowAgentSnapshot = {
+      ...checkpoint.snapshot,
+      id: runtime.snapshot.agents.length + 1,
+      label: callOptions.label ?? `agent ${String(runtime.snapshot.agents.length + 1)}`,
+      phaseIndex: runtime.snapshot.phases.length,
+      ...(phase ? { phase } : {}),
+      fanOutId: fanOutScope.getStore(),
+      status: "done",
+    };
+    if (!phase) delete agent.phase;
+    runtime.snapshot.agents.push(agent);
+    appendRunMessage(runtime, {
+      phaseIndex: agent.phaseIndex,
+      ...(agent.phase ? { phase: agent.phase } : {}),
+      agentId: agent.id,
+      agentLabel: agent.label,
+      level: "info",
+      message: `${agent.label} started`,
+    });
+    appendRunMessage(runtime, {
+      phaseIndex: agent.phaseIndex,
+      ...(agent.phase ? { phase: agent.phase } : {}),
+      agentId: agent.id,
+      agentLabel: agent.label,
+      level: "info",
+      message: `${agent.label} done`,
+    });
+    runtime.emit();
+    return cloneSerializable(checkpoint.result);
+  }
   const releaseAgentSlot = await runtime.agentLaunchQueue.acquire(runtime.options.signal);
   try {
     throwIfWorkflowAborted(runtime.options.signal);
     const agent: WorkflowAgentSnapshot = {
       id: runtime.snapshot.agents.length + 1,
-      label: agentOptions.label ?? `agent ${String(runtime.snapshot.agents.length + 1)}`,
+      label: callOptions.label ?? `agent ${String(runtime.snapshot.agents.length + 1)}`,
       phaseIndex: runtime.snapshot.phases.length,
       phase: runtime.snapshot.phases.at(-1),
       ...(agentCwd ? { cwd: agentCwd } : {}),
-      model: agentOptions.model,
-      reasoning: agentOptions.reasoning,
-      ...(agentOptions.tools !== undefined ? { tools: [...agentOptions.tools] } : {}),
+      model: callOptions.model,
+      reasoning: callOptions.reasoning,
+      ...(callOptions.tools !== undefined ? { tools: [...callOptions.tools] } : {}),
       status: "running",
       startedAt: Date.now(),
       inputTokenCount: 0,
@@ -83,7 +144,7 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
         reporter = workflowAgentReporter(runtime, agent);
         result = await runtime.options.agent(
           prompt,
-          workflowAgentOptionsForLaunch(runtime, agent, agentOptions, agentCwd),
+          workflowAgentOptionsForLaunch(runtime, agent, callOptions, agentCwd),
           reporter.reporter,
         );
       } finally {
@@ -105,8 +166,17 @@ async function runRawAgent(runtime: ActiveWorkflowRuntime, prompt: string, agent
         level: "info",
         message: `${agent.label} done`,
       });
+      if (runtime.options.checkpoints) {
+        await runtime.options.checkpoints.put({
+          kind: "agent",
+          executionId,
+          requestHash,
+          result: output,
+          snapshot: { ...agent, ...(agent.tools === undefined ? {} : { tools: [...agent.tools] }) },
+        });
+      }
       runtime.emit();
-      return result;
+      return output;
     } catch (error) {
       await reporter?.flush();
       agent.status = "error";

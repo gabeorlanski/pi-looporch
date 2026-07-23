@@ -1,6 +1,6 @@
 /** Provides Pi direct model-call integration for workflow LLM completions. */
 import { clampThinkingLevel, completeSimple, type Api, type Message, type Model } from "@earendil-works/pi-ai/compat";
-import type { WorkflowLLM } from "./runtime/types.ts";
+import type { WorkflowLLM, WorkflowLLMRequest } from "./runtime/types.ts";
 import { resolveWorkflowModel } from "./model-selection.ts";
 
 /** Creates a generation-only workflow adapter using Pi's active model and authentication. */
@@ -14,11 +14,12 @@ export function createPiWorkflowLLM(options: {
   }>;
   complete?: typeof completeSimple;
 }): WorkflowLLM {
-  return async (request) => {
-    const model =
-      request.model !== undefined
-        ? resolveWorkflowModel(options.getModels?.() ?? (options.model ? [options.model] : []), request.model)
-        : options.model;
+  const resolveModel = (request: WorkflowLLMRequest): Model<Api> | undefined =>
+    request.model !== undefined
+      ? resolveWorkflowModel(options.getModels?.() ?? (options.model ? [options.model] : []), request.model)
+      : options.model;
+  const llm: WorkflowLLM = async (request) => {
+    const model = resolveModel(request);
     if (!model)
       throw new Error(
         request.model ? `Direct LLM model ${JSON.stringify(request.model)} was not found` : "Direct LLM calls require an active Pi model",
@@ -79,4 +80,12 @@ export function createPiWorkflowLLM(options: {
       stopReason: response.stopReason,
     };
   };
+  llm.cacheContext = (request) => {
+    const model = resolveModel(request);
+    return {
+      model: model ? { provider: model.provider, id: model.id } : undefined,
+      reasoning: model && request.reasoning !== undefined ? clampThinkingLevel(model, request.reasoning) : request.reasoning,
+    };
+  };
+  return llm;
 }

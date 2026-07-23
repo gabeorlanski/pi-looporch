@@ -43,6 +43,7 @@ export default async function workflow() {
     llm: unavailableLLM,
     maxParallelAgents: 1,
     ownerSessionId: "test-session",
+    attempt: { kind: "new" },
   });
   void run.finished.then(() => {
     finished = true;
@@ -51,7 +52,7 @@ export default async function workflow() {
   while (!releaseAgent) await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(finished, false);
-  assert.match(run.outputsDir, /pi-workflow-run-test-/);
+  assert.match(run.outputsDir, /\/tmp\/pi-looporch\/.+\/test-session\/runs\/run-test$/);
   assert.equal(run.snapshot()?.agents[0]?.status, "running");
   assert.deepEqual(JSON.parse(await readFile(path.join(run.outputsDir, "manifest.json"), "utf8")), {
     workflowName: "slow",
@@ -100,6 +101,7 @@ export default async function workflow() {
     maxParallelAgents: 1,
     signal: controller.signal,
     ownerSessionId: "test-session",
+    attempt: { kind: "new" },
   });
 
   await assert.rejects(run.finished, /Workflow aborted/);
@@ -145,6 +147,7 @@ export default async function workflow() {
     llm: unavailableLLM,
     maxParallelAgents: 1,
     ownerSessionId: "test-session",
+    attempt: { kind: "new" },
   });
 
   await childStarted;
@@ -182,6 +185,7 @@ export default async function workflow() {
     llm: unavailableLLM,
     maxParallelAgents: 1,
     ownerSessionId: "test-session",
+    attempt: { kind: "new" },
   });
 
   await assert.rejects(run.finished, /child exploded/);
@@ -215,6 +219,7 @@ export default async function workflow() {
     llm: unavailableLLM,
     maxParallelAgents: 1,
     ownerSessionId: "test-session",
+    attempt: { kind: "new" },
   });
 
   await assert.rejects(run.finished, /body exploded/);

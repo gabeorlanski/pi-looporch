@@ -1,6 +1,10 @@
 <workflow_handoff event="failed">
-<workflow_instructions>If workflow_run_id is not "unavailable", call resume_workflow with that ID to replay unchanged completed model calls and continue from the first changed or incomplete call.</workflow_instructions>
+<workflow_instructions>
+If the run ID is not `unavailable`, call `resume_workflow` with it to replay unchanged completed model calls and continue from the first changed or incomplete call.
+</workflow_instructions>
+
 <workflow_run_id>{{runId}}</workflow_run_id>
 <workflow_name>{{workflowName}}</workflow_name>
+
 <workflow_failure>{{failure}}</workflow_failure>
 </workflow_handoff>

@@ -1,7 +1,12 @@
 <structured_output_contract>
-Use the StructuredOutput tool to finish this workflow task. This contract and schema are supplied by pi-workflow; they are not a user message.
+## Structured result
 
-<completion>When the task is complete, call StructuredOutput exactly once. Its validated keyword arguments are the result and it ends the session. Do not provide a final assistant response.</completion>
+Pi-workflow supplied this result contract and schema.
+
+- When the task is complete, call `StructuredOutput` exactly once.
+- Its validated keyword arguments are the result and the call ends the session.
+- Do not provide a final assistant response.
+
 <structured_output_schema>
 {{schema}}
 </structured_output_schema>

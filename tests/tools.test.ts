@@ -46,6 +46,12 @@ void test("guidance tool returns index and focused guidance", async () => {
   const overviewText = overview.content[0]?.type === "text" ? overview.content[0].text : "";
   assert.match(overviewText, /^# Workflow overview$/m);
   assert.match(overviewText, new RegExp(escapeRegExp(defaultWorkflowDraftRoot())));
+  assert.match(overviewText, /\*\*Outcome and boundary:\*\*/);
+  assert.match(overviewText, /\*\*Stages:\*\* for each ordered phase, state what it reads/);
+  assert.match(overviewText, /Fan out only independent, selected inputs/);
+  assert.match(overviewText, /explicit manifest for reduction/);
+  assert.match(overviewText, /report skipped scope/);
+  assert.match(overviewText, /at most one repair pass/);
   assert.match(overviewText, /prompts\/\*\.txt/);
   assertPrimitiveReferenceIsRendered(overviewText);
 
@@ -58,35 +64,44 @@ void test("guidance tool returns index and focused guidance", async () => {
   const promptFiles = await tool.execute("call-4", { topic: "prompt-files" }, undefined, undefined, {} as never);
   const promptFilesText = promptFiles.content[0]?.type === "text" ? promptFiles.content[0].text : "";
   assert.match(promptFilesText, /^# Prompt files$/m);
-  assert.match(promptFilesText, /When to use XML tags/);
-  assert.match(promptFilesText, /\*\*Default:\*\* use Markdown headings, bullets, or plain text/);
-  assert.match(promptFilesText, /\*\*Use tags\*\* to delineate key information in a complex prompt/);
-  assert.match(promptFilesText, /\*\*Do not use tags\*\* when the prompt is short or its sections are already clear/);
+  assert.match(promptFilesText, /## Task packet shape/);
+  assert.match(promptFilesText, /\*\*Goal:\*\*/);
+  assert.match(promptFilesText, /\*\*Read first:\*\*/);
+  assert.match(promptFilesText, /\*\*Work:\*\*/);
+  assert.match(promptFilesText, /\*\*Deliver:\*\*/);
+  assert.match(promptFilesText, /\*\*Done when:\*\*/);
+  assert.match(promptFilesText, /Use Markdown headings, bullets, or plain text by default/);
+  assert.match(promptFilesText, /Use a few stable named XML blocks/);
+  assert.match(promptFilesText, /Do not add XML merely to label a heading, rule, sentence, or output field/);
+  assert.match(promptFilesText, /Avoid nested tag taxonomies/);
   assert.match(promptFilesText, /prefer `schema` and `StructuredOutput`/);
   assert.match(promptFilesText, /Tags are delimiters, not a security boundary/);
-  assert.match(promptFilesText, /<task_input>/);
-  assert.match(promptFilesText, /<sources>/);
-  assert.match(promptFilesText, /<prior_results>/);
   assert.match(promptFilesText, /<workflow_instructions>/);
   assert.match(promptFilesText, /<workflow_task>/);
   assert.match(promptFilesText, /<workflow_context>/);
   assert.match(promptFilesText, /<structured_output_contract>/);
   assert.match(promptFilesText, /<structured_output_schema>/);
-  assert.match(promptFilesText, /more than five distinct non-verifier prompts/);
+  assert.match(promptFilesText, /many distinct non-verifier tasks/);
   assert.match(promptFilesText, /\{\{file\}\}/);
   assert.match(promptFilesText, /Do not put JavaScript expressions/);
-  assert.match(promptFilesText, /Avoid unstructured global preambles/);
   assert.doesNotMatch(promptFilesText, /&lt;/);
 
   const structured = await tool.execute("call-5", { topic: "structured-outputs" }, undefined, undefined, {} as never);
   const structuredText = structured.content[0]?.type === "text" ? structured.content[0].text : "";
   assert.match(structuredText, /StructuredOutput/);
-  assert.match(structuredText, /prepended/);
+  assert.match(structuredText, /places the schema before the child task/);
   assert.match(structuredText, /semantic/);
   assert.match(structuredText, /does not call it fails/);
   assert.match(structuredText, /control surface/);
   assert.match(structuredText, /JSONL\/artifact files/);
   assert.doesNotMatch(structuredText, /verifier\(/);
+
+  const verification = await tool.execute("call-6", { topic: "verification" }, undefined, undefined, {} as never);
+  const verificationText = verification.content[0]?.type === "text" ? verification.content[0].text : "";
+  assert.match(verificationText, /one decision question/);
+  assert.match(verificationText, /falsifiable checks against named sources of truth/);
+  assert.match(verificationText, /concrete `mustFix` items/);
+  assert.match(verificationText, /one bounded repair stage and re-run the gate once/);
 });
 
 void test("every workflow guidance topic loads its prompt file", () => {
@@ -219,10 +234,12 @@ export default async function workflow() {
   assert.deepEqual(notifications, [{ message: "Workflow 'fail' failed: tool exploded", type: "error" }]);
   assert.equal(sentUserMessages.length, 1);
   assert.equal(sentUserMessages[0]?.options, undefined);
-  assert.match(
-    sentUserMessages[0]?.message ?? "",
-    /^<workflow_handoff event="failed">\n<workflow_instructions>If workflow_run_id is not "unavailable", call resume_workflow with that ID to replay unchanged completed model calls and continue from the first changed or incomplete call\.<\/workflow_instructions>\n<workflow_run_id>.+<\/workflow_run_id>\n<workflow_name>fail<\/workflow_name>\n<workflow_failure>Workflow 'fail' failed: tool exploded<\/workflow_failure>\n<\/workflow_handoff>$/,
-  );
+  const failureHandoff = sentUserMessages[0]?.message ?? "";
+  assert.match(failureHandoff, /^<workflow_handoff event="failed">/);
+  assert.match(failureHandoff, /call `resume_workflow` with it/);
+  assert.match(failureHandoff, /<workflow_run_id>.+<\/workflow_run_id>/);
+  assert.match(failureHandoff, /<workflow_name>fail<\/workflow_name>/);
+  assert.match(failureHandoff, /Workflow 'fail' failed: tool exploded/);
 });
 
 void test("run tool skips notifications after shutdown", async () => {

@@ -576,10 +576,12 @@ export default async function workflow() {
   assert.deepEqual(harness.notifications.at(-1), { message: "Workflow 'fail' failed: workflow exploded", type: "error" });
   assert.deepEqual(harness.sentMessages, []);
   assert.equal(harness.sentUserMessages[0]?.options, undefined);
-  assert.match(
-    String(harness.sentUserMessages[0]?.message),
-    /^<workflow_handoff event="failed">\n<workflow_instructions>If workflow_run_id is not "unavailable", call resume_workflow with that ID to replay unchanged completed model calls and continue from the first changed or incomplete call\.<\/workflow_instructions>\n<workflow_run_id>.+<\/workflow_run_id>\n<workflow_name>fail<\/workflow_name>\n<workflow_failure>Workflow 'fail' failed: workflow exploded<\/workflow_failure>\n<\/workflow_handoff>$/,
-  );
+  const failureHandoff = String(harness.sentUserMessages[0]?.message);
+  assert.match(failureHandoff, /^<workflow_handoff event="failed">/);
+  assert.match(failureHandoff, /call `resume_workflow` with it/);
+  assert.match(failureHandoff, /<workflow_run_id>.+<\/workflow_run_id>/);
+  assert.match(failureHandoff, /<workflow_name>fail<\/workflow_name>/);
+  assert.match(failureHandoff, /Workflow 'fail' failed: workflow exploded/);
   assert.equal(harness.widgetUpdates.at(-1), undefined);
 });
 
@@ -707,12 +709,13 @@ export default async function workflow({ message }) {
 
   assert.deepEqual(promptMessage.options, { deliverAs: "followUp" });
   const prompt = promptMessage.text;
+  assert.match(prompt, /^# Resolve workflow input$/m);
   assert.match(prompt, /<workflow_instructions>/);
   assert.match(prompt, /<workflow_metadata>\n\{"name":"echo"/);
   assert.match(prompt, /<user_request>\nhello from natural language\n<\/user_request>/);
-  assert.match(prompt, /call run_workflow/);
+  assert.match(prompt, /call `run_workflow`/);
   assert.match(prompt, /Resolve clear ambiguities/);
-  assert.match(prompt, /Ask a concise clarification only when required input remains unknowable/);
+  assert.match(prompt, /Ask a concise question only when required input remains unknowable/);
   assert.match(prompt, /Treat bare text as the message field/);
   assert.match(prompt, /input\.message/);
   assert.doesNotMatch(prompt, /workflow\.js, for secondary context only/);

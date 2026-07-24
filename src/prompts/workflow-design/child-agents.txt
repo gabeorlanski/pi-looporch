@@ -1,6 +1,7 @@
 # Child agents
 
-- Give children source-of-truth paths and tell them to read files with tools; do not paste large project files into prompts.
+- Give every child one clear job. State what it must read, what it must do, what artifact or compact value it must produce, and what evidence proves completion.
+- Name source-of-truth paths and tell children to read them with tools; do not paste large project files into prompts.
 - Use `taskFile` for the primary file and `cwd` for alternate or scratch directories.
 - `agent`, `mapreduce`, and `verifier` accept `extensions` and `tools` lists. Omit a list to inherit `workflow.childAgentExtensions` or `workflow.childAgentTools`; missing settings mean all, `[]` means none, and a call-level list overrides its default. A schema-enabled agent keeps terminal `StructuredOutput` even with `tools: []`.
 - Tools are an exact allowlist. Naming an extension-owned tool loads its owner but no sibling tools; naming an extension with unrestricted tools exposes built-ins plus all tools from that extension.

@@ -99,11 +99,11 @@ void test("rendered provenance templates have no unresolved placeholders", () =>
     agentTaskPrompt("Inspect", {}),
     agentTaskPrompt("Inspect", { schema: { type: "object", properties: {} } }),
     workflowCompletionHandoffPrompt({ workflowName: "review" }, "done", "- result: /tmp/result.json"),
-    workflowFailureHandoffPrompt("review", "failed", "unavailable"),
+    workflowFailureHandoffPrompt("review", "failed", "run-review-123"),
   ];
 
   for (const prompt of rendered) assert.doesNotMatch(prompt, /\{\{[^}]+\}\}/);
-  assert.match(rendered.at(-1) ?? "", /call resume_workflow with that ID/);
+  assert.match(rendered.at(-1) ?? "", /Call resume_workflow with workflow_run_id/);
 });
 
 function escapeRegExp(value: string): string {

@@ -2,7 +2,7 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../src/errors.ts";
-import { naturalLanguageRequestMessage, steerableInputResolutionMessage, workflowFailureHandoffPrompt } from "../src/prompt-templates.ts";
+import { naturalLanguageRequestMessage, steerableInputResolutionMessage } from "../src/prompt-templates.ts";
 import { discoverWorkflows } from "../src/discovery.ts";
 import { createPiWorkflowAgent, type PiWorkflowAgentOptions } from "../src/pi-agent/adapter.ts";
 import { createPiWorkflowLLM } from "../src/pi-llm.ts";
@@ -13,8 +13,8 @@ import { openRunningWorkflowInspector, restoreRunningWorkflowUi } from "../src/d
 import { abortVisibleWorkflowRuns, startVisibleWorkflowRun } from "../src/display/visible-workflow-run.ts";
 import { sendWorkflowUserMessage } from "../src/display/workflow-user-message.ts";
 import { createWorkflowTools } from "../src/tools.ts";
-import { WorkflowInputError } from "../src/workflow/input-contract.ts";
-import type { WorkflowAgent, WorkflowLLM } from "../src/runtime/types.ts";
+import { validateWorkflowInput, WorkflowInputError, type WorkflowInputContract } from "../src/workflow/input-contract.ts";
+import type { WorkflowAgent, WorkflowLLM, WorkflowMetadata } from "../src/runtime/types.ts";
 import { normalizeWorkflowName } from "../src/workflow/paths.ts";
 import { readWorkflowInputContract } from "../src/workflow/start.ts";
 import { reviewWorkflowCommand } from "./commands/review.ts";
@@ -167,24 +167,33 @@ async function runExistingWorkflowCommand(
     ctx.ui.notify(`Workflow '${workflowName}' not found.`, "warning");
     return;
   }
+  const inputContract = await readWorkflowInputContract(workflow);
+  const parsedInput = parseWorkflowInput(rawInput);
+  const sendUserMessage = (message: string, options?: { deliverAs?: "followUp" }): void => pi.sendUserMessage(message, options);
+  if (parsedInput.action === "resolve") {
+    resolveWorkflowInput(ctx, sendUserMessage, workflowName, workflow.metadata, inputContract, parsedInput.rawInput);
+    return;
+  }
+
+  let input: unknown;
   try {
-    const inputContract = await readWorkflowInputContract(workflow);
-    const parsedInput = parseWorkflowInput(rawInput);
-    const sendUserMessage = (message: string, options?: { deliverAs?: "followUp" }): void => pi.sendUserMessage(message, options);
-    if (parsedInput.action === "resolve") {
-      ctx.ui.notify(`Workflow '${workflowName}' input resolution sent to current session`, "info");
-      sendWorkflowUserMessage(
+    input = validateWorkflowInput(parsedInput.input, workflowName, inputContract);
+  } catch (error) {
+    if (error instanceof WorkflowInputError) {
+      resolveWorkflowInput(
         ctx,
         sendUserMessage,
-        steerableInputResolutionMessage({
-          rawInput: parsedInput.rawInput,
-          workflowName,
-          metadata: workflow.metadata,
-          contract: inputContract,
-        }),
+        workflowName,
+        workflow.metadata,
+        inputContract,
+        rawInput.trim() || "(no workflow input provided)",
       );
       return;
     }
+    throw error;
+  }
+
+  try {
     const agent = createAgent({ cwd: ctx.cwd, ...(capabilityCatalog ? { agentCapabilityCatalog: capabilityCatalog } : {}) });
     const llm = createLLM(ctx);
     ctx.ui.notify(`Running workflow '${workflowName}' in the background`, "info");
@@ -192,7 +201,7 @@ async function runExistingWorkflowCommand(
       ctx,
       cwd: ctx.cwd,
       workflowName,
-      input: parsedInput.input,
+      input,
       agentDir: getAgentDir(),
       agent,
       llm,
@@ -200,14 +209,20 @@ async function runExistingWorkflowCommand(
       sendUserMessage,
     });
   } catch (error) {
-    const message = error instanceof WorkflowInputError ? error.message : `Workflow '${workflowName}' failed: ${errorMessage(error)}`;
-    ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
-    sendWorkflowUserMessage(
-      ctx,
-      (content, options) => pi.sendUserMessage(content, options),
-      workflowFailureHandoffPrompt(workflowName, message, "unavailable"),
-    );
+    ctx.ui.notify(`Workflow '${workflowName}' could not start: ${errorMessage(error)}`, "error");
   }
+}
+
+function resolveWorkflowInput(
+  ctx: ExtensionCommandContext,
+  sendUserMessage: (message: string, options?: { deliverAs?: "followUp" }) => void,
+  workflowName: string,
+  metadata: WorkflowMetadata,
+  contract: WorkflowInputContract,
+  request: string,
+): void {
+  ctx.ui.notify(`Workflow '${workflowName}' input resolution sent to current session`, "info");
+  sendWorkflowUserMessage(ctx, sendUserMessage, steerableInputResolutionMessage({ rawInput: request, workflowName, metadata, contract }));
 }
 
 function splitFirstWord(text: string): [string, string] {

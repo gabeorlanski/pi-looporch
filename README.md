@@ -39,9 +39,10 @@ Examples:
 /workflow review the auth flow and create a reusable workflow if needed
 ```
 
-JSON, `key=value`, `--key value`, and comma-separated lists run directly.
-Freeform workflow requests stay visible in the current chat for the agent to
-resolve before calling `run_workflow`.
+Complete JSON, `key=value`, `--key value`, and comma-separated lists run directly.
+Freeform or incomplete named-workflow input stays visible in the current chat for
+the agent to resolve before calling `run_workflow`; it does not create a workflow
+run or a resumable failure.
 
 When a workflow finishes, pi-workflow posts the final result or report, keeps
 the output paths visible, and asks the current agent to review and summarize the

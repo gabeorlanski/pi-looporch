@@ -48,7 +48,7 @@
 <!-- rule:20 -->
 - Keep running-workflow inspector reattachment scoped by parent Pi session id, but keep `workflow_status`, `/workflow-status`, and the passive monitor widget project-scoped by default — separates ownership from observation — one session cannot adopt another session's run while users and agents can still monitor project-wide work.
 <!-- rule:21 -->
-- Surface workflow completion results through visible automated user-message handoffs with bounded result/report previews plus full output paths; users should not need a second prompt to see or ask for the result. Wrap the handoff in a typed `<workflow_handoff>` envelope so it triggers the current agent without being mistaken for user-authored text.
+- Surface workflow completion results through visible automated user-message handoffs with bounded result/report previews plus full output paths; users should not need a second prompt to see or ask for the result. Wrap the handoff in one typed `<workflow_handoff>` envelope with a Markdown body so it triggers the current agent without adding per-field tags or being mistaken for user-authored text.
 <!-- rule:22 -->
 - Before publishing generated workflow code, statically resolve inline and top-level `const` capability arrays plus inherited settings, validate them against Pi's real loaded extension/tool metadata, aggregate source-located diagnostics, and do not save on any error — proposal-time validation is the authority boundary — invalid or ambiguous capability names must not become executable workflow state.
 <!-- rule:23 -->

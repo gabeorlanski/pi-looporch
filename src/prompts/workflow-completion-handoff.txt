@@ -1,12 +1,15 @@
 <workflow_handoff event="completed">
-<workflow_instructions>Review and summarize this completed workflow result for the user. If the result is a report, surface it directly with only the orientation needed to make it useful. If it is structured data, summarize key outcomes, decisions, errors, and next actions. Read output paths only when the preview is insufficient.</workflow_instructions>
-<workflow_metadata>
+Review and summarize this result for the user. If it is a report, surface it directly with only the orientation needed to make it useful. If it is structured data, summarize key outcomes, decisions, errors, and next actions. Read output paths only when the preview is insufficient.
+
+Workflow:
+
+```json
 {{metadata}}
-</workflow_metadata>
-<workflow_result>
+```
+
 {{result}}
-</workflow_result>
-<workflow_paths>
+
+Paths:
+
 {{paths}}
-</workflow_paths>
 </workflow_handoff>

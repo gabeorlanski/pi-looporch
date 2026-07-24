@@ -1,7 +1,9 @@
 # Verification
 
 - Add verification only for high-risk, user-visible, or artifact-producing workflows; do not add it by default.
-- Prefer one verifier voter and at most one bounded repair pass unless the user explicitly asks for stronger assurance.
-- Verifier prompts should cite evidence and separate major correctness failures from recommendations.
+- Open a review prompt with one decision question, then list falsifiable checks against named sources of truth.
+- Prefer one verifier voter. Return a compact schema with `verdict`, check-specific booleans, evidence, and concrete `mustFix` items.
+- If the review fails, pass `mustFix` directly to one bounded repair stage and re-run the gate once. Do not create an open-ended review loop unless the user explicitly asks for stronger assurance.
+- Separate major correctness failures from recommendations and cite evidence for both.
 - Give a verifier one `extensions` and `tools` selection for all voters and its reducer; omit either list only when inheriting the workflow default is intentional.
 - Skip optional verification when `budget.agentCount` or `budget.tokenCount` shows the run is already expensive; these are observed counters, not estimates.

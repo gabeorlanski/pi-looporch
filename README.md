@@ -102,16 +102,19 @@ code runs in a sandbox with globals such as `LLM`, `agent`, `parallel`, `pipelin
 `mapreduce`, `verifier`, `phase`, `log`, `trace`, and file helpers.
 Reusable child prompts live in `prompts/*.txt` and launch through
 `agent({ template, values }, options)`; `renderPrompt` remains available for
-exceptional composition. Use Markdown or plain text by default. Add a few
-stable domain-specific XML tags only when complex mixed instructions, context,
-examples, documents, or dynamic inputs need unambiguous boundaries; do not
-wrap every heading or sentence. Tags are delimiters, not a security boundary.
-For machine-readable results, prefer `schema` and `StructuredOutput`. The
-runtime owns `<workflow_instructions>`, `<workflow_task>`, `<workflow_context>`,
-and, for schema-enabled agents, `<structured_output_contract>` and
-`<structured_output_schema>`; do not reuse them in child prompt files. The
-rendered child task is embedded verbatim in that runtime envelope; runtime
-metadata remains escaped.
+exceptional composition. Write prompts as compact task packets: goal, exact
+sources to read, work to perform, artifact or value to deliver, and the evidence
+that means the task is done. Use Markdown or plain text by default. Use one
+of a few descriptive XML wrappers only when complex variable data would otherwise
+blur into instructions; do not tag headings, rules, sentences, or output fields
+or build nested tag taxonomies.
+Tags are delimiters, not a security boundary. For machine-readable results,
+prefer `schema` and `StructuredOutput`. The runtime uses stable top-level
+`<workflow_instructions>`, `<workflow_task>`, and `<workflow_context>` sections
+to separate provenance, the rendered task, and escaped metadata. Schema-enabled
+agents also receive `<structured_output_contract>` and
+`<structured_output_schema>` sections. Do not reuse those names in child prompt
+files.
 
 `agent`, `mapreduce`, and `verifier` accept `extensions` and `tools`
 string lists. Omit either list to inherit workflow settings; use `[]` for none.

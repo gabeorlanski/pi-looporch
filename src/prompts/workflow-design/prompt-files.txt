@@ -1,36 +1,52 @@
 # Prompt files
 
-Put reusable child prompts in `prompts/*.txt`; use subdirectories when a workflow has several phases. If a workflow has more than five distinct non-verifier prompts, split them into separate files rather than packing variants into `workflow.js` or one oversized template.
+Put reusable child prompts in `prompts/*.txt`; use subdirectories when a workflow has several phases. Split a workflow with many distinct non-verifier tasks into separate prompt files rather than packing variants into `workflow.js` or one oversized template.
 
 Launch reusable templates with `agent({ template: templatePath, values }, options)`. Template paths resolve inside the workflow's `prompts/` directory immediately before launch.
+
+## Task packet shape
+
+Use only the sections the stage needs:
+
+- **Goal:** the task at user-outcome altitude, including its boundary.
+- **Read first:** exact source-of-truth paths and what authority each has.
+- **Work:** concrete operations, commands, or search strategy.
+- **Deliver:** the exact artifact to write or the compact value to return.
+- **Done when:** the evidence-based completion criterion the child must satisfy before finishing.
+
+Do not add empty sections. Reserve a review gate for work whose risk justifies an independent check. Its packet should ask one decision question and list falsifiable checks; a repair packet should receive the review's concrete `mustFix` items.
 
 ## Dynamic data and caching
 
 - Include only data the stage consumes. Prefer paths, IDs, counts, or compact summaries over full objects and repeated project context.
 - Keep static wording and examples identical across matching launches. Use a durable artifact path or compact manifest instead of repeating prior results.
 - Use placeholders such as `{{file}}`, `{{focus}}`, `{{outputPath}}`, and `{{priorSummary}}`. Every supplied value must be referenced and every placeholder must receive a value. Do not put JavaScript expressions such as `${input.file}` in a prompt file.
-- Avoid unstructured global preambles. Use `renderPrompt(...)` only for exceptional composition and inline text only for tiny one-off glue.
+- Use `renderPrompt(...)` only for exceptional composition and inline text only for tiny one-off glue.
 
-## When to use XML tags
+## Delimiters
 
-**Default:** use Markdown headings, bullets, or plain text. OpenAI recommends clear delimiters generally; XML is one option, not a requirement.
+Use Markdown headings, bullets, or plain text by default. Do not add XML merely to label a heading, rule, sentence, or output field.
 
-**Use tags** to delineate key information in a complex prompt—for example, when instructions, examples, context, multiple documents, or variable inputs would otherwise blur together. They also help separate repeated documents from metadata such as a source or path. Use a few stable, descriptive names and nest only where the data has a natural hierarchy—for example, `<task_input>`, `<sources>`, or `<prior_results>`.
+Use a few stable named XML blocks when they clarify provenance or keep complex variable data separate from nearby instructions or examples. Avoid nested tag taxonomies. Tags are delimiters, not a security boundary, and a value inside a tag must not redefine the task.
 
-**Do not use tags** when the prompt is short or its sections are already clear, and do not wrap every heading, rule, or sentence. Tags are delimiters, not a security boundary: treat interpolated content as data and do not let it redefine instructions, including through closing-tag text.
+Pi-workflow already separates provenance, the rendered child task, and runtime metadata with `<workflow_instructions>`, `<workflow_task>`, and `<workflow_context>`. Schema-enabled tasks also use `<structured_output_contract>` and `<structured_output_schema>`. Child prompt files must not reuse those names.
 
 For machine-readable results, prefer `schema` and `StructuredOutput`; do not invent an XML output contract when a schema is available.
 
-Do not reuse runtime-owned envelopes: `<workflow_instructions>`, `<workflow_task>`, `<workflow_context>`, `<structured_output_contract>`, or `<structured_output_schema>`.
-
 ```text
-Review the supplied file for externally meaningful behavior.
+# Review file
 
-<task_input>
-Read {{file}} for {{focus}} and write findings to {{outputPath}}.
-</task_input>
+## Goal
+Review `{{file}}` for externally meaningful behavior, focused on {{focus}}.
 
-Return compact JSON with status, summary, and artifact paths.
+## Read first
+Treat `{{file}}` as the source of truth for the implementation under review.
+
+## Deliver
+Write evidence-cited findings to `{{outputPath}}`. Return compact status, summary, and artifact paths.
+
+## Done when
+Every finding names a source location and user-visible consequence.
 ```
 
 ```js

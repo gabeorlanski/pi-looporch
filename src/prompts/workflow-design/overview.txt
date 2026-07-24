@@ -2,13 +2,23 @@
 
 Use an existing workflow when it fits. Author a new one only when the request is reusable or multi-step enough to need a runbook.
 
-- Before asking about missing details, inspect project context and infer the purpose, inputs/defaults, phases, child-agent roles, file reads, and result shape when reasonably clear.
-- Draft under `{{draftRoot}}`, then call `propose_workflow` with the workflow name.
-- Keep `workflow.js` for orchestration. Put reusable child prompts in `prompts/*.txt` and launch them with `agent({ template, values }, options)`.
-- Use `LLM` for one generation-only response without tools or a child session. Use `agent` when the model needs tools, iterative work, or persistent child-agent state.
-- Give agent-calling primitives explicit `extensions` or `tools` lists only when they should not inherit project defaults. `[]` means none; a named extension tool loads its owner without exposing sibling tools.
-- Keep static prompt instructions and examples stable. Pass only stage-specific paths, IDs, counts, or compact manifests as dynamic data.
-- Ask for `workflow-api`, `draft-directory`, `prompt-files`, `child-agents`, `structured-outputs`, `fanout`, `verification`, or `artifacts` only when that focused guidance is needed.
+Before writing code, inspect the request, project instructions, relevant docs, tests, and existing workflows. Write down this compact design:
+
+- **Outcome and boundary:** what user-visible job the workflow completes and what it deliberately does not do.
+- **Inputs:** required fields, inferred defaults, and the few choices that truly need clarification.
+- **Stages:** for each ordered phase, state what it reads, what work it performs, what it writes or returns, and its concrete completion criterion.
+- **Dataflow:** pass prior results explicitly as small values, summaries, or artifact paths. Phases are progress markers, not memory.
+- **Result:** the final value and artifact paths the user or a later agent receives.
+
+Then implement the design as a direct, inspectable runbook:
+
+- Keep orchestration in `workflow.js`. Put reusable child prompts in `prompts/*.txt` and launch them with `agent({ template, values }, options)`.
+- Fan out only independent, selected inputs. Cap the set, preserve each worker's artifact path in an explicit manifest for reduction, and report skipped scope.
+- Use `LLM` for one generation-only response without tools or a child session. Use `agent` for tool use, iterative work, or persistent child state.
+- Add an evidence-based review and at most one repair pass only for high-risk or important artifact-producing work.
+- Draft under `{{draftRoot}}`, validate the complete directory, then call `propose_workflow` with the workflow name.
+
+Request `workflow-api`, `draft-directory`, `prompt-files`, `child-agents`, `structured-outputs`, `fanout`, `verification`, or `artifacts` only when that focused guidance is needed.
 
 ## Supported workflow primitives
 {{primitiveReference}}

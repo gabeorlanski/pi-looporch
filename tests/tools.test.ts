@@ -183,9 +183,10 @@ export default async function workflow(input) {
   assert.deepEqual(notifications, ["Workflow 'echo' complete."]);
   const completionHandoff = sentUserMessages[0]?.message ?? "";
   assert.match(completionHandoff, /<workflow_handoff event="completed">/);
-  assert.match(completionHandoff, /<workflow_metadata>\n\{"workflowName":"echo"/);
-  assert.match(completionHandoff, /<workflow_result>\nResult:\n\n```json/);
+  assert.match(completionHandoff, /Workflow:\n\n```json\n\{"workflowName":"echo"/);
+  assert.match(completionHandoff, /Result:\n\n```json/);
   assert.match(completionHandoff, /helper:say hi/);
+  assert.doesNotMatch(completionHandoff, /<workflow_(?:instructions|metadata|result|paths)>/);
   assert.match(completionHandoff, /- Workflow result: .*final\.json/);
   assert.match(completionHandoff, /- Workflow outputs: /);
   assert.match(completionHandoff, /- Workflow session logs: /);
@@ -236,10 +237,11 @@ export default async function workflow() {
   assert.equal(sentUserMessages[0]?.options, undefined);
   const failureHandoff = sentUserMessages[0]?.message ?? "";
   assert.match(failureHandoff, /^<workflow_handoff event="failed">/);
-  assert.match(failureHandoff, /call `resume_workflow` with it/);
-  assert.match(failureHandoff, /<workflow_run_id>.+<\/workflow_run_id>/);
-  assert.match(failureHandoff, /<workflow_name>fail<\/workflow_name>/);
+  assert.match(failureHandoff, /Call `resume_workflow` with run ID `(?!unavailable`)[^`]+`/);
+  assert.match(failureHandoff, /Workflow: `fail`/);
+  assert.match(failureHandoff, /Run ID: `(?!unavailable`)[^`]+`/);
   assert.match(failureHandoff, /Workflow 'fail' failed: tool exploded/);
+  assert.doesNotMatch(failureHandoff, /<workflow_(?:instructions|run_id|name|failure)>/);
 });
 
 void test("run tool skips notifications after shutdown", async () => {

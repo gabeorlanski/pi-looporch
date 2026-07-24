@@ -110,29 +110,28 @@ void test("rendered provenance templates have no unresolved placeholders", () =>
     agentTaskPrompt("Inspect", {}),
     agentTaskPrompt("Inspect", { schema: { type: "object", properties: {} } }),
     workflowCompletionHandoffPrompt({ workflowName: "review" }, "done", "- result: /tmp/result.json"),
-    workflowFailureHandoffPrompt("review", "failed", "unavailable"),
+    workflowFailureHandoffPrompt("review", "failed", "run-review-123"),
   ];
 
   for (const prompt of rendered) assert.doesNotMatch(prompt, /\{\{[^}]+\}\}/);
-  assert.match(rendered.at(-1) ?? "", /call `resume_workflow` with it/);
+  assert.match(rendered.at(-1) ?? "", /Call `resume_workflow` with run ID `run-review-123`/);
 });
 
-void test("workflow handoffs use coarse typed sections without sentence-level tags", () => {
+void test("workflow handoffs use one typed envelope with readable contents", () => {
   const completed = workflowCompletionHandoffPrompt({ workflowName: "review" }, "done", "- Workflow result: /tmp/final.json");
   const failed = workflowFailureHandoffPrompt("review", "review failed", "run-review-1");
 
-  assert.match(completed, /^<workflow_handoff event="completed">\n<workflow_instructions>/);
-  assert.match(completed, /<workflow_metadata>\n\{"workflowName":"review"\}\n<\/workflow_metadata>/);
-  assert.match(completed, /<workflow_result>\ndone\n<\/workflow_result>/);
-  assert.match(completed, /<workflow_paths>\n- Workflow result: \/tmp\/final\.json\n<\/workflow_paths>/);
+  assert.match(completed, /^<workflow_handoff event="completed">\nReview and summarize/);
+  assert.match(completed, /Workflow:\n\n```json\n\{"workflowName":"review"\}\n```/);
+  assert.match(completed, /\ndone\n\nPaths:\n\n- Workflow result: \/tmp\/final\.json/);
   assert.equal((completed.match(/<workflow_handoff/g) ?? []).length, 1);
+  assert.doesNotMatch(completed, /<workflow_(?:instructions|metadata|result|paths)>/);
 
-  assert.match(failed, /^<workflow_handoff event="failed">\n<workflow_instructions>/);
-  assert.match(failed, /call `resume_workflow` with it/);
-  assert.match(failed, /<workflow_run_id>run-review-1<\/workflow_run_id>/);
-  assert.match(failed, /<workflow_name>review<\/workflow_name>/);
-  assert.match(failed, /<workflow_failure>review failed<\/workflow_failure>/);
+  assert.match(failed, /^<workflow_handoff event="failed">\nCall `resume_workflow` with run ID `run-review-1`/);
+  assert.match(failed, /Workflow: `review`\nRun ID: `run-review-1`/);
+  assert.match(failed, /Failure:\n\nreview failed/);
   assert.equal((failed.match(/<workflow_handoff/g) ?? []).length, 1);
+  assert.doesNotMatch(failed, /<workflow_(?:instructions|run_id|name|failure)>/);
 });
 
 function escapeRegExp(value: string): string {

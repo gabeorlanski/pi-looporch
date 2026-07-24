@@ -111,9 +111,10 @@ export default async function workflow(input) {
 
   assert.deepEqual(handoff.options, undefined);
   assert.match(handoff.text, /<workflow_handoff event="completed">/);
-  assert.match(handoff.text, /<workflow_metadata>\n\{"workflowName":"echo"/);
-  assert.ok(handoff.text.includes('<workflow_result>\nResult:\n\n```json\n{\n  "message": "hello"\n}'));
-  assert.match(handoff.text, /<workflow_paths>\n- Workflow result: .*final\.json/);
+  assert.match(handoff.text, /Workflow:\n\n```json\n\{"workflowName":"echo"/);
+  assert.ok(handoff.text.includes('Result:\n\n```json\n{\n  "message": "hello"\n}'));
+  assert.match(handoff.text, /Paths:\n\n- Workflow result: .*final\.json/);
+  assert.doesNotMatch(handoff.text, /<workflow_(?:instructions|metadata|result|paths)>/);
   assert.ok(harness.notifications.some((entry) => entry.message === "Workflow 'echo' complete." && entry.type === "info"));
   assert.deepEqual(JSON.parse(await readFile(workflowResultPathFrom(handoff.text), "utf8")), { message: "hello" });
 });
@@ -578,10 +579,11 @@ export default async function workflow() {
   assert.equal(harness.sentUserMessages[0]?.options, undefined);
   const failureHandoff = String(harness.sentUserMessages[0]?.message);
   assert.match(failureHandoff, /^<workflow_handoff event="failed">/);
-  assert.match(failureHandoff, /call `resume_workflow` with it/);
-  assert.match(failureHandoff, /<workflow_run_id>.+<\/workflow_run_id>/);
-  assert.match(failureHandoff, /<workflow_name>fail<\/workflow_name>/);
+  assert.match(failureHandoff, /Call `resume_workflow` with run ID `(?!unavailable`)[^`]+`/);
+  assert.match(failureHandoff, /Workflow: `fail`/);
+  assert.match(failureHandoff, /Run ID: `(?!unavailable`)[^`]+`/);
   assert.match(failureHandoff, /Workflow 'fail' failed: workflow exploded/);
+  assert.doesNotMatch(failureHandoff, /<workflow_(?:instructions|run_id|name|failure)>/);
   assert.equal(harness.widgetUpdates.at(-1), undefined);
 });
 
@@ -722,7 +724,7 @@ export default async function workflow({ message }) {
   assert.doesNotMatch(prompt, /return \{ message \};/);
 });
 
-void test("workflow command reports missing required input", async () => {
+void test("named workflow commands resolve partial and empty input before starting", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeProjectWorkflow(
     project,
@@ -744,21 +746,26 @@ export default async function workflow({ repo, problem, mode = "fast" }) {
 }`,
   );
   const harness = createExtensionHarness({ cwd: project });
+  await harness.sessionStart();
 
-  await harness.command("workflow", "plan repo=owner/name");
+  await harness.command("workflow:plan", "repo=owner/name");
 
   assert.deepEqual(harness.sentMessages, []);
   assert.equal(harness.sentUserMessages.length, 1);
-  assert.match(
-    typeof harness.sentUserMessages[0].message === "string" ? harness.sentUserMessages[0].message : "",
-    /<workflow_handoff event="failed">/,
-  );
-  assert.match(
-    typeof harness.sentUserMessages[0].message === "string" ? harness.sentUserMessages[0].message : "",
-    /missing required input: problem/,
-  );
-  assert.match(typeof harness.sentUserMessages[0].message === "string" ? harness.sentUserMessages[0].message : "", /problem=&lt;value&gt;/);
-  assert.equal(harness.notifications.at(-1)?.type, "warning");
+  const partialInputResolution = String(harness.sentUserMessages[0]?.message);
+  assert.match(partialInputResolution, /<workflow_instructions>/);
+  assert.match(partialInputResolution, /<user_request>\nrepo=owner\/name\n<\/user_request>/);
+  assert.match(partialInputResolution, /"requiredFields":\["problem","repo"\]/);
+  assert.doesNotMatch(partialInputResolution, /<workflow_handoff|resume_workflow/);
+  assert.deepEqual(harness.notifications.at(-1), { message: "Workflow 'plan' input resolution sent to current session", type: "info" });
+
+  await harness.command("workflow:plan", "");
+
+  assert.equal(harness.sentUserMessages.length, 2);
+  const emptyInputResolution = String(harness.sentUserMessages[1]?.message);
+  assert.match(emptyInputResolution, /<user_request>\n\(no workflow input provided\)\n<\/user_request>/);
+  assert.doesNotMatch(emptyInputResolution, /<workflow_handoff|resume_workflow/);
+  assert.deepEqual(harness.notifications.at(-1), { message: "Workflow 'plan' input resolution sent to current session", type: "info" });
 });
 
 async function waitForOnlyUserTextMessage(harness: ExtensionHarness): Promise<{ text: string; options: unknown }> {

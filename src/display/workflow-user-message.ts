@@ -2,16 +2,21 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export interface WorkflowUserMessageOptions {
-  deliverAs?: "followUp";
+  deliverAs?: "steer" | "followUp";
 }
 
 export type SendWorkflowUserMessage = (message: string, options?: WorkflowUserMessageOptions) => void;
 
-/** Provides the sendWorkflowUserMessage function contract. */
-export function sendWorkflowUserMessage(ctx: ExtensionContext, sendUserMessage: SendWorkflowUserMessage, message: string): void {
+/** Sends a workflow user message immediately or queues it with the requested busy-session delivery mode. */
+export function sendWorkflowUserMessage(
+  ctx: ExtensionContext,
+  sendUserMessage: SendWorkflowUserMessage,
+  message: string,
+  deliverAs: "steer" | "followUp" = "followUp",
+): void {
   if (ctx.isIdle()) {
     sendUserMessage(message);
     return;
   }
-  sendUserMessage(message, { deliverAs: "followUp" });
+  sendUserMessage(message, { deliverAs });
 }

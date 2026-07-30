@@ -153,7 +153,7 @@ async function settleVisibleWorkflowRun(
     if (visible.isSessionClosing()) return;
     try {
       ctx.ui.notify(`Workflow '${result.workflowName}' complete.`, "info");
-      sendWorkflowUserMessage(ctx, sendUserMessage, workflowCompletionReviewPrompt(result));
+      sendWorkflowUserMessage(ctx, sendUserMessage, workflowCompletionReviewPrompt(result), "steer");
     } catch (error) {
       if (!visible.isSessionClosing()) {
         ctx.ui.notify(`Workflow '${result.workflowName}' completed, but completion handling failed: ${errorMessage(error)}`, "error");
@@ -177,7 +177,7 @@ function failVisibleWorkflowRun(
   const message = error instanceof WorkflowInputError ? error.message : `Workflow '${workflowName}' failed: ${errorMessage(error)}`;
   try {
     ctx.ui.notify(message, error instanceof WorkflowInputError ? "warning" : "error");
-    sendWorkflowUserMessage(ctx, sendUserMessage, workflowFailureHandoffPrompt(workflowName, message, runId));
+    sendWorkflowUserMessage(ctx, sendUserMessage, workflowFailureHandoffPrompt(workflowName, message, runId), "steer");
   } catch (handlingError) {
     ctx.ui.notify(`Workflow '${workflowName}' failed, but failure handling failed: ${errorMessage(handlingError)}`, "error");
   }

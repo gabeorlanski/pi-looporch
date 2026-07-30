@@ -169,7 +169,7 @@ async function runExistingWorkflowCommand(
   }
   const inputContract = await readWorkflowInputContract(workflow);
   const parsedInput = parseWorkflowInput(rawInput);
-  const sendUserMessage = (message: string, options?: { deliverAs?: "followUp" }): void => pi.sendUserMessage(message, options);
+  const sendUserMessage = (message: string, options?: { deliverAs?: "steer" | "followUp" }): void => pi.sendUserMessage(message, options);
   if (parsedInput.action === "resolve") {
     resolveWorkflowInput(ctx, sendUserMessage, workflowName, workflow.metadata, inputContract, parsedInput.rawInput);
     return;
@@ -215,7 +215,7 @@ async function runExistingWorkflowCommand(
 
 function resolveWorkflowInput(
   ctx: ExtensionCommandContext,
-  sendUserMessage: (message: string, options?: { deliverAs?: "followUp" }) => void,
+  sendUserMessage: (message: string, options?: { deliverAs?: "steer" | "followUp" }) => void,
   workflowName: string,
   metadata: WorkflowMetadata,
   contract: WorkflowInputContract,

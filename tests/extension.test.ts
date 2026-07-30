@@ -163,7 +163,7 @@ export default async function workflow() {
   assert.match(handoff.text, /"output": null/);
 });
 
-void test("workflow completion follows up when busy", async () => {
+void test("workflow completion steers when busy", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeProjectWorkflow(
     project,
@@ -178,7 +178,7 @@ export default async function workflow() {
   await harness.command("workflow", "busy-complete");
   const handoff = await waitForOnlyUserTextMessage(harness);
 
-  assert.deepEqual(handoff.options, { deliverAs: "followUp" });
+  assert.deepEqual(handoff.options, { deliverAs: "steer" });
   assert.match(handoff.text, /<workflow_handoff event="completed">/);
 });
 
@@ -605,6 +605,25 @@ export default async function workflow() {
   assert.match(failureHandoff, /Workflow 'fail' failed: workflow exploded/);
   assert.doesNotMatch(failureHandoff, /<workflow_(?:instructions|run_id|name|failure)>/);
   assert.equal(harness.widgetUpdates.at(-1), undefined);
+});
+
+void test("workflow failure steers when busy", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  await writeProjectWorkflow(
+    project,
+    "busy-fail",
+    `export const metadata = { name: "busy-fail", description: "Fail workflow", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  throw new Error("workflow exploded");
+}`,
+  );
+  const harness = createExtensionHarness({ cwd: project, idle: false });
+
+  await harness.command("workflow", "busy-fail");
+  await waitForCondition(() => harness.sentUserMessages.length === 1);
+
+  assert.deepEqual(harness.sentUserMessages[0]?.options, { deliverAs: "steer" });
+  assert.match(String(harness.sentUserMessages[0]?.message), /^<workflow_handoff event="failed">/);
 });
 
 void test("workflow_settings_command_writes_project_settings", async () => {

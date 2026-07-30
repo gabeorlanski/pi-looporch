@@ -10,7 +10,7 @@
 
 These rules do not restate sibling guides: structured-JSON-as-control-surface and
 large-evidence-to-files live in `pi-agent-harness.md` (rules 9-10); general child-agent isolation and
-path resolution live in `pi-agent-harness.md`; bounded completion previews and compact live widgets
+path resolution live in `pi-agent-harness.md`; full completion results and compact live widgets
 live in `tui-style.md`.
 
 <!-- rule:1 -->

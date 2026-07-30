@@ -119,6 +119,26 @@ export default async function workflow(input) {
   assert.deepEqual(JSON.parse(await readFile(workflowResultPathFrom(handoff.text), "utf8")), { message: "hello" });
 });
 
+void test("workflow completion handoffs include results longer than 16,000 characters", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
+  const result = "x".repeat(20_000);
+  await writeProjectWorkflow(
+    project,
+    "large-result",
+    `export const metadata = { name: "large-result", description: "Return a large result", inputInstructions: "No input.", phases: [{ title: "Run" }] };
+export default async function workflow() {
+  return ${JSON.stringify(result)};
+}`,
+  );
+  const harness = createExtensionHarness({ cwd: project });
+
+  await harness.command("workflow", "large-result");
+  const handoff = await waitForOnlyUserTextMessage(harness);
+
+  assert.ok(handoff.text.includes(result));
+  assert.doesNotMatch(handoff.text, /\[truncated/);
+});
+
 void test("workflow commands provide LLM", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeProjectWorkflow(

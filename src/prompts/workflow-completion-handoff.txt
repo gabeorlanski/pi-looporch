@@ -1,5 +1,5 @@
 <workflow_handoff event="completed">
-Review and summarize this result for the user. If it is a report, surface it directly with only the orientation needed to make it useful. If it is structured data, summarize key outcomes, decisions, errors, and next actions. Read output paths only when the preview is insufficient.
+Review and summarize this complete result for the user. If it is a report, surface it directly with only the orientation needed to make it useful. If it is structured data, summarize key outcomes, decisions, errors, and next actions. Use output paths for related artifacts and session logs.
 
 Workflow:
 

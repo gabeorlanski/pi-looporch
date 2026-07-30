@@ -1,8 +1,6 @@
 /** Provides workflow completion behavior. */
 import { workflowCompletionHandoffPrompt } from "../prompt-templates.ts";
 
-const PROMPT_RESULT_LIMIT = 16_000;
-
 export interface WorkflowCompletionInfo {
   runId: string;
   workflowName: string;
@@ -22,7 +20,7 @@ export function workflowCompletionReviewPrompt(info: WorkflowCompletionInfo): st
       outputsDir: info.outputsDir,
       sessionLogDir: info.sessionLogDir,
     },
-    renderWorkflowResultSection(info.result, PROMPT_RESULT_LIMIT, info.resultPath),
+    renderWorkflowResultSection(info.result),
     workflowCompletionLocations(info).join("\n"),
   );
 }
@@ -35,11 +33,10 @@ function workflowCompletionLocations(info: WorkflowCompletionInfo): string[] {
   ].filter((line): line is string => line !== undefined);
 }
 
-function renderWorkflowResultSection(result: unknown, maxLength: number, resultPath: string | undefined): string {
+function renderWorkflowResultSection(result: unknown): string {
   const rendered = renderWorkflowResult(result);
-  const body = truncateResult(rendered.body, maxLength, resultPath);
-  if (rendered.format === "markdown") return `${rendered.heading}:\n\n${body}`;
-  return `${rendered.heading}:\n\n\`\`\`${rendered.format}\n${body}\n\`\`\``;
+  if (rendered.format === "markdown") return `${rendered.heading}:\n\n${rendered.body}`;
+  return `${rendered.heading}:\n\n\`\`\`${rendered.format}\n${rendered.body}\n\`\`\``;
 }
 
 function renderWorkflowResult(result: unknown): { heading: string; body: string; format: "json" | "markdown" } {
@@ -59,10 +56,4 @@ function reportResult(result: unknown): string | undefined {
   const additionalKeys = Object.keys(additionalData);
   if (additionalKeys.length === 0) return record.report;
   return `${record.report}\n\nAdditional data:\n\n\`\`\`json\n${JSON.stringify(additionalData, null, 2)}\n\`\`\``;
-}
-
-function truncateResult(value: string, maxLength: number, resultPath: string | undefined): string {
-  if (value.length <= maxLength) return value;
-  const suffix = resultPath ? `\n\n[truncated; full result: ${resultPath}]` : "\n\n[truncated]";
-  return `${value.slice(0, Math.max(0, maxLength - suffix.length))}${suffix}`;
 }

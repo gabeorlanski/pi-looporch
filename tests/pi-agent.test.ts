@@ -10,20 +10,20 @@ import { workflowAgentLogEvent } from "../src/session/events.ts";
 import { workflowAgentSessionLogDirectory } from "../src/session/logs.ts";
 import { parseSessionTokens } from "../src/session/usage.ts";
 
+interface TerminalTool {
+  execute: (
+    toolCallId: string,
+    params: unknown,
+    signal: AbortSignal | undefined,
+    onUpdate: unknown,
+    context: { abort(): void },
+  ) => Promise<unknown>;
+  parameters: unknown;
+}
+
 void test("schema agents validate and return terminal output", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
-  let terminalTool:
-    | {
-        execute: (
-          toolCallId: string,
-          params: unknown,
-          signal: AbortSignal | undefined,
-          onUpdate: unknown,
-          context: { abort(): void },
-        ) => Promise<unknown>;
-        parameters: unknown;
-      }
-    | undefined;
+  let terminalTool: TerminalTool | undefined;
   let sessionTools: string[] | undefined;
   let aborted = false;
   const agent = createPiWorkflowAgent({
@@ -102,6 +102,88 @@ void test("schema agents validate and return terminal output", async () => {
     usage: { input: 10, output: 2, cacheRead: 4, cacheWrite: 1, total: 17 },
     status: "pass",
   });
+});
+
+async function createExitAttemptAgent(onSteer: (tool: TerminalTool | undefined, end: () => void) => Promise<void> | void) {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
+  const prompts: string[] = [];
+  let terminalTool: TerminalTool | undefined;
+  let listener: ((event: { type: string; messages?: unknown[]; willRetry?: boolean }) => void) | undefined;
+  const end = (): void => listener?.({ type: "agent_end", messages: [], willRetry: false });
+  const agent = createPiWorkflowAgent({
+    cwd: project,
+    tools: [],
+    createSession: (options) => {
+      terminalTool = options?.customTools?.find((tool) => tool.name === "StructuredOutput") as typeof terminalTool;
+      return {
+        session: {
+          model: undefined,
+          messages: [],
+          subscribe: (callback: typeof listener) => {
+            listener = callback;
+            return () => undefined;
+          },
+          prompt: (prompt: string) => {
+            prompts.push(prompt);
+            end();
+            return Promise.resolve();
+          },
+          steer: (prompt: string) => {
+            prompts.push(prompt);
+            return Promise.resolve(onSteer(terminalTool, end));
+          },
+          getSessionStats: () => ({ tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, total: 2 } }),
+          dispose: () => undefined,
+        },
+        extensionsResult: options?.resourceLoader?.getExtensions(),
+      } as never;
+    },
+  });
+  return { agent, prompts };
+}
+
+void test("schema agents are reminded to call StructuredOutput", async () => {
+  const { agent, prompts } = await createExitAttemptAgent(async (terminalTool) => {
+    if (!terminalTool) throw new Error("Expected StructuredOutput");
+    await terminalTool.execute("output-1", { status: "pass" }, undefined, undefined, { abort: () => undefined });
+  });
+
+  const result = await agent(
+    "work",
+    {
+      schema: { type: "object", properties: { status: { type: "string" } }, required: ["status"] },
+      extensions: [],
+      tools: [],
+    },
+    { launched: () => undefined, progress: () => undefined },
+  );
+
+  assert.ok(prompts.some((prompt) => prompt.includes("You attempted to exit without calling the required StructuredOutput tool")));
+  assert.deepEqual(result, {
+    message: null,
+    name: "agent",
+    steps: 0,
+    usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, total: 2 },
+    status: "pass",
+  });
+});
+
+void test("schema agents fail after two StructuredOutput reminders", async () => {
+  let reminders = 0;
+  const { agent } = await createExitAttemptAgent((_tool, end) => {
+    reminders++;
+    end();
+  });
+
+  await assert.rejects(
+    agent(
+      "work",
+      { schema: { type: "object", properties: { status: { type: "string" } }, required: ["status"] }, extensions: [], tools: [] },
+      { launched: () => undefined, progress: () => undefined },
+    ),
+    /must finish by calling StructuredOutput/,
+  );
+  assert.equal(reminders, 2);
 });
 
 void test("schema agents preserve unrestricted tools", async () => {

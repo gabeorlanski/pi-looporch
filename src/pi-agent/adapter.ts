@@ -166,9 +166,23 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
         : {}),
     });
     const progress = createWorkflowAgentProgressTracker(reporter);
+    let reminders = 0;
     const unsubscribe = session.subscribe((event) => {
       loggedSession?.recordEvent(event);
       progress.handleEvent(event);
+      if (
+        event.type === "agent_end" &&
+        structuredOutput !== undefined &&
+        structuredOutput.result() === undefined &&
+        reminders < 2 &&
+        !event.willRetry &&
+        workflowAgentFailureMessage(event.messages) === undefined
+      ) {
+        reminders++;
+        void session.steer(
+          "You attempted to exit without calling the required StructuredOutput tool. Call StructuredOutput exactly once with your final result matching the provided schema before finishing.",
+        );
+      }
     });
 
     let removeAbortListener: (() => void) | undefined;

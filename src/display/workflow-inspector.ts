@@ -25,9 +25,11 @@ export class WorkflowInspector implements Component, Focusable {
   onAbort?: () => void;
   private level: Level = "phases";
   private selectedPhase = 0;
+  private phaseScroll = 0;
   private selectedCall = 0;
+  private callScroll = 0;
   private promptExpanded = false;
-  private scroll = 0;
+  private docScroll = 0;
   private note = "";
 
   constructor(
@@ -90,7 +92,8 @@ export class WorkflowInspector implements Component, Focusable {
     else if (matchesKey(data, "right") || matchesKey(data, "enter")) {
       this.level = "detail";
       this.selectedCall = 0;
-      this.scroll = 0;
+      this.callScroll = 0;
+      this.docScroll = 0;
       this.promptExpanded = false;
     } else if (matchesKey(data, "escape") || matchesKey(data, "backspace") || matchesKey(data, "left")) this.onClose?.();
     else if (matchesKey(data, "x")) {
@@ -102,14 +105,14 @@ export class WorkflowInspector implements Component, Focusable {
   private handleDetail(data: string): void {
     if (matchesKey(data, "up")) {
       this.selectedCall = clamp(this.selectedCall - 1, 0, this.currentPhase().calls.length - 1);
-      this.scroll = 0;
+      this.docScroll = 0;
       this.promptExpanded = false;
     } else if (matchesKey(data, "down")) {
       this.selectedCall = clamp(this.selectedCall + 1, 0, this.currentPhase().calls.length - 1);
-      this.scroll = 0;
+      this.docScroll = 0;
       this.promptExpanded = false;
-    } else if (matchesKey(data, "k")) this.scroll = Math.max(0, this.scroll - 1);
-    else if (matchesKey(data, "j")) this.scroll++;
+    } else if (matchesKey(data, "k")) this.docScroll = Math.max(0, this.docScroll - 1);
+    else if (matchesKey(data, "j")) this.docScroll++;
     else if (matchesKey(data, "enter")) this.promptExpanded = !this.promptExpanded;
     else if (matchesKey(data, "escape") || matchesKey(data, "backspace") || matchesKey(data, "left")) this.level = "phases";
     else if (matchesKey(data, "x")) {
@@ -129,13 +132,15 @@ export class WorkflowInspector implements Component, Focusable {
 
   private renderPhases(termWidth: number, height: number): string[] {
     const phases = this.phases();
+    const visibleRows = Math.max(1, height - 2);
+    this.phaseScroll = scrollOffsetForSelection(this.phaseScroll, this.selectedPhase, phases.length, visibleRows);
     const leftWidth = inspectorLeftWidth(
       termWidth,
       phases.map((phase) => phase.name),
     );
     const rightWidth = termWidth - leftWidth;
-    const left = phases.slice(0, height - 2).map((phase, index) => {
-      const selected = index === this.selectedPhase;
+    const left = phases.slice(this.phaseScroll, this.phaseScroll + visibleRows).map((phase, index) => {
+      const selected = this.phaseScroll + index === this.selectedPhase;
       const marker = selected ? this.theme.accent(glyph.marker) : " ";
       const count = phase.callsTotal === 0 ? "" : `${String(phase.callsDone)}/${String(phase.callsTotal)}`;
       const name = phase.status === "pending" ? this.theme.pending(phase.name) : phase.name;
@@ -154,13 +159,15 @@ export class WorkflowInspector implements Component, Focusable {
 
   private renderDetail(termWidth: number, height: number): string[] {
     const phase = this.currentPhase();
+    const visibleRows = Math.max(1, height - 2);
+    this.callScroll = scrollOffsetForSelection(this.callScroll, this.selectedCall, phase.calls.length, visibleRows);
     const leftWidth = inspectorLeftWidth(
       termWidth,
       phase.calls.map((call) => call.displayName),
     );
     const rightWidth = termWidth - leftWidth;
-    const left = phase.calls.slice(0, height - 2).map((call, index) => {
-      const selected = index === this.selectedCall;
+    const left = phase.calls.slice(this.callScroll, this.callScroll + visibleRows).map((call, index) => {
+      const selected = this.callScroll + index === this.selectedCall;
       const marker = selected ? this.theme.accent(glyph.marker) : " ";
       let row = `${marker}${callGlyph(call, this.model.tick, this.theme)} ${truncEnd(call.displayName, leftWidth - 5)}`;
       if (selected) row = this.theme.selected(padTo(truncEnd(row, leftWidth - 2), leftWidth - 2));
@@ -169,10 +176,10 @@ export class WorkflowInspector implements Component, Focusable {
     const rightInner = Math.max(0, rightWidth - 2);
     const doc = this.buildDetailDoc(rightInner);
     const windowHeight = Math.max(1, height - 3);
-    this.scroll = clamp(this.scroll, 0, Math.max(0, doc.length - windowHeight));
-    const windowLines = doc.slice(this.scroll, this.scroll + windowHeight);
+    this.docScroll = clamp(this.docScroll, 0, Math.max(0, doc.length - windowHeight));
+    const windowLines = doc.slice(this.docScroll, this.docScroll + windowHeight);
     while (windowLines.length < windowHeight) windowLines.push("");
-    windowLines.push(rangeIndicator(this.scroll, windowHeight, doc.length, rightInner, this.theme));
+    windowLines.push(rangeIndicator(this.docScroll, windowHeight, doc.length, rightInner, this.theme));
     const call = this.currentCall();
     return joinColumns(
       panel(this.theme, `${phase.name} ${glyph.mid} ${String(phase.calls.length)} calls`, left, leftWidth, height),
@@ -256,6 +263,10 @@ function inspectorLeftWidth(termWidth: number, labels: string[]): number {
 function clamp(value: number, min: number, max: number): number {
   if (max < min) return min;
   return Math.max(min, Math.min(max, value));
+}
+
+function scrollOffsetForSelection(offset: number, selected: number, total: number, visibleRows: number): number {
+  return clamp(offset, Math.max(0, selected - visibleRows + 1), Math.min(selected, Math.max(0, total - visibleRows)));
 }
 
 function rightAlign(left: string, right: string, termWidth: number): string {

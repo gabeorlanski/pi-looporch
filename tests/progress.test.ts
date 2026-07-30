@@ -239,6 +239,49 @@ void test("inspector shows direct LLM calls and includes their usage", () => {
   assert.match(detail, /stop reason: stop/);
 });
 
+void test("inspector follows the selected phase below the viewport", () => {
+  const model = new WorkflowInspectorModel({
+    workflowName: "many phases",
+    description: "A workflow with more phases than fit in the inspector",
+    plannedPhases: Array.from({ length: 30 }, (_, index) => ({ title: `phase ${String(index + 1)}` })),
+    phases: [],
+    traces: [],
+    agents: [],
+    llms: [],
+    fanOuts: [],
+    messages: [],
+    status: "running",
+  });
+  const inspector = new WorkflowInspector(model, plainWorkflowTuiTheme, () => 12);
+
+  for (let index = 0; index < 20; index++) inspector.handleInput("\u001B[B");
+
+  assert.match(inspector.render(100).join("\n"), /›\s*21 phase 21/);
+});
+
+void test("inspector follows the selected call below the viewport", () => {
+  const model = new WorkflowInspectorModel({
+    workflowName: "many agents",
+    description: "A phase with more agents than fit in the inspector",
+    plannedPhases: [{ title: "fanout" }],
+    phases: ["fanout"],
+    traces: [],
+    agents: Array.from({ length: 30 }, (_, index) =>
+      agent({ id: index + 1, phaseIndex: 1, phase: "fanout", label: `agent ${String(index + 1)}`, status: "done" }),
+    ),
+    llms: [],
+    fanOuts: [],
+    messages: [],
+    status: "done",
+  });
+  const inspector = new WorkflowInspector(model, plainWorkflowTuiTheme, () => 12);
+
+  inspector.handleInput("\r");
+  for (let index = 0; index < 20; index++) inspector.handleInput("\u001B[B");
+
+  assert.match(inspector.render(100).join("\n"), /›\s*✔ #21 agent 21/);
+});
+
 void test("inspector does not duplicate a current phase after setup", () => {
   const model = new WorkflowInspectorModel({
     workflowName: "review",

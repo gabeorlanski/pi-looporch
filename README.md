@@ -87,6 +87,8 @@ Inspector view:
  ↕ select · → agents · x abort workflow · esc back · s snapshot path
 ```
 
+In the inspector, long phase and agent lists follow the arrow-key selection as you move through them.
+
 ## Write
 
 A workflow directory contains `workflow.js` and optional prompt files:

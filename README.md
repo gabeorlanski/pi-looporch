@@ -131,16 +131,18 @@ token `usage` metadata. If the child attempts to finish without calling it, the
 runtime explicitly reminds it to call `StructuredOutput` up to twice before it
 fails.
 
-Use `LLM(prompt, options?)` for one generation-only call with Pi's active model
+Use `LLM(prompt, options?)` for a generation-only call with Pi's active model
 and authentication. Options include `model`, `reasoning`, `system`, ordered prior
-`messages`, and an object `schema`. The prompt is appended as the final user
-message, then Pi passes the complete message list to the selected model API for
-provider-specific formatting. Omit `model` to use the active model.
-Results have `{ text, output, usage, model, provider, stopReason }`, with
-validated JSON in schema-call `output` and `null` otherwise. `LLM` has no tools,
-agent session, repair request, or child-agent concurrency cost. Direct calls
-appear in the workflow Inspector with their prompt, output, status, model, and
-provider-reported usage; that usage contributes to workflow token and cost totals.
+`messages`, an object `schema`, and `retries`. The prompt is appended as the final
+user message, then Pi passes the complete message list to the selected model API
+for provider-specific formatting. Omit `model` to use the active model.
+Schema calls retry malformed or nonconforming output up to three times by default;
+set `retries` to a non-negative integer to change that budget. Provider failures
+are not retried. Results have `{ text, output, usage, model, provider, stopReason }`,
+with validated JSON in schema-call `output` and `null` otherwise. `LLM` has no
+tools, agent session, or child-agent concurrency cost. Direct calls appear in the
+workflow Inspector with their prompt, output, status, model, and provider-reported
+usage; that usage contributes to workflow token and cost totals.
 
 ```js
 const result = await LLM("Classify this release.", {

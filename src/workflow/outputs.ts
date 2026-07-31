@@ -55,8 +55,8 @@ function workflowAgentActivityPath(outputsDir: string, agentId: number, label: s
   return path.join(workflowAgentArtifactDir(outputsDir, agentId, label), "activity.jsonl");
 }
 
-function llmArtifactDir(outputsDir: string, llmId: number): string {
-  return path.join(outputsDir, "llms", `llm-${String(llmId).padStart(3, "0")}`);
+function llmAttemptArtifactDir(outputsDir: string, llmId: number, attempt: number): string {
+  return path.join(outputsDir, "llms", `llm-${String(llmId).padStart(3, "0")}`, `attempt-${String(attempt).padStart(3, "0")}`);
 }
 
 /** Provides the writeWorkflowFinalOutput function contract. */
@@ -93,9 +93,14 @@ export async function writeWorkflowAgentActivity(
   return activityPath;
 }
 
-/** Writes the exact normalized request for a direct LLM call. */
-export async function writeWorkflowLLMPrompt(outputsDir: string, llmId: number, request: WorkflowLLMRequest): Promise<string> {
-  const promptPath = path.join(llmArtifactDir(outputsDir, llmId), "prompt.json");
+/** Writes the exact normalized request for one direct LLM attempt. */
+export async function writeWorkflowLLMPrompt(
+  outputsDir: string,
+  llmId: number,
+  attempt: number,
+  request: WorkflowLLMRequest,
+): Promise<string> {
+  const promptPath = path.join(llmAttemptArtifactDir(outputsDir, llmId, attempt), "prompt.json");
   await writeJsonFileAtomic(promptPath, {
     ...(request.system === undefined ? {} : { system: request.system }),
     ...(request.model === undefined ? {} : { model: request.model }),
@@ -105,9 +110,9 @@ export async function writeWorkflowLLMPrompt(outputsDir: string, llmId: number, 
   return promptPath;
 }
 
-/** Writes the completed provider response envelope for a direct LLM call. */
-export async function writeWorkflowLLMOutput(outputsDir: string, llmId: number, output: unknown): Promise<string> {
-  const outputPath = path.join(llmArtifactDir(outputsDir, llmId), "output.json");
+/** Writes the completed provider response envelope for one direct LLM attempt. */
+export async function writeWorkflowLLMOutput(outputsDir: string, llmId: number, attempt: number, output: unknown): Promise<string> {
+  const outputPath = path.join(llmAttemptArtifactDir(outputsDir, llmId, attempt), "output.json");
   await writeJsonFileAtomic(outputPath, output);
   return outputPath;
 }

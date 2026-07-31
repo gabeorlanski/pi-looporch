@@ -5,7 +5,6 @@ import path from "node:path";
 import { test } from "node:test";
 import { workflowPrimitiveReference } from "../src/runtime/globals.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
-import type { WorkflowSnapshot } from "../src/runtime/types.ts";
 import { llmCompletion, writeWorkflow } from "./runtime-helpers.ts";
 
 void test("generated primitive docs expose LLM", () => {
@@ -16,7 +15,8 @@ void test("generated primitive docs expose LLM", () => {
         primitive: "LLM",
         name: "LLM",
         signature: "LLM(prompt, options?)",
-        summary: "Makes one generation-only call with optional model, reasoning, system instructions, prior messages, and schema.",
+        summary:
+          "Makes a generation-only call with optional model, reasoning, system instructions, prior messages, schema, and structured-output retries.",
       },
     ],
   );
@@ -226,48 +226,111 @@ export default async function workflow() {
   });
 });
 
-void test("LLM rejects malformed JSON without repair", async () => {
+void test("LLM repairs malformed structured output with the default retry budget", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
     "malformed-llm",
     `export const metadata = { name: "malformed-llm", description: "Malformed completion", inputInstructions: "No input.", phases: [{ title: "Generate" }] };
 export default async function workflow() {
-  return LLM("Return JSON.", { schema: { type: "object", properties: {}, additionalProperties: false } });
+  return LLM("Return JSON.", {
+    schema: {
+      type: "object",
+      properties: { ready: { type: "boolean" } },
+      required: ["ready"],
+      additionalProperties: false,
+    },
+  });
 }`,
   );
-  let calls = 0;
-  let finalSnapshot: WorkflowSnapshot | undefined;
+  const requests: unknown[] = [];
+  const outputsDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-outputs-"));
 
-  await assert.rejects(
-    runWorkflowFromDirectory({
-      maxParallelAgents: 4,
-      cwd: project,
-      workflowName: "malformed-llm",
-      input: {},
-      agent: () => Promise.resolve("unused"),
-      llm: () => {
-        calls++;
-        return Promise.resolve(
-          llmCompletion("not json", {
-            usage: { input: 8, output: 2, cacheRead: 1, cacheWrite: 0, total: 10 },
-          }),
-        );
-      },
-      onSnapshot: (snapshot) => {
-        finalSnapshot = snapshot;
-      },
-    }),
-    SyntaxError,
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "malformed-llm",
+    input: {},
+    outputsDir,
+    agent: () => Promise.resolve("unused"),
+    llm: (request) => {
+      requests.push(request);
+      return Promise.resolve(
+        llmCompletion(requests.length <= 3 ? "not json" : '{"ready":true}', {
+          usage:
+            requests.length <= 3
+              ? { input: 2, output: 1, cacheRead: 3, cacheWrite: 4, total: 10 }
+              : { input: 5, output: 6, cacheRead: 7, cacheWrite: 8, total: 26 },
+        }),
+      );
+    },
+  });
+
+  assert.equal(requests.length, 4);
+  assert.deepEqual((result.result as { output: unknown }).output, { ready: true });
+  assert.deepEqual((result.result as { usage: unknown }).usage, {
+    input: 11,
+    output: 9,
+    cacheRead: 16,
+    cacheWrite: 20,
+    total: 56,
+  });
+  const repair = (requests[3] as { messages: { role: string; content: string }[] }).messages;
+  assert.deepEqual(repair.slice(0, 2), [
+    { role: "user", content: "Return JSON." },
+    { role: "assistant", content: "not json" },
+  ]);
+  assert.match(repair[2]?.content ?? "", /not valid structured output/);
+  const llm = result.snapshot.llms[0];
+  assert.equal(llm.inputTokenCount, 11);
+  assert.equal(llm.cacheReadTokenCount, 16);
+  assert.equal(llm.outputTokenCount, 9);
+  assert.deepEqual(JSON.parse(await readFile(llm.promptPath ?? "", "utf8")), requests[3]);
+  assert.equal((JSON.parse(await readFile(llm.outputPath ?? "", "utf8")) as { text: string }).text, '{"ready":true}');
+  assert.equal(
+    (JSON.parse(await readFile(path.join(outputsDir, "llms", "llm-001", "attempt-001", "output.json"), "utf8")) as { text: string }).text,
+    "not json",
   );
-  assert.equal(calls, 1);
-  assert.ok(finalSnapshot);
-  assert.equal(finalSnapshot.llms[0].status, "error");
-  assert.equal(finalSnapshot.llms[0].inputTokenCount, 8);
-  assert.equal(finalSnapshot.llms[0].outputTokenCount, 2);
 });
 
-void test("LLM rejects schema mismatches without repair", async () => {
+void test("LLM repairs schema-mismatched structured output", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
+  await writeWorkflow(
+    project,
+    "schema-repair-llm",
+    `export const metadata = { name: "schema-repair-llm", description: "Schema repair", inputInstructions: "No input.", phases: [{ title: "Generate" }] };
+export default async function workflow() {
+  return LLM("Return JSON.", {
+    schema: {
+      type: "object",
+      properties: { count: { type: "number" } },
+      required: ["count"],
+      additionalProperties: false,
+    },
+  });
+}`,
+  );
+  const requests: unknown[] = [];
+
+  const result = await runWorkflowFromDirectory({
+    maxParallelAgents: 4,
+    cwd: project,
+    workflowName: "schema-repair-llm",
+    input: {},
+    agent: () => Promise.resolve("unused"),
+    llm: (request) => {
+      requests.push(request);
+      return Promise.resolve(llmCompletion(requests.length === 1 ? '{"count":"many"}' : '{"count":2}'));
+    },
+  });
+
+  assert.equal(requests.length, 2);
+  assert.deepEqual((result.result as { output: unknown }).output, { count: 2 });
+  const repair = (requests[1] as { messages: { role: string; content: string }[] }).messages;
+  assert.match(repair[2]?.content ?? "", /does not match its schema/);
+});
+
+void test("LLM can disable structured-output retries", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   await writeWorkflow(
     project,
@@ -281,6 +344,7 @@ export default async function workflow() {
       required: ["count"],
       additionalProperties: false,
     },
+    retries: 0,
   });
 }`,
   );

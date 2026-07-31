@@ -21,6 +21,7 @@ interface WorkflowLLMOptions {
   system?: string;
   messages?: WorkflowLLMMessage[];
   schema?: unknown;
+  retries?: number;
   model?: string;
   reasoning?: ReasoningLevel;
 }
@@ -33,16 +34,21 @@ export const llmPrimitive: WorkflowPrimitive<{
     {
       name: "LLM",
       signature: "LLM(prompt, options?)",
-      summary: "Makes one generation-only call with optional model, reasoning, system instructions, prior messages, and schema.",
+      summary:
+        "Makes a generation-only call with optional model, reasoning, system instructions, prior messages, schema, and structured-output retries.",
     },
   ],
   globals: ({ runtime }) => ({
     LLM: async (prompt: unknown, inputOptions: unknown = {}) => {
       if (typeof prompt !== "string") throw new TypeError("LLM prompt must be a string");
       if (!isRecord(inputOptions)) throw new TypeError("LLM options must be an object");
-      const { system, messages: priorMessages, schema, model, reasoning } = inputOptions;
+      const { system, messages: priorMessages, schema, retries: inputRetries, model, reasoning } = inputOptions;
       if (system !== undefined && typeof system !== "string") throw new TypeError("LLM system must be a string");
       if (priorMessages !== undefined && !Array.isArray(priorMessages)) throw new TypeError("LLM messages must be an array");
+      if (inputRetries !== undefined && (typeof inputRetries !== "number" || !Number.isInteger(inputRetries) || inputRetries < 0)) {
+        throw new TypeError("LLM retries must be a non-negative integer");
+      }
+      const retries = inputRetries ?? 3;
       if (model !== undefined && (typeof model !== "string" || !model.trim())) throw new TypeError("LLM model must be a non-empty string");
       const modelSpec = typeof model === "string" ? model.trim() : undefined;
       const reasoningLevel = reasoningLevels.find((level) => level === reasoning);
@@ -128,50 +134,93 @@ export const llmPrimitive: WorkflowPrimitive<{
       });
       runtime.emit();
       try {
-        if (runtime.options.outputsDir) {
-          llm.promptPath = await writeWorkflowLLMPrompt(runtime.options.outputsDir, llm.id, request);
-          runtime.emit();
-        }
-        const completion = await runtime.options.llm(request);
-        llm.inputTokenCount = completion.usage.input;
-        llm.cacheReadTokenCount = completion.usage.cacheRead;
-        llm.outputTokenCount = completion.usage.output;
-        llm.cost = completion.cost;
-        if (completion.model !== undefined) llm.model = completion.model;
-        llm.provider = completion.provider;
-        llm.stopReason = completion.stopReason;
-        if (runtime.options.outputsDir) {
-          llm.outputPath = await writeWorkflowLLMOutput(runtime.options.outputsDir, llm.id, completion);
-        }
-        const output: unknown = objectSchema === undefined ? null : (JSON.parse(completion.text) as unknown);
-        if (objectSchema !== undefined && !Check(objectSchema, output)) throw new Error("LLM structured output does not match its schema");
-        const result = {
-          text: completion.text,
-          output,
-          usage: completion.usage,
-          model: completion.model ?? null,
-          provider: completion.provider ?? null,
-          stopReason: completion.stopReason ?? null,
-        };
-        llm.status = "done";
-        llm.endedAt = Date.now();
-        appendRunMessage(runtime, {
-          phaseIndex: llm.phaseIndex,
-          ...(llm.phase ? { phase: llm.phase } : {}),
-          level: "info",
-          message: `LLM #${String(llm.id)} done`,
-        });
-        if (runtime.options.checkpoints) {
-          await runtime.options.checkpoints.put({
-            kind: "llm",
-            executionId,
-            requestHash,
-            result,
-            snapshot: { ...llm },
+        let attemptRequest = request;
+        let usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+        for (let attempt = 0; ; attempt += 1) {
+          if (runtime.options.outputsDir) {
+            llm.promptPath = await writeWorkflowLLMPrompt(runtime.options.outputsDir, llm.id, attempt + 1, attemptRequest);
+            runtime.emit();
+          }
+          const completion = await runtime.options.llm(attemptRequest);
+          usage = {
+            input: usage.input + completion.usage.input,
+            output: usage.output + completion.usage.output,
+            cacheRead: usage.cacheRead + completion.usage.cacheRead,
+            cacheWrite: usage.cacheWrite + completion.usage.cacheWrite,
+            total: usage.total + completion.usage.total,
+          };
+          llm.inputTokenCount = usage.input;
+          llm.cacheReadTokenCount = usage.cacheRead;
+          llm.outputTokenCount = usage.output;
+          llm.cost =
+            attempt === 0
+              ? completion.cost
+              : {
+                  knownUsd: llm.cost.knownUsd + completion.cost.knownUsd,
+                  complete: llm.cost.complete && completion.cost.complete,
+                };
+          if (completion.model !== undefined) llm.model = completion.model;
+          llm.provider = completion.provider;
+          llm.stopReason = completion.stopReason;
+          if (runtime.options.outputsDir) {
+            llm.outputPath = await writeWorkflowLLMOutput(runtime.options.outputsDir, llm.id, attempt + 1, completion);
+          }
+          let output: unknown;
+          try {
+            output = objectSchema === undefined ? null : (JSON.parse(completion.text) as unknown);
+            if (objectSchema !== undefined && !Check(objectSchema, output))
+              throw new Error("LLM structured output does not match its schema");
+          } catch (error) {
+            if (attempt === retries) throw error;
+            const failure = errorMessage(error);
+            appendRunMessage(runtime, {
+              phaseIndex: llm.phaseIndex,
+              ...(llm.phase ? { phase: llm.phase } : {}),
+              level: "warning",
+              message: `LLM #${String(llm.id)} structured-output retry ${String(attempt + 1)} of ${String(retries)}: ${failure}`,
+            });
+            attemptRequest = {
+              ...request,
+              messages: [
+                ...attemptRequest.messages,
+                { role: "assistant", content: completion.text },
+                {
+                  role: "user",
+                  content: `Your previous response was not valid structured output: ${failure}\nReturn a corrected JSON value that matches the schema. Do not use Markdown fences.`,
+                },
+              ],
+            };
+            runtime.emit();
+            continue;
+          }
+          const result = {
+            text: completion.text,
+            output,
+            usage,
+            model: completion.model ?? null,
+            provider: completion.provider ?? null,
+            stopReason: completion.stopReason ?? null,
+          };
+          llm.status = "done";
+          llm.endedAt = Date.now();
+          appendRunMessage(runtime, {
+            phaseIndex: llm.phaseIndex,
+            ...(llm.phase ? { phase: llm.phase } : {}),
+            level: "info",
+            message: `LLM #${String(llm.id)} done`,
           });
+          if (runtime.options.checkpoints) {
+            await runtime.options.checkpoints.put({
+              kind: "llm",
+              executionId,
+              requestHash,
+              result,
+              snapshot: { ...llm },
+            });
+          }
+          runtime.emit();
+          return result;
         }
-        runtime.emit();
-        return result;
       } catch (error) {
         llm.status = "error";
         llm.endedAt = Date.now();

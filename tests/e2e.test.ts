@@ -40,6 +40,7 @@ export default async function workflow() {
               session: {
                 model: undefined,
                 messages: [],
+                agent: { afterToolCall: undefined },
                 subscribe: () => () => undefined,
                 prompt: async () => {
                   promptRan = true;

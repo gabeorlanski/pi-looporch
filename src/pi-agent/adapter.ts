@@ -147,6 +147,15 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
           ? resolvedCapabilities.toolNames
           : [...new Set([...resolvedCapabilities.toolNames, structuredOutput.tool.name])],
     });
+    if (structuredOutput !== undefined) {
+      const afterToolCall = session.agent.afterToolCall;
+      session.agent.afterToolCall = async (context, signal) => {
+        const result = await afterToolCall?.(context, signal);
+        if (!context.assistantMessage.content.some((content) => content.type === "toolCall" && content.name === "StructuredOutput"))
+          return result;
+        return { ...result, terminate: true };
+      };
+    }
 
     const sessionModel = session.model
       ? session.model.name.trim()

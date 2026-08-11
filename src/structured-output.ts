@@ -23,13 +23,13 @@ export function createStructuredOutput(schema: unknown): StructuredOutput {
       label: "Structured Output",
       description: "Submit the final structured result and end this agent session.",
       parameters,
-      execute: (_toolCallId, params, _signal, _onUpdate, ctx) => {
+      execute: (_toolCallId, params) => {
         if (!Check(parameters, params)) return Promise.reject(new Error("StructuredOutput arguments do not match its schema"));
         value = params;
-        ctx.abort();
         return Promise.resolve({
           content: [{ type: "text", text: "Structured output accepted." }],
           details: {},
+          terminate: true,
         });
       },
     },

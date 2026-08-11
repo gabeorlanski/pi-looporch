@@ -53,8 +53,13 @@ void test("schema agents validate and return terminal output", async () => {
               /arguments do not match its schema/,
             );
             assert.equal(aborted, false);
-            await terminalTool.execute("output-1", { message: "Completed", status: "pass" }, undefined, undefined, {
+            const output = await terminalTool.execute("output-1", { message: "Completed", status: "pass" }, undefined, undefined, {
               abort: () => (aborted = true),
+            });
+            assert.deepEqual(output, {
+              content: [{ type: "text", text: "Structured output accepted." }],
+              details: {},
+              terminate: true,
             });
           },
           getSessionStats: () => ({
@@ -94,7 +99,7 @@ void test("schema agents validate and return terminal output", async () => {
   assert.ok(terminalTool);
   assert.match(JSON.stringify(terminalTool.parameters), /"message"/);
   assert.match(JSON.stringify(terminalTool.parameters), /"status"/);
-  assert.equal(aborted, true);
+  assert.equal(aborted, false);
   assert.deepEqual(result, {
     message: "Completed",
     name: "analysis",

@@ -3,8 +3,8 @@
 
 Pi-workflow supplied this result contract and schema.
 
-- When the task is complete, call `StructuredOutput` exactly once.
-- Its validated keyword arguments are the result and the call ends the session.
+- When the task is complete, call `StructuredOutput` exactly once, as the only tool call in the final turn.
+- Its validated keyword arguments are the result and the call ends the session normally.
 - Do not provide a final assistant response.
 
 <structured_output_schema>

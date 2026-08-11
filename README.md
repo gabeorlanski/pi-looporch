@@ -126,8 +126,9 @@ exact.
 Pass an object JSON Schema as `agent(..., { schema })` when a child must return
 structured fields. The runtime prepends the schema and exposes a terminal
 `StructuredOutput` tool whose keyword arguments are validated by Pi. Calling it
-ends the child; results always include `message`, `name`, `steps`, and standard
-token `usage` metadata. If the child attempts to finish without calling it, the
+exactly once as the only tool call in the final turn ends the child normally;
+results always include `message`, `name`, `steps`, and standard token `usage`
+metadata. If the child attempts to finish without calling it, the
 runtime explicitly reminds it to call `StructuredOutput` up to twice before it
 fails.
 

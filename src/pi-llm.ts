@@ -1,5 +1,5 @@
 /** Provides Pi direct model-call integration for workflow LLM completions. */
-import { clampThinkingLevel, completeSimple, type Api, type Message, type Model } from "@earendil-works/pi-ai/compat";
+import { clampThinkingLevel, completeSimple, type Api, type Message, type Model, type ProviderHeaders } from "@earendil-works/pi-ai/compat";
 import type { WorkflowLLM, WorkflowLLMRequest } from "./runtime/types.ts";
 import { resolveWorkflowModel } from "./model-selection.ts";
 
@@ -9,7 +9,7 @@ export function createPiWorkflowLLM(options: {
   getModels?: () => readonly Model<Api>[];
   getRequestAuth: (model: Model<Api>) => Promise<{
     apiKey?: string;
-    headers?: Record<string, string>;
+    headers?: ProviderHeaders;
     env?: Record<string, string>;
   }>;
   complete?: typeof completeSimple;

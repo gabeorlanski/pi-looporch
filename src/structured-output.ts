@@ -29,7 +29,6 @@ export function createStructuredOutput(schema: unknown): StructuredOutput {
         return Promise.resolve({
           content: [{ type: "text", text: "Structured output accepted." }],
           details: {},
-          terminate: true,
         });
       },
     },

@@ -125,10 +125,9 @@ exact.
 
 Pass an object JSON Schema as `agent(..., { schema })` when a child must return
 structured fields. The runtime prepends the schema and exposes a terminal
-`StructuredOutput` tool whose keyword arguments are validated by Pi. Calling it
-exactly once as the only tool call in the final turn ends the child normally;
-results always include `message`, `name`, `steps`, and standard token `usage`
-metadata. If the child attempts to finish without calling it, the
+`StructuredOutput` tool whose keyword arguments are validated by Pi. A validated
+call ends the child after its current tool batch; results always include
+`message`, `name`, `steps`, and standard token `usage` metadata. If the child attempts to finish without calling it, the
 runtime explicitly reminds it to call `StructuredOutput` up to twice before it
 fails.
 
@@ -204,7 +203,7 @@ none. Per-agent lists override these defaults.
 
 ## Development
 
-Development and compatibility checks target Pi SDK and TUI 0.80.8. The test suite includes a deterministic dummy-workflow E2E covering the extension command, Pi child-agent initialization, schema output, and completion handoff.
+Development and compatibility checks target Pi SDK and TUI 0.84.1. The test suite includes a deterministic dummy-workflow E2E covering the extension command, Pi child-agent initialization, schema output, and completion handoff.
 
 ```bash
 npm run lint

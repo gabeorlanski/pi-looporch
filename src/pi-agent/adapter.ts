@@ -147,6 +147,13 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
           ? resolvedCapabilities.toolNames
           : [...new Set([...resolvedCapabilities.toolNames, structuredOutput.tool.name])],
     });
+    if (structuredOutput !== undefined) {
+      const shouldStopAfterTurn = session.agent.shouldStopAfterTurn;
+      session.agent.shouldStopAfterTurn = async (context, signal) => {
+        const existingStop = await shouldStopAfterTurn?.(context, signal);
+        return existingStop === true ? true : structuredOutput.result() !== undefined;
+      };
+    }
 
     const sessionModel = session.model
       ? session.model.name.trim()
@@ -347,7 +354,7 @@ export function workflowAgentFailureMessage(messages: unknown[], label?: string)
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index] as AssistantMessageLike | undefined;
     if (message?.role !== "assistant") continue;
-    if (message.stopReason !== "error") return undefined;
+    if (message.stopReason !== "error" && message.stopReason !== "aborted") return undefined;
     const prefix = label ? `Workflow child agent ${JSON.stringify(label)} failed` : "Workflow child agent failed";
     const errorMessage = message.errorMessage?.trim() ?? "provider returned an error response without details";
     return `${prefix}: ${errorMessage}`;

@@ -64,7 +64,6 @@ void test("workflow prompt templates distinguish generated instructions data and
   assert.doesNotMatch(structured, /<operating_contract>|<goal_and_authority>|<evidence>|<validation>/);
   assert.match(structuredContract, /^## Structured result$/m);
   assert.match(structuredContract, /<structured_output_contract>/);
-  assert.match(structuredContract, /StructuredOutput` exactly once, as the only tool call in the final turn/);
   assert.doesNotMatch(structuredContract, /<completion>/);
 });
 

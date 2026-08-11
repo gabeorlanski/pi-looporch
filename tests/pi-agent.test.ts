@@ -3,6 +3,8 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { createAgentSession } from "@earendil-works/pi-coding-agent";
 import { createPiWorkflowAgent } from "../src/pi-agent/adapter.ts";
 import type { WorkflowAgentProgress, WorkflowAgentReporter } from "../src/runtime/types.ts";
 import { createWorkflowAgentProgressTracker, workflowAgentFailureMessage } from "../src/pi-agent/adapter.ts";
@@ -25,7 +27,6 @@ void test("schema agents validate and return terminal output", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
   let terminalTool: TerminalTool | undefined;
   let sessionTools: string[] | undefined;
-  let aborted = false;
   const agent = createPiWorkflowAgent({
     cwd: project,
     tools: [],
@@ -37,29 +38,20 @@ void test("schema agents validate and return terminal output", async () => {
         session: {
           model: undefined,
           messages: [],
+          agent: { afterToolCall: undefined },
           subscribe: () => () => undefined,
           prompt: async () => {
             if (!terminalTool) throw new Error("Expected StructuredOutput");
             await assert.rejects(
-              terminalTool.execute("output-invalid", { status: 42 }, undefined, undefined, {
-                abort: () => (aborted = true),
-              }),
+              terminalTool.execute("output-invalid", { status: 42 }, undefined, undefined, { abort: () => undefined }),
               /arguments do not match its schema/,
             );
             await assert.rejects(
-              terminalTool.execute("output-runtime", { name: "forged", status: "pass" }, undefined, undefined, {
-                abort: () => (aborted = true),
-              }),
+              terminalTool.execute("output-runtime", { name: "forged", status: "pass" }, undefined, undefined, { abort: () => undefined }),
               /arguments do not match its schema/,
             );
-            assert.equal(aborted, false);
-            const output = await terminalTool.execute("output-1", { message: "Completed", status: "pass" }, undefined, undefined, {
-              abort: () => (aborted = true),
-            });
-            assert.deepEqual(output, {
-              content: [{ type: "text", text: "Structured output accepted." }],
-              details: {},
-              terminate: true,
+            await terminalTool.execute("output-1", { message: "Completed", status: "pass" }, undefined, undefined, {
+              abort: () => undefined,
             });
           },
           getSessionStats: () => ({
@@ -99,7 +91,6 @@ void test("schema agents validate and return terminal output", async () => {
   assert.ok(terminalTool);
   assert.match(JSON.stringify(terminalTool.parameters), /"message"/);
   assert.match(JSON.stringify(terminalTool.parameters), /"status"/);
-  assert.equal(aborted, false);
   assert.deepEqual(result, {
     message: "Completed",
     name: "analysis",
@@ -107,6 +98,226 @@ void test("schema agents validate and return terminal output", async () => {
     usage: { input: 10, output: 2, cacheRead: 4, cacheWrite: 1, total: 17 },
     status: "pass",
   });
+});
+
+void test("schema agents end after structured output with immediate-error siblings", async () => {
+  const scenarios: {
+    name: string;
+    tools: string[];
+    sibling: { type: "toolCall"; id: string; name: string; arguments: Record<string, string> };
+    blocked?: boolean;
+    existingStop?: boolean;
+  }[] = [
+    {
+      name: "missing tool",
+      tools: [],
+      sibling: { type: "toolCall", id: "missing-1", name: "missing", arguments: {} },
+      existingStop: true,
+    },
+    { name: "malformed tool", tools: ["read"], sibling: { type: "toolCall", id: "read-1", name: "read", arguments: {} } },
+    {
+      name: "blocked tool",
+      tools: ["read"],
+      sibling: { type: "toolCall", id: "read-1", name: "read", arguments: { path: "source.txt" } },
+      blocked: true,
+    },
+  ];
+  for (const scenario of scenarios) {
+    const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
+    let providerRequests = 0;
+    let existingStops = 0;
+    const stopReasons: string[] = [];
+    const agent = createPiWorkflowAgent({
+      cwd: project,
+      tools: [],
+      createSession: async (options) => {
+        const created = await createAgentSession(options);
+        if (scenario.blocked) {
+          created.session.agent.beforeToolCall = ({ toolCall }) =>
+            Promise.resolve(toolCall.name === "read" ? { block: true, reason: "blocked for test" } : undefined);
+        }
+        if (scenario.existingStop) {
+          created.session.agent.shouldStopAfterTurn = () => {
+            existingStops++;
+            return Promise.resolve(true);
+          };
+        }
+        created.session.agent.streamFunction = (model) => {
+          providerRequests++;
+          const stream = createAssistantMessageEventStream();
+          if (providerRequests === 1) {
+            stream.push({
+              type: "done",
+              reason: "toolUse",
+              message: {
+                role: "assistant",
+                content: [scenario.sibling, { type: "toolCall", id: "output-1", name: "StructuredOutput", arguments: { status: "pass" } }],
+                api: model.api,
+                provider: model.provider,
+                model: model.id,
+                stopReason: "toolUse",
+                usage: {
+                  input: 0,
+                  output: 0,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  totalTokens: 0,
+                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                },
+                timestamp: Date.now(),
+              },
+            });
+          } else {
+            stream.push({
+              type: "done",
+              reason: "stop",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "unexpected second response" }],
+                api: model.api,
+                provider: model.provider,
+                model: model.id,
+                stopReason: "stop",
+                usage: {
+                  input: 0,
+                  output: 0,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  totalTokens: 0,
+                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                },
+                timestamp: Date.now(),
+              },
+            });
+          }
+          return stream;
+        };
+        created.session.subscribe((event) => {
+          if (event.type === "message_end" && event.message.role === "assistant") stopReasons.push(event.message.stopReason);
+        });
+        return created;
+      },
+    });
+
+    const result = await agent(
+      "Read the available source and report the result.",
+      {
+        schema: { type: "object", properties: { status: { type: "string" } }, required: ["status"] },
+        extensions: [],
+        tools: scenario.tools,
+      },
+      { launched: () => undefined, progress: () => undefined },
+    );
+
+    if (!result || typeof result !== "object" || !("status" in result)) throw new Error(`Expected structured result for ${scenario.name}`);
+    assert.equal(providerRequests, 1, scenario.name);
+    assert.equal(result.status, "pass");
+    assert.equal(existingStops, scenario.existingStop ? 1 : 0, scenario.name);
+    assert.deepEqual(stopReasons, ["toolUse"], scenario.name);
+  }
+});
+
+void test("schema agents allow invalid structured output to repair", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
+  let providerRequests = 0;
+  const agent = createPiWorkflowAgent({
+    cwd: project,
+    tools: [],
+    createSession: async (options) => {
+      const created = await createAgentSession(options);
+      created.session.agent.streamFunction = (model) => {
+        providerRequests++;
+        const stream = createAssistantMessageEventStream();
+        stream.push({
+          type: "done",
+          reason: "toolUse",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                id: `output-${String(providerRequests)}`,
+                name: "StructuredOutput",
+                arguments: providerRequests === 1 ? { status: "pass", name: "forged" } : { status: "pass" },
+              },
+            ],
+            api: model.api,
+            provider: model.provider,
+            model: model.id,
+            stopReason: "toolUse",
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            timestamp: Date.now(),
+          },
+        });
+        return stream;
+      };
+      return created;
+    },
+  });
+
+  const result = await agent(
+    "Read the available source and report the result.",
+    { schema: { type: "object", properties: { status: { type: "string" } }, required: ["status"] }, extensions: [], tools: [] },
+    { launched: () => undefined, progress: () => undefined },
+  );
+
+  if (!result || typeof result !== "object" || !("status" in result)) throw new Error("Expected structured result");
+  assert.equal(result.status, "pass");
+  assert.equal(providerRequests, 2);
+});
+
+void test("schema agents fail provider aborts", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
+  const agent = createPiWorkflowAgent({
+    cwd: project,
+    tools: [],
+    createSession: async (options) => {
+      const created = await createAgentSession(options);
+      created.session.agent.streamFunction = (model) => {
+        const stream = createAssistantMessageEventStream();
+        stream.push({
+          type: "error",
+          reason: "aborted",
+          error: {
+            role: "assistant",
+            content: [],
+            api: model.api,
+            provider: model.provider,
+            model: model.id,
+            stopReason: "aborted",
+            errorMessage: "This operation was aborted",
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            timestamp: Date.now(),
+          },
+        });
+        return stream;
+      };
+      return created;
+    },
+  });
+
+  await assert.rejects(
+    agent(
+      "Read the available source and report the result.",
+      { schema: { type: "object", properties: { status: { type: "string" } }, required: ["status"] }, extensions: [], tools: [] },
+      { launched: () => undefined, progress: () => undefined },
+    ),
+    /This operation was aborted/,
+  );
 });
 
 async function createExitAttemptAgent(onSteer: (tool: TerminalTool | undefined, end: () => void) => Promise<void> | void) {
@@ -124,6 +335,7 @@ async function createExitAttemptAgent(onSteer: (tool: TerminalTool | undefined, 
         session: {
           model: undefined,
           messages: [],
+          agent: { afterToolCall: undefined },
           subscribe: (callback: typeof listener) => {
             listener = callback;
             return () => undefined;
@@ -205,6 +417,7 @@ void test("schema agents preserve unrestricted tools", async () => {
         session: {
           model: undefined,
           messages: [],
+          agent: { afterToolCall: undefined },
           subscribe: () => () => undefined,
           prompt: () => Promise.resolve(),
           getSessionStats: () => ({ tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, total: 2 } }),

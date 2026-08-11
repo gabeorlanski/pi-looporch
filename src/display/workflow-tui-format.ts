@@ -20,18 +20,6 @@ export interface WorkflowTuiTheme {
   selected(text: string): string;
 }
 
-export const plainWorkflowTuiTheme: WorkflowTuiTheme = {
-  accent: (text) => text,
-  dim: (text) => text,
-  ok: (text) => text,
-  warn: (text) => text,
-  danger: (text) => text,
-  pending: (text) => text,
-  border: (text) => text,
-  bold: (text) => text,
-  selected: (text) => text,
-};
-
 /** Provides the workflowTuiTheme function contract. */
 export function workflowTuiTheme(theme: PiThemeLike): WorkflowTuiTheme {
   return {
@@ -64,11 +52,20 @@ export function spinnerFrame(tick: number): string {
   return glyph.spinner[tick % glyph.spinner.length] ?? glyph.spinner[0];
 }
 
+/** Provides the formatTokenCount function contract. */
+export function formatTokenCount(tokenCount: number): string {
+  return compactTokenCount(tokenCount, "M");
+}
+
 /** Provides the fmtTokens function contract. */
 export function fmtTokens(tokenCount: number): string {
+  return compactTokenCount(tokenCount, "m");
+}
+
+function compactTokenCount(tokenCount: number, millionSuffix: "M" | "m"): string {
   if (tokenCount < 1000) return String(tokenCount);
   if (tokenCount < 1_000_000) return `${stripZero(tokenCount / 1000)}k`;
-  return `${stripZero(tokenCount / 1_000_000)}m`;
+  return `${stripZero(tokenCount / 1_000_000)}${millionSuffix}`;
 }
 
 /** Provides the fmtCostUsd function contract. */

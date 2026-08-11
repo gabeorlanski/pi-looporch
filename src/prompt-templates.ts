@@ -59,8 +59,7 @@ export function agentTaskPrompt(prompt: string, options: WorkflowAgentOptions): 
   return task.replace("{{structuredOutput}}", options.schema === undefined ? "" : structuredOutputPrompt(options.schema));
 }
 
-/** Renders the terminal structured-output contract for a schema-enabled workflow task. */
-export function structuredOutputPrompt(schema: unknown): string {
+function structuredOutputPrompt(schema: unknown): string {
   return renderPromptTemplate(structuredOutputTemplate, { schema: JSON.stringify(schema) });
 }
 

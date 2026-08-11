@@ -4,7 +4,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { formatTokenCount } from "./display/progress.ts";
+import { formatTokenCount } from "./display/workflow-tui-format.ts";
 import { parseSessionTokens } from "./session/usage.ts";
 import { workflowAgentSessionLogParentDirectory } from "./session/logs.ts";
 

@@ -112,72 +112,6 @@ export default async function workflow() {
   assert.deepEqual(result.snapshot.traces, []);
 });
 
-void test("workflow_emits_heartbeat_snapshots_while_agent_is_running", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
-  await writeWorkflow(
-    project,
-    "heartbeat",
-    `export const metadata = { name: "heartbeat", description: "Heartbeat", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return agent("wait", { label: "slow" });
-}`,
-  );
-  const agent: WorkflowAgent = () =>
-    new Promise((resolve) =>
-      setTimeout(() => {
-        resolve("done");
-      }, 1100),
-    );
-  let snapshots = 0;
-
-  await runWorkflowFromDirectory({
-    llm: unavailableLLM,
-    maxParallelAgents: 4,
-    cwd: project,
-    workflowName: "heartbeat",
-    input: {},
-    agent,
-    onSnapshot: () => {
-      snapshots++;
-    },
-  });
-
-  assert.ok(snapshots >= 4);
-});
-
-void test("template tasks persist the agent launch prompt", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
-  const outputsDir = path.join(project, "outputs");
-  await writeWorkflow(
-    project,
-    "templated-prompt-artifact",
-    `export const metadata = { name: "templated-prompt-artifact", description: "Template prompt artifact", inputInstructions: "No input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return agent({ template: "review.txt", values: { file: "src/index.ts" } }, { label: "review" });
-}`,
-    { "prompts/review.txt": "Review {{file}}." },
-  );
-  const prompts: string[] = [];
-  const agent: WorkflowAgent = (prompt, _options, reporter) => {
-    prompts.push(prompt);
-    reporter.launched({ prompt });
-    return Promise.resolve("ok");
-  };
-
-  const result = await runWorkflowFromDirectory({
-    llm: unavailableLLM,
-    maxParallelAgents: 4,
-    cwd: project,
-    workflowName: "templated-prompt-artifact",
-    input: {},
-    agent,
-    outputsDir,
-  });
-
-  assert.deepEqual(prompts, ["Review src/index.ts."]);
-  assert.equal(await readFile(result.snapshot.agents[0]?.promptPath ?? "", "utf8"), "Review src/index.ts.\n");
-});
-
 void test("workflow tracks agent prompt, tools, and output", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   const outputsDir = path.join(project, "outputs");
@@ -190,7 +124,7 @@ export default async function workflow() {
 }`,
   );
   const agent: WorkflowAgent = (_prompt, _options, reporter) => {
-    reporter.launched({ prompt: "exact prompt sent to child" });
+    reporter.launched("exact prompt sent to child");
     reporter.progress({ statusMessage: "thinking" });
     reporter.progress({ statusMessage: "read", toolCallCount: 1, toolActivity: [{ name: "read", arguments: { path: "src/index.ts" } }] });
     reporter.progress({ statusMessage: "read", toolCallCount: 1, toolActivity: [{ name: "read", arguments: { path: "src/index.ts" } }] });

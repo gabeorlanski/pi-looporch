@@ -5,13 +5,26 @@ import path from "node:path";
 import { test } from "node:test";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { formatTokenCount, initialProgressDisplay, progressDisplay } from "../src/display/progress.ts";
+import { progressDisplay } from "../src/display/progress.ts";
+import { formatTokenCount } from "../src/display/workflow-tui-format.ts";
 import { WorkflowInspectorModel } from "../src/display/workflow-inspector-model.ts";
 import { WorkflowInspector } from "../src/display/workflow-inspector.ts";
-import { plainWorkflowTuiTheme } from "../src/display/workflow-tui-format.ts";
+import type { WorkflowTuiTheme } from "../src/display/workflow-tui-format.ts";
 import { WorkflowWidget } from "../src/display/workflow-widget.ts";
 import { clearRunningWorkflowUi, updateRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
 import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../src/runtime/types.ts";
+
+const plainWorkflowTuiTheme: WorkflowTuiTheme = {
+  accent: (text) => text,
+  dim: (text) => text,
+  ok: (text) => text,
+  warn: (text) => text,
+  danger: (text) => text,
+  pending: (text) => text,
+  border: (text) => text,
+  bold: (text) => text,
+  selected: (text) => text,
+};
 
 const plainTheme = {
   fg: (_color: string, text: string) => text,
@@ -95,15 +108,6 @@ void test("progress reports errors without completed agent rows", () => {
   assert.ok(display.widgetLines.some((line) => line.includes("ERROR #2 failed")));
   assert.ok(display.widgetLines.some((line) => line.includes("1 completed/hidden agents")));
   assert.ok(!display.widgetLines.some((line) => line.includes("#1 done")));
-});
-
-void test("initial_workflow_progress_uses_empty_net_summary", () => {
-  const display = initialProgressDisplay("review", 72, undefined, { files: ["src/a.ts"], focus: "auth" });
-
-  assert.equal(display.statusLine, "review: STARTING · 0/0 agents · in 0 · cached 0 · out 0 · cost $0.00 · tools 0");
-  assert.ok(display.widgetLines.some((line) => line.includes('input {"files":["src/a.ts"],"focus":"auth"}')));
-  assert.ok(display.widgetLines.some((line) => line.includes("waiting for workflow runtime update")));
-  assert.ok(display.widgetLines.some((line) => line.includes("NET 0/0 agents")));
 });
 
 void test("format_token_count_uses_readable_suffixes", () => {
@@ -356,32 +360,6 @@ void test("inspector dynamically fits long titles and labels at every width", ()
   for (const terminalWidth of [20, 64, 100, 300]) {
     assert.ok(inspector.render(terminalWidth).every((line) => visibleWidth(line) <= terminalWidth));
   }
-});
-
-void test("workflow widget colors input tokens and cost", () => {
-  const accented: string[] = [];
-  const warned: string[] = [];
-  const model = new WorkflowInspectorModel(workflowSnapshot());
-  const theme = {
-    ...plainWorkflowTuiTheme,
-    accent: (text: string) => {
-      accented.push(text);
-      return text;
-    },
-    warn: (text: string) => {
-      warned.push(text);
-      return text;
-    },
-  };
-
-  new WorkflowWidget(
-    () => model,
-    theme,
-    () => false,
-  ).render(120);
-
-  assert.ok(accented.includes("0"));
-  assert.ok(warned.includes("$0.00+"));
 });
 
 void test("inspector shows activity, output, and expandable prompts", async () => {

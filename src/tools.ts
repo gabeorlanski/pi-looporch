@@ -18,9 +18,7 @@ import { readWorkflowSettings } from "./workflow/settings.ts";
 
 /** Dependencies used to construct workflow tools for either an extension session or tests. */
 export interface WorkflowToolsOptions {
-  cwd?: string;
   run?: WorkflowRunToolOptions;
-  agentCapabilityCatalog?: AgentCapabilityCatalogProvider;
   agentCapabilityCatalogForContext?: (ctx: ExtensionContext) => AgentCapabilityCatalogProvider;
 }
 
@@ -34,16 +32,14 @@ export interface WorkflowRunToolOptions {
 /** Builds the public tool surface for running, authoring guidance, and proposing workflows. */
 export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefinition[] {
   return [
-    ...(options.run === undefined
-      ? []
-      : [createRunWorkflowTool(options.cwd, options.run), createResumeWorkflowTool(options.cwd, options.run)]),
-    createWorkflowStatusTool(options),
+    ...(options.run === undefined ? [] : [createRunWorkflowTool(options.run), createResumeWorkflowTool(options.run)]),
+    createWorkflowStatusTool(),
     createGuidanceTool(),
     createProposeWorkflowTool(options),
   ];
 }
 
-function createRunWorkflowTool(cwdOverride: string | undefined, options: WorkflowRunToolOptions): ToolDefinition {
+function createRunWorkflowTool(options: WorkflowRunToolOptions): ToolDefinition {
   return defineTool({
     name: "run_workflow",
     label: "Run Workflow",
@@ -54,7 +50,7 @@ function createRunWorkflowTool(cwdOverride: string | undefined, options: Workflo
       input: Type.Optional(Type.Any({ description: "JSON-serializable workflow input" })),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const cwd = cwdOverride ?? ctx.cwd;
+      const cwd = ctx.cwd;
       const workflowName = normalizeWorkflowName(params.name);
       const agent = options.agentForContext(ctx);
       const llm = options.llmForContext(ctx);
@@ -89,7 +85,7 @@ function createRunWorkflowTool(cwdOverride: string | undefined, options: Workflo
   });
 }
 
-function createResumeWorkflowTool(cwdOverride: string | undefined, options: WorkflowRunToolOptions): ToolDefinition {
+function createResumeWorkflowTool(options: WorkflowRunToolOptions): ToolDefinition {
   return defineTool({
     name: "resume_workflow",
     label: "Resume Workflow",
@@ -99,7 +95,7 @@ function createResumeWorkflowTool(cwdOverride: string | undefined, options: Work
       runId: Type.String({ description: "Run ID returned by run_workflow or a workflow failure handoff" }),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const cwd = cwdOverride ?? ctx.cwd;
+      const cwd = ctx.cwd;
       const visible = await resumeVisibleWorkflowRun({
         ctx,
         cwd,
@@ -149,7 +145,7 @@ function runningWorkflowToolDetails(
   };
 }
 
-function createWorkflowStatusTool(options: WorkflowToolsOptions): ToolDefinition {
+function createWorkflowStatusTool(): ToolDefinition {
   return defineTool({
     name: "workflow_status",
     label: "Workflow Status",
@@ -162,7 +158,7 @@ function createWorkflowStatusTool(options: WorkflowToolsOptions): ToolDefinition
       format: Type.Optional(Type.Union([Type.Literal("summary"), Type.Literal("json")])),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const cwd = options.cwd ?? ctx.cwd;
+      const cwd = ctx.cwd;
       const query: WorkflowStatusQuery = {
         scope: params.scope ?? "project",
         ownerSessionId: ctx.sessionManager.getSessionId(),
@@ -221,13 +217,12 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const cwd = options.cwd ?? ctx.cwd;
+      const cwd = ctx.cwd;
       const name = normalizeWorkflowName(params.name);
       const draft = await readWorkflowDraft({
         cwd,
         name,
         draftDir: params.draftDir,
-        toolName: "propose_workflow",
       });
       const settings = await readWorkflowSettings(cwd, getAgentDir());
       await validateWorkflowAgentCapabilities({
@@ -235,10 +230,7 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
         workflowName: name,
         defaultExtensions: settings.childAgentExtensions,
         defaultTools: settings.childAgentTools,
-        catalogProvider:
-          options.agentCapabilityCatalog ??
-          options.agentCapabilityCatalogForContext?.(ctx) ??
-          createAgentCapabilityCatalogProvider({ cwd }),
+        catalogProvider: options.agentCapabilityCatalogForContext?.(ctx) ?? createAgentCapabilityCatalogProvider({ cwd }),
       });
       await saveWorkflowDraft({ cwd, draft });
       return {

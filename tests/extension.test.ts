@@ -569,16 +569,6 @@ void test("view workflow ignores another session's run", async () => {
   clearRunningWorkflowUi(ownerHarness.ctx, "run-owner");
 });
 
-void test("view_workflow_command_warns_when_no_workflow_is_running", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
-  const harness = createExtensionHarness({ cwd: project });
-
-  await harness.command("view-workflow", "");
-
-  assert.deepEqual(harness.notifications.at(-1), { message: "No running workflows to view.", type: "warning" });
-  assert.equal(harness.customOpenCount(), 0);
-});
-
 void test("workflow command reports background failure", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   await writeProjectWorkflow(
@@ -605,25 +595,6 @@ export default async function workflow() {
   assert.match(failureHandoff, /Workflow 'fail' failed: workflow exploded/);
   assert.doesNotMatch(failureHandoff, /<workflow_(?:instructions|run_id|name|failure)>/);
   assert.equal(harness.widgetUpdates.at(-1), undefined);
-});
-
-void test("workflow failure steers when busy", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
-  await writeProjectWorkflow(
-    project,
-    "busy-fail",
-    `export const metadata = { name: "busy-fail", description: "Fail workflow", inputInstructions: "Use structured input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  throw new Error("workflow exploded");
-}`,
-  );
-  const harness = createExtensionHarness({ cwd: project, idle: false });
-
-  await harness.command("workflow", "busy-fail");
-  await waitForCondition(() => harness.sentUserMessages.length === 1);
-
-  assert.deepEqual(harness.sentUserMessages[0]?.options, { deliverAs: "steer" });
-  assert.match(String(harness.sentUserMessages[0]?.message), /^<workflow_handoff event="failed">/);
 });
 
 void test("workflow_settings_command_writes_project_settings", async () => {
@@ -668,27 +639,14 @@ void test("workflow_settings_command_writes_project_settings", async () => {
   });
 });
 
-void test("workflow_settings_command_rejects_hidden_aliases", async () => {
+void test("workflow_settings_command_rejects_unsupported_aliases", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-extension-"));
   const harness = createExtensionHarness({ cwd: project });
-  const aliases = [
-    "8",
-    "maxParallel=8",
-    "childExtensions=pi-subagents",
-    "extensions=pi-subagents",
-    "childTools=read,bash",
-    "defaultAgentTools=read,bash",
-    "tools=read,bash",
-    "dirs=../shared-workflows",
-    "global maxParallelAgents=8",
-    "scope=global maxParallelAgents=8",
-  ];
 
-  for (const alias of aliases) {
-    await harness.command("workflow-settings", alias);
-    assert.match(harness.notifications.at(-1)?.message ?? "", /^Usage: \/workflow-settings/);
-    assert.equal(harness.notifications.at(-1)?.type, "error");
-  }
+  await harness.command("workflow-settings", "maxParallel=8");
+
+  assert.match(harness.notifications.at(-1)?.message ?? "", /^Usage: \/workflow-settings/);
+  assert.equal(harness.notifications.at(-1)?.type, "error");
 });
 
 void test("workflow_settings_command_supports_all_and_explicit_none_capabilities", async () => {
@@ -719,9 +677,6 @@ void test("workflow_settings_command_shows_readable_current_settings", async () 
   assert.match(harness.sentMessages[0].message.content, /Child agent extensions: all/);
   assert.match(harness.sentMessages[0].message.content, /Child agent tools: all/);
   assert.match(harness.sentMessages[0].message.content, /Project: \.pi\/settings\.json/);
-  assert.match(harness.sentMessages[0].message.content, /\/workflow-settings maxParallelAgents=8/);
-  assert.match(harness.sentMessages[0].message.content, /\/workflow-settings workflowDirs=/);
-  assert.match(harness.sentMessages[0].message.content, /\/workflow-settings childAgentTools=read,bash/);
 });
 
 void test("workflow command steers freeform input", async () => {

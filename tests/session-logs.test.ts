@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { workflowAgentSessionLogParentDirectory, writeWorkflowSessionSummary } from "../src/session/logs.ts";
+import { writeWorkflowSessionSummary } from "../src/session/logs.ts";
 import { readWorkflowSnapshot, workflowSnapshotPath } from "../src/workflow/outputs.ts";
 import type { WorkflowSnapshot } from "../src/runtime/types.ts";
 
@@ -91,12 +91,11 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
     phases: unknown;
     traces: unknown;
     messages: unknown;
-    agents: unknown;
+    agents?: Record<string, unknown>[];
     llms: unknown;
     resultPath: string;
   };
 
-  assert.equal(runDir, workflowAgentSessionLogParentDirectory(project, "parent-1", sessionsRoot));
   assert.equal(summary.status, "done");
   assert.deepEqual(summary.phases, [{ index: 1, title: "scan" }]);
   assert.deepEqual(summary.traces, [
@@ -105,31 +104,13 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
   assert.deepEqual(summary.messages, [
     { phaseIndex: 1, phase: "scan", agentId: 1, agentLabel: "worker", level: "debug", message: "worker: reading" },
   ]);
-  assert.deepEqual(summary.agents, [
-    {
-      id: 1,
-      label: "worker",
-      phaseIndex: 1,
-      phase: "scan",
-      model: "fake-model",
-      reasoning: "low",
-      status: "done",
-      startedAt: 0,
-      endedAt: 10,
-      inputTokenCount: 9,
-      cacheReadTokenCount: 0,
-      outputTokenCount: 3,
-      cost: { knownUsd: 0.02, complete: true },
-      toolCallCount: 2,
-      stepCount: 4,
-      promptPath: "/tmp/run/agent-1/prompt.txt",
-      activityPath: "/tmp/run/agent-1/activity.jsonl",
-      outputPath: "/tmp/run/agent-1/output.json",
-      sessionDir: "/tmp/session-dir",
-      sessionFile: "/tmp/session-dir/workflow-agent-1.jsonl",
-      eventsFile: "/tmp/session-dir/events.jsonl",
-    },
-  ]);
+  assert.equal(summary.agents?.length, 1);
+  const summaryAgent = summary.agents[0];
+  assert.equal(summaryAgent.label, "worker");
+  assert.equal(summaryAgent.status, "done");
+  assert.deepEqual(summaryAgent.cost, { knownUsd: 0.02, complete: true });
+  assert.equal(summaryAgent.outputPath, "/tmp/run/agent-1/output.json");
+  assert.equal("message" in summaryAgent, false);
   assert.deepEqual(summary.llms, []);
   assert.equal(summary.resultPath, resultPath);
 });

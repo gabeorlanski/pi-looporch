@@ -3,10 +3,8 @@ import { executionScope, nextExecutionId, type ActiveWorkflowRuntime, type Pipel
 import { throwIfWorkflowAborted } from "../abort.ts";
 
 export const pipelinePrimitive: WorkflowPrimitive<{ pipeline: <T>(items: readonly T[], stages: PipelineStage<T>[]) => Promise<T[]> }> = {
-  name: "pipeline",
   docs: [
     {
-      name: "pipeline",
       signature: "pipeline(items, stages)",
       summary: "Runs each item through the same ordered async stages and returns transformed items.",
     },

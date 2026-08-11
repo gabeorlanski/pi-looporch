@@ -1,5 +1,5 @@
 /** Provides globals behavior. */
-import type { ActiveWorkflowRuntime, WorkflowPrimitive, WorkflowPrimitiveGlobalDoc } from "./context.ts";
+import type { ActiveWorkflowRuntime, WorkflowPrimitive } from "./context.ts";
 import { agentPrimitive } from "./primitives/agent.ts";
 import { environmentPrimitive, filePrimitive } from "./primitives/files.ts";
 import { logPrimitive } from "./primitives/log.ts";
@@ -25,20 +25,11 @@ const workflowPrimitives: WorkflowPrimitive[] = [
   verifierPrimitive,
 ];
 
-export interface WorkflowPrimitiveReference extends WorkflowPrimitiveGlobalDoc {
-  primitive: string;
-}
-
-/** Provides the workflowPrimitiveReference function contract. */
-export function workflowPrimitiveReference(): WorkflowPrimitiveReference[] {
-  return workflowPrimitives.flatMap((primitive) => primitive.docs.map((doc) => ({ primitive: primitive.name, ...doc })));
-}
-
 /** Provides the renderWorkflowPrimitiveReference function contract. */
 export function renderWorkflowPrimitiveReference(): string {
   return [
     "Supported workflow primitives (generated from the runtime registry):",
-    ...workflowPrimitiveReference().map((doc) => `- ${doc.signature}: ${doc.summary}`),
+    ...workflowPrimitives.flatMap((primitive) => primitive.docs.map((doc) => `- ${doc.signature}: ${doc.summary}`)),
   ].join("\n");
 }
 

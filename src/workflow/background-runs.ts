@@ -25,13 +25,11 @@ export interface BackgroundWorkflowRunResult extends WorkflowRunResult {
   sessionLogDir: string;
 }
 
-/** Handle for a running background workflow, including abort, latest snapshot, and completion promise. */
+/** Handle for a running background workflow, including abort and completion. */
 export interface BackgroundWorkflowRun {
   runId: string;
-  workflowName: string;
   outputsDir: string;
   abort: () => void;
-  snapshot: () => WorkflowSnapshot | undefined;
   finished: Promise<BackgroundWorkflowRunResult>;
 }
 
@@ -115,10 +113,8 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
     });
   return {
     runId: options.runId,
-    workflowName: options.workflowName,
     outputsDir,
     abort: abortWorkflow,
-    snapshot: () => latestSnapshot,
     finished,
   };
 }

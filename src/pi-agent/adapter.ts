@@ -7,8 +7,6 @@ import {
   ModelRuntime,
   SessionManager,
   SettingsManager,
-  type CreateAgentSessionOptions,
-  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import {
   availableBaseAgentToolNames,
@@ -34,8 +32,6 @@ import { resolveWorkflowModel } from "../model-selection.ts";
 
 export interface PiWorkflowAgentOptions {
   cwd: string;
-  tools?: ToolDefinition[];
-  session?: Partial<CreateAgentSessionOptions>;
   /** Parent-session capability metadata; avoids initializing extension factories for discovery. */
   agentCapabilityCatalog?: AgentCapabilityCatalogProvider;
   /** External Pi SDK session factory; overridden only by deterministic adapter tests. */
@@ -46,20 +42,18 @@ export interface PiWorkflowAgentOptions {
 export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): WorkflowAgent {
   const agent: WorkflowAgent = async (prompt, agentOptions, reporter) => {
     const agentDir = getAgentDir();
-    const modelRuntime =
-      options.session?.modelRuntime ??
-      (await ModelRuntime.create({ authPath: path.join(agentDir, "auth.json"), modelsPath: path.join(agentDir, "models.json") }));
+    const modelRuntime = await ModelRuntime.create({
+      authPath: path.join(agentDir, "auth.json"),
+      modelsPath: path.join(agentDir, "models.json"),
+    });
     const model = agentOptions.model ? resolveWorkflowModel(modelRuntime.getModels(), agentOptions.model) : undefined;
     const projectCwd = path.resolve(options.cwd);
     const effectiveCwd = resolveWorkflowAgentCwd(options.cwd, agentOptions.cwd) ?? projectCwd;
     const workflowSettings = await readWorkflowSettings(projectCwd, agentDir);
-    const settingsManager = options.session?.settingsManager ?? SettingsManager.create(effectiveCwd, agentDir);
+    const settingsManager = SettingsManager.create(effectiveCwd, agentDir);
     const capabilitySettingsManager = SettingsManager.create(projectCwd, agentDir);
     const structuredOutput = agentOptions.schema === undefined ? undefined : createStructuredOutput(agentOptions.schema);
-    const customTools = [
-      ...(options.session?.customTools ?? options.tools ?? []),
-      ...(structuredOutput === undefined ? [] : [structuredOutput.tool]),
-    ];
+    const customTools = structuredOutput === undefined ? [] : [structuredOutput.tool];
     const extensionSelection = parseAgentCapabilitySelection(
       agentOptions.extensions ?? workflowSettings.childAgentExtensions,
       "extensions",
@@ -88,16 +82,14 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       const knownToolNames = new Set([...baseToolNames, ...customToolNames]);
       const loadAmbientExtensions =
         capabilityExtensions === "all" || (capabilityTools !== "all" && capabilityTools.some((toolName) => !knownToolNames.has(toolName)));
-      const discoveryLoader =
-        options.session?.resourceLoader ??
-        new DefaultResourceLoader({
-          cwd: projectCwd,
-          agentDir,
-          settingsManager: capabilitySettingsManager,
-          noExtensions: !loadAmbientExtensions,
-          additionalExtensionPaths: resolvedSelectors.paths,
-        });
-      if (!options.session?.resourceLoader) await discoveryLoader.reload();
+      const discoveryLoader = new DefaultResourceLoader({
+        cwd: projectCwd,
+        agentDir,
+        settingsManager: capabilitySettingsManager,
+        noExtensions: !loadAmbientExtensions,
+        additionalExtensionPaths: resolvedSelectors.paths,
+      });
+      await discoveryLoader.reload();
       const discovered = discoveryLoader.getExtensions();
       catalog = buildAgentCapabilityCatalog({
         availableExtensions: availableAgentExtensions(discovered.extensions, resolvedSelectors.selectorsByPath),
@@ -130,17 +122,16 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
     const loggedSession = agentOptions.sessionLog
       ? await createLoggedWorkflowAgentSession(options.cwd, effectiveCwd, agentOptions.sessionLog)
       : undefined;
-    const sessionManager = options.session?.sessionManager ?? loggedSession?.sessionManager;
+    const sessionManager = loggedSession?.sessionManager;
     const { session } = await (options.createSession ?? createAgentSession)({
       cwd: effectiveCwd,
       agentDir,
       sessionManager: sessionManager ?? SessionManager.inMemory(effectiveCwd),
       settingsManager,
-      ...options.session,
       modelRuntime,
       resourceLoader,
       customTools,
-      thinkingLevel: agentOptions.reasoning ?? options.session?.thinkingLevel,
+      thinkingLevel: agentOptions.reasoning,
       ...(model ? { model } : {}),
       tools:
         structuredOutput === undefined || resolvedCapabilities.toolNames === undefined
@@ -163,7 +154,7 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
         : `${session.model.provider}/${session.model.id}`
       : undefined;
     const sessionPrompt = agentTaskPrompt(prompt, agentOptions);
-    reporter.launched({ prompt: sessionPrompt });
+    reporter.launched(sessionPrompt);
     reporter.progress({
       ...(sessionModel ? { model: sessionModel } : {}),
       ...(loggedSession
@@ -252,15 +243,10 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
   agent.cacheContext = (agentOptions) => {
     const agentDir = getAgentDir();
     const effectiveCwd = resolveWorkflowAgentCwd(options.cwd, agentOptions.cwd) ?? path.resolve(options.cwd);
-    const settingsManager = options.session?.settingsManager ?? SettingsManager.create(effectiveCwd, agentDir);
-    const sessionModel = options.session?.model;
+    const settingsManager = SettingsManager.create(effectiveCwd, agentDir);
     return {
-      model:
-        agentOptions.model ??
-        (sessionModel
-          ? { provider: sessionModel.provider, id: sessionModel.id }
-          : { provider: settingsManager.getDefaultProvider(), id: settingsManager.getDefaultModel() }),
-      reasoning: agentOptions.reasoning ?? options.session?.thinkingLevel ?? settingsManager.getDefaultThinkingLevel(),
+      model: agentOptions.model ?? { provider: settingsManager.getDefaultProvider(), id: settingsManager.getDefaultModel() },
+      reasoning: agentOptions.reasoning ?? settingsManager.getDefaultThinkingLevel(),
     };
   };
   return agent;
@@ -277,16 +263,14 @@ function renderRuntimeCapabilityDiagnostics(diagnostics: readonly AgentCapabilit
   ].join("\n");
 }
 
-/** Deterministic tracker for translating Pi child-agent session events into workflow progress snapshots. */
-export interface WorkflowAgentProgressTracker {
+interface WorkflowAgentProgressTracker {
   /** Applies one Pi session event and emits progress when it changes child-agent runtime state. */
   handleEvent(event: unknown): void;
   /** Number of completed model turns observed in this session. */
   steps(): number;
 }
 
-/** Creates a deterministic Pi session event tracker that reports workflow child-agent progress snapshots. */
-export function createWorkflowAgentProgressTracker(reporter: WorkflowAgentReporter): WorkflowAgentProgressTracker {
+function createWorkflowAgentProgressTracker(reporter: WorkflowAgentReporter): WorkflowAgentProgressTracker {
   let inputTokenCount = 0;
   let cacheReadTokenCount = 0;
   let outputTokenCount = 0;
@@ -351,8 +335,7 @@ function isEventObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && typeof (value as { type?: unknown }).type === "string";
 }
 
-/** Returns the actionable provider failure from a child session's final assistant response, when present. */
-export function workflowAgentFailureMessage(messages: unknown[], label?: string): string | undefined {
+function workflowAgentFailureMessage(messages: unknown[], label?: string): string | undefined {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index] as AssistantMessageLike | undefined;
     if (message?.role !== "assistant") continue;

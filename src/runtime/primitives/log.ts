@@ -3,8 +3,7 @@ import { appendRunMessage } from "../messages.ts";
 import type { WorkflowPrimitive } from "../context.ts";
 
 export const logPrimitive: WorkflowPrimitive<{ log: (message: string) => void }> = {
-  name: "log",
-  docs: [{ name: "log", signature: "log(message)", summary: "Adds a user-facing workflow milestone to live progress and run messages." }],
+  docs: [{ signature: "log(message)", summary: "Adds a user-facing workflow milestone to live progress and run messages." }],
   globals: ({ runtime }) => ({
     log: (message: string) => {
       appendRunMessage(runtime, {

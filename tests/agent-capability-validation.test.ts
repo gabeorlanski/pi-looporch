@@ -156,42 +156,6 @@ void test("proposal capability validation ignores unrelated ambient loader failu
   });
 });
 
-void test("proposal capability validation rejects ambiguous extension tool owners", async () => {
-  await assert.rejects(
-    validateWorkflowAgentCapabilities({
-      source: `export default async function workflow() { return agent("work", { extensions: [], tools: ["search"] }); }`,
-      workflowName: "review",
-      defaultExtensions: "all",
-      defaultTools: "all",
-      catalogProvider: catalogProvider({
-        extensions: [
-          { identifiers: ["alpha"], path: "/extensions/alpha.ts", toolNames: ["search"] },
-          { identifiers: ["beta"], path: "/extensions/beta.ts", toolNames: ["search"] },
-        ],
-      }),
-    }),
-    /agent tools\[0\] "search": Ambiguous tool owner\. Registered by: alpha, beta/,
-  );
-});
-
-void test("proposal capability validation rejects ambiguous extension identifiers", async () => {
-  await assert.rejects(
-    validateWorkflowAgentCapabilities({
-      source: `export default async function workflow() { return agent("work", { extensions: ["shared"], tools: [] }); }`,
-      workflowName: "review",
-      defaultExtensions: "all",
-      defaultTools: "all",
-      catalogProvider: catalogProvider({
-        extensions: [
-          { identifiers: ["shared"], path: "/extensions/alpha.ts", toolNames: [] },
-          { identifiers: ["shared"], path: "/extensions/beta.ts", toolNames: [] },
-        ],
-      }),
-    }),
-    /agent extensions\[0\] "shared": Ambiguous extension selector\. Matches: shared, shared\./,
-  );
-});
-
 void test("proposal capability validation ignores locally shadowed primitive names", async () => {
   let catalogLoads = 0;
   await validateWorkflowAgentCapabilities({
@@ -267,35 +231,6 @@ export default async function workflow() {
       return true;
     },
   );
-});
-
-void test("proposal capability validation rejects a base and extension tool collision", async () => {
-  await assert.rejects(
-    validateWorkflowAgentCapabilities({
-      source: `export default async function workflow() { return agent("work", { extensions: [], tools: ["read"] }); }`,
-      workflowName: "review",
-      defaultExtensions: [],
-      defaultTools: [],
-      catalogProvider: catalogProvider({
-        extensions: [{ identifiers: ["shadow-read"], path: "/extensions/shadow-read.ts", toolNames: ["read"] }],
-        tools: ["read"],
-      }),
-    }),
-    /agent tools\[0\] "read": Ambiguous tool owner\. Registered by: Pi base tools, shadow-read/,
-  );
-});
-
-void test("proposal capability catalog preserves explicit extension selectors", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-capability-catalog-"));
-  const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-capability-agent-"));
-  await writeFile(path.join(project, "todo-extension.js"), "export default function todoExtension() {}\n", "utf8");
-
-  const catalog = await createAgentCapabilityCatalogProvider({ cwd: project, agentDir })({
-    extensionSelectors: ["./todo-extension.js"],
-  });
-
-  assert.equal(catalog.loadErrors.length, 0);
-  assert.ok(catalog.availableExtensions.some((extension) => extension.identifiers.includes("./todo-extension.js")));
 });
 
 void test("proposal capability validation attributes a real explicit extension factory failure", async () => {

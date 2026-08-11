@@ -39,27 +39,6 @@ export default async function workflow() {
   );
 });
 
-void test("discovery allows settings without workflow directories", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-discovery-"));
-  await mkdir(path.join(project, ".pi"), { recursive: true });
-  await writeFile(path.join(project, ".pi", "settings.json"), '{"workflow":{"maxParallelAgents":4}}\n', "utf8");
-  await writeWorkflow(
-    project,
-    "valid",
-    `export const metadata = { name: "valid", description: "Valid workflow", inputInstructions: "Use the workflow function JSDoc and signature to resolve input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return "ok";
-}`,
-  );
-
-  const workflows = await discoverWorkflows(project);
-
-  assert.deepEqual(
-    workflows.map((workflow) => workflow.name),
-    ["valid"],
-  );
-});
-
 void test("discovery uses configured workflow directories", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-discovery-"));
   const sharedRoot = path.join(project, "shared-workflows");

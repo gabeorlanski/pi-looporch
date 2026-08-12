@@ -11,10 +11,8 @@ export const parallelPrimitive: WorkflowPrimitive<{
     fanOutOptions?: { label?: string },
   ) => Promise<R[]>;
 }> = {
-  name: "parallel",
   docs: [
     {
-      name: "parallel",
       signature: "parallel(items, worker, options?)",
       summary: "Runs independent item workers through the bounded workflow fan-out queue and returns ordered results.",
     },

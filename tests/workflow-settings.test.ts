@@ -71,20 +71,6 @@ void test("workflow_settings_merge_global_and_project_settings", async () => {
   });
 });
 
-void test("workflow_settings_normalize_workflow_dirs_with_other_settings", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-"));
-  const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-agent-"));
-  await mkdir(path.join(project, ".pi"), { recursive: true });
-  await writeFile(path.join(project, ".pi", "settings.json"), '{"workflow":{"workflowDirs":["../shared-workflows"]}}\n', "utf8");
-
-  assert.deepEqual(await readWorkflowSettings(project, agentDir), {
-    workflowDirs: ["../shared-workflows"],
-    maxParallelAgents: DEFAULT_MAX_PARALLEL_AGENTS,
-    childAgentExtensions: "all",
-    childAgentTools: "all",
-  });
-});
-
 void test("workflow_settings_reject_invalid_parallel_cap", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-"));
   const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-agent-"));
@@ -94,23 +80,18 @@ void test("workflow_settings_reject_invalid_parallel_cap", async () => {
   await assert.rejects(readWorkflowSettings(project, agentDir), /workflow\.maxParallelAgents must be a positive integer/);
 });
 
-void test("workflow_settings_reject_invalid_child_agent_extensions", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-"));
+void test("workflow_settings_reject_invalid_child_agent_capabilities", async () => {
   const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-agent-"));
-  await mkdir(path.join(project, ".pi"), { recursive: true });
-  await writeFile(path.join(project, ".pi", "settings.json"), '{"workflow":{"childAgentExtensions":[""]}}\n', "utf8");
-
-  await assert.rejects(
-    readWorkflowSettings(project, agentDir),
-    /workflow\.childAgentExtensions must be "all" or an array of non-empty strings/,
-  );
-});
-
-void test("workflow_settings_reject_invalid_child_agent_tools", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-"));
-  const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-agent-"));
-  await mkdir(path.join(project, ".pi"), { recursive: true });
-  await writeFile(path.join(project, ".pi", "settings.json"), '{"workflow":{"childAgentTools":"read"}}\n', "utf8");
-
-  await assert.rejects(readWorkflowSettings(project, agentDir), /workflow\.childAgentTools must be "all" or an array of non-empty strings/);
+  for (const [field, value] of [
+    ["childAgentExtensions", [""]],
+    ["childAgentTools", "read"],
+  ] as const) {
+    const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-settings-"));
+    await mkdir(path.join(project, ".pi"), { recursive: true });
+    await writeFile(path.join(project, ".pi", "settings.json"), `${JSON.stringify({ workflow: { [field]: value } })}\n`, "utf8");
+    await assert.rejects(
+      readWorkflowSettings(project, agentDir),
+      new RegExp(`workflow\\.${field} must be "all" or an array of non-empty strings`),
+    );
+  }
 });

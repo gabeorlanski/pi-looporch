@@ -6,8 +6,7 @@ import { test } from "node:test";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createAgentSession } from "@earendil-works/pi-coding-agent";
 import { createPiWorkflowAgent } from "../src/pi-agent/adapter.ts";
-import type { WorkflowAgentProgress, WorkflowAgentReporter } from "../src/runtime/types.ts";
-import { createWorkflowAgentProgressTracker, workflowAgentFailureMessage } from "../src/pi-agent/adapter.ts";
+import type { WorkflowAgentProgress } from "../src/runtime/types.ts";
 import { workflowAgentLogEvent } from "../src/session/events.ts";
 import { workflowAgentSessionLogDirectory } from "../src/session/logs.ts";
 import { parseSessionTokens } from "../src/session/usage.ts";
@@ -29,7 +28,6 @@ void test("schema agents validate and return terminal output", async () => {
   let sessionTools: string[] | undefined;
   const agent = createPiWorkflowAgent({
     cwd: project,
-    tools: [],
     createSession: (options) => {
       if (!options) throw new Error("Expected session options");
       sessionTools = options.tools;
@@ -129,7 +127,6 @@ void test("schema agents end after structured output with immediate-error siblin
     const stopReasons: string[] = [];
     const agent = createPiWorkflowAgent({
       cwd: project,
-      tools: [],
       createSession: async (options) => {
         const created = await createAgentSession(options);
         if (scenario.blocked) {
@@ -222,7 +219,6 @@ void test("schema agents allow invalid structured output to repair", async () =>
   let providerRequests = 0;
   const agent = createPiWorkflowAgent({
     cwd: project,
-    tools: [],
     createSession: async (options) => {
       const created = await createAgentSession(options);
       created.session.agent.streamFunction = (model) => {
@@ -277,7 +273,6 @@ void test("schema agents fail provider aborts", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
   const agent = createPiWorkflowAgent({
     cwd: project,
-    tools: [],
     createSession: async (options) => {
       const created = await createAgentSession(options);
       created.session.agent.streamFunction = (model) => {
@@ -328,7 +323,6 @@ async function createExitAttemptAgent(onSteer: (tool: TerminalTool | undefined, 
   const end = (): void => listener?.({ type: "agent_end", messages: [], willRetry: false });
   const agent = createPiWorkflowAgent({
     cwd: project,
-    tools: [],
     createSession: (options) => {
       terminalTool = options?.customTools?.find((tool) => tool.name === "StructuredOutput") as typeof terminalTool;
       return {
@@ -408,7 +402,6 @@ void test("schema agents preserve unrestricted tools", async () => {
   let sessionTools: string[] | undefined;
   const agent = createPiWorkflowAgent({
     cwd: project,
-    tools: [],
     agentCapabilityCatalog: () => Promise.resolve({ availableExtensions: [], baseToolNames: [], customToolNames: [], loadErrors: [] }),
     createSession: (options) => {
       if (!options) throw new Error("Expected session options");
@@ -452,7 +445,6 @@ void test("schema-less agents return final assistant text without StructuredOutp
   let customToolNames: string[] | undefined;
   const agent = createPiWorkflowAgent({
     cwd: project,
-    tools: [],
     createSession: (options) => {
       if (!options) throw new Error("Expected session options");
       sessionTools = options.tools;
@@ -498,7 +490,7 @@ void test("schema-less agents return final assistant text without StructuredOutp
 
 void test("schema agents reserve runtime fields", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
-  const agent = createPiWorkflowAgent({ cwd: project, tools: [] });
+  const agent = createPiWorkflowAgent({ cwd: project });
 
   await assert.rejects(
     agent(
@@ -525,114 +517,71 @@ void test("schema agents reserve runtime fields", async () => {
   );
 });
 
-void test("workflow_agent_surfaces_terminal_provider_errors", () => {
-  assert.equal(
-    workflowAgentFailureMessage(
-      [
-        { role: "user", content: [] },
-        {
-          role: "assistant",
-          content: [],
-          stopReason: "error",
-          errorMessage: "Codex error: Model not found gpt-5.6-luna-free-1p-codexswic-ev3",
-        },
-      ],
-      "review instructions",
-    ),
-    'Workflow child agent "review instructions" failed: Codex error: Model not found gpt-5.6-luna-free-1p-codexswic-ev3',
-  );
+void test("Pi workflow agent surfaces terminal provider errors", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
+  for (const [label, errorMessage, expectedParts] of [
+    ["review instructions", "Codex error: Model not found", ["review instructions", "Model not found"]],
+    [undefined, undefined, ["Workflow child agent failed", "without details"]],
+  ] as const) {
+    const agent = createPiWorkflowAgent({
+      cwd: project,
+      createSession: () =>
+        ({
+          session: {
+            model: undefined,
+            messages: [{ role: "assistant", content: [], stopReason: "error", ...(errorMessage ? { errorMessage } : {}) }],
+            subscribe: () => () => undefined,
+            prompt: () => Promise.resolve(),
+            getSessionStats: () => ({ tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }),
+            dispose: () => undefined,
+          },
+        }) as never,
+    });
+    await assert.rejects(
+      agent("work", { label, extensions: [], tools: [] }, { launched: () => undefined, progress: () => undefined }),
+      (error: unknown) => {
+        for (const part of expectedParts) assert.ok(String(error).includes(part));
+        return true;
+      },
+    );
+  }
 });
 
-void test("workflow_agent_surfaces_provider_errors_without_details", () => {
-  assert.equal(
-    workflowAgentFailureMessage([{ role: "assistant", content: [], stopReason: "error" }]),
-    "Workflow child agent failed: provider returned an error response without details",
-  );
-});
-
-void test("workflow_agent_progress_tracker_reports_tool_start_arguments", () => {
-  const progressReports: unknown[] = [];
-  const reportProgress = (progress: WorkflowAgentProgress): void => {
-    progressReports.push(progress);
-  };
-  const reporter: WorkflowAgentReporter = {
-    launched(): void {
-      return undefined;
-    },
-    progress: reportProgress,
-  };
-  const tracker = createWorkflowAgentProgressTracker(reporter);
-
-  tracker.handleEvent({ type: "message_start" });
-  tracker.handleEvent({ type: "tool_execution_start", toolName: "read", args: { path: "src/auth.ts" } });
-  tracker.handleEvent({ type: "tool_execution_update", toolName: "read" });
-  tracker.handleEvent({
-    type: "message_end",
-    message: { usage: { inputTokens: 10, cacheRead: 3, outputTokens: 4, cost: { total: 0.001 } } },
-  });
-  tracker.handleEvent({ type: "turn_end" });
-
-  assert.deepEqual(progressReports, [
-    {
-      statusMessage: "thinking",
-      inputTokenCount: 0,
-      cacheReadTokenCount: 0,
-      outputTokenCount: 0,
-      cost: { knownUsd: 0, complete: false },
-      toolCallCount: 0,
-      toolActivity: [],
-      stepCount: 0,
-    },
-    {
-      statusMessage: "active",
-      inputTokenCount: 0,
-      cacheReadTokenCount: 0,
-      outputTokenCount: 0,
-      cost: { knownUsd: 0, complete: false },
-      toolCallCount: 1,
-      toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
-      stepCount: 0,
-    },
-    {
-      statusMessage: "active",
-      inputTokenCount: 0,
-      cacheReadTokenCount: 0,
-      outputTokenCount: 0,
-      cost: { knownUsd: 0, complete: false },
-      toolCallCount: 1,
-      toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
-      stepCount: 0,
-    },
-    {
-      inputTokenCount: 10,
-      cacheReadTokenCount: 3,
-      outputTokenCount: 4,
-      cost: { knownUsd: 0.001, complete: true },
-      toolCallCount: 1,
-      toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
-      stepCount: 0,
-    },
-    {
-      statusMessage: "waiting",
-      inputTokenCount: 10,
-      cacheReadTokenCount: 3,
-      outputTokenCount: 4,
-      cost: { knownUsd: 0.001, complete: true },
-      toolCallCount: 1,
-      toolActivity: [{ name: "read", arguments: { path: "src/auth.ts" } }],
-      stepCount: 1,
-    },
-  ]);
-});
-
-void test("workflow_agent_progress_tracker_keeps_known_cost_when_later_usage_is_unpriced", () => {
+void test("Pi workflow agent reports tool activity, usage, and completed turns", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-"));
   const reports: WorkflowAgentProgress[] = [];
-  const tracker = createWorkflowAgentProgressTracker({ launched: () => undefined, progress: (progress) => reports.push(progress) });
+  const agent = createPiWorkflowAgent({
+    cwd: project,
+    createSession: () =>
+      ({
+        session: {
+          model: undefined,
+          messages: [{ role: "assistant", content: [{ type: "text", text: "done" }] }],
+          subscribe: (listener: (event: unknown) => void) => {
+            listener({ type: "message_start" });
+            listener({ type: "tool_execution_start", toolName: "read", args: { path: "src/auth.ts" } });
+            listener({ type: "message_end", message: { usage: { input: 10, output: 2, cost: { total: 0.12 } } } });
+            listener({ type: "message_end", message: { usage: { input: 5, output: 1 } } });
+            listener({ type: "turn_end" });
+            return () => undefined;
+          },
+          prompt: () => Promise.resolve(),
+          getSessionStats: () => ({ tokens: { input: 15, output: 3, cacheRead: 0, cacheWrite: 0, total: 18 } }),
+          dispose: () => undefined,
+        },
+      }) as never,
+  });
 
-  tracker.handleEvent({ type: "message_end", message: { usage: { input: 10, output: 2, cost: { total: 0.12 } } } });
-  tracker.handleEvent({ type: "message_end", message: { usage: { input: 5, output: 1 } } });
+  const result = await agent(
+    "work",
+    { extensions: [], tools: [] },
+    { launched: () => undefined, progress: (report) => reports.push(report) },
+  );
 
-  assert.deepEqual(reports.at(-1)?.cost, { knownUsd: 0.12, complete: false });
+  const readActivity = reports.flatMap((report) => report.toolActivity ?? []).find((tool) => tool.name === "read");
+  assert.deepEqual(readActivity, { name: "read", arguments: { path: "src/auth.ts" } });
+  assert.ok(reports.some((report) => report.cost?.knownUsd === 0.12 && !report.cost.complete));
+  assert.equal((result as { steps?: unknown }).steps, 1);
 });
 
 void test("workflow_agent_event_log_omits_streamed_message_updates", () => {

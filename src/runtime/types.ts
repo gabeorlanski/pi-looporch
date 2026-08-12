@@ -57,11 +57,6 @@ export interface WorkflowToolActivitySnapshot {
   arguments?: unknown;
 }
 
-/** Stable child-agent launch metadata reported by the Pi adapter to the workflow runtime. */
-export interface WorkflowAgentLaunchMetadata {
-  prompt: string;
-}
-
 /** Known workflow cost and whether it includes every observed provider response. */
 export interface WorkflowCost {
   knownUsd: number;
@@ -86,7 +81,7 @@ export interface WorkflowAgentProgress {
 
 /** Callback surface used by child-agent implementations to report launch metadata and progress. */
 export interface WorkflowAgentReporter {
-  launched(metadata: WorkflowAgentLaunchMetadata): void;
+  launched(prompt: string): void;
   progress(progress: WorkflowAgentProgress): void;
 }
 

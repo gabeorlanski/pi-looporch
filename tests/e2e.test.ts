@@ -33,7 +33,6 @@ export default async function workflow() {
       createAgent: (options) =>
         createPiWorkflowAgent({
           ...options,
-          tools: [],
           createSession: (sessionOptions) => {
             modelRuntimeReachedSession = sessionOptions?.modelRuntime !== undefined;
             return {

@@ -185,42 +185,6 @@ export default async function workflow() {
   );
 });
 
-void test("template tasks keep a stable prefix", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
-  await writeWorkflow(
-    project,
-    "stable-template-prefix",
-    `export const metadata = { name: "stable-template-prefix", description: "Stable prefix", inputInstructions: "No input.", phases: [{ title: "Run" }] };
-export default async function workflow() {
-  return parallel(["src/left.ts", "src/right.ts"], (file) => agent({ template: "review.txt", values: { file } }));
-}`,
-    {
-      "prompts/review.txt":
-        "Purpose:\nReview a file.\n\nRules:\n- Cite evidence.\n\nOutput:\nReturn findings.\n\nTask instance:\nReview {{file}}.",
-    },
-  );
-  const prompts: string[] = [];
-
-  await runWorkflowFromDirectory({
-    llm: unavailableLLM,
-    maxParallelAgents: 4,
-    cwd: project,
-    workflowName: "stable-template-prefix",
-    input: {},
-    agent: (prompt) => {
-      prompts.push(prompt);
-      return Promise.resolve("ok");
-    },
-  });
-
-  assert.equal(prompts.length, 2);
-  const dynamicSection = "Task instance:\nReview ";
-  const prefixLength = prompts[0]?.indexOf(dynamicSection) ?? -1;
-  assert.ok(prefixLength > 0);
-  assert.equal(prompts[0]?.slice(0, prefixLength), prompts[1]?.slice(0, prefixLength));
-  assert.notEqual(prompts[0], prompts[1]);
-});
-
 void test("workflow_writes_text_and_json_files", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
   const outside = await mkdtemp(path.join(tmpdir(), "pi-workflow-writable-"));

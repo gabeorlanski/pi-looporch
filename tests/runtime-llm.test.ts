@@ -3,24 +3,8 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { workflowPrimitiveReference } from "../src/runtime/globals.ts";
 import { runWorkflowFromDirectory } from "../src/runtime/run.ts";
 import { llmCompletion, writeWorkflow } from "./runtime-helpers.ts";
-
-void test("generated primitive docs expose LLM", () => {
-  assert.deepEqual(
-    workflowPrimitiveReference().filter((entry) => entry.name === "LLM"),
-    [
-      {
-        primitive: "LLM",
-        name: "LLM",
-        signature: "LLM(prompt, options?)",
-        summary:
-          "Makes a generation-only call with optional model, reasoning, system instructions, prior messages, schema, and structured-output retries.",
-      },
-    ],
-  );
-});
 
 void test("LLM returns text without launching an agent", async () => {
   const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
@@ -97,12 +81,14 @@ export default async function workflow() {
       { role: "user", content: "Earlier question" },
       { role: "assistant", content: "Earlier answer" },
     ],
+    model: "workflow-model",
+    reasoning: "high",
   });
 }`,
   );
   const requests: unknown[] = [];
 
-  await runWorkflowFromDirectory({
+  const result = await runWorkflowFromDirectory({
     maxParallelAgents: 4,
     cwd: project,
     workflowName: "message-history-llm",
@@ -117,55 +103,11 @@ export default async function workflow() {
   assert.deepEqual(requests, [
     {
       system: "Be concise.",
-      messages: [
-        { role: "user", content: "Earlier question" },
-        { role: "assistant", content: "Earlier answer" },
-        { role: "user", content: "Current question" },
-      ],
-    },
-  ]);
-});
-
-void test("LLM passes model and reasoning selection", async () => {
-  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-"));
-  await writeWorkflow(
-    project,
-    "context-llm",
-    `export const metadata = { name: "context-llm", description: "Context completion", inputInstructions: "No input.", phases: [{ title: "Generate" }] };
-export default async function workflow() {
-  return LLM("Current question", {
-    system: "System instructions",
-    messages: [
-      { role: "user", content: "First" },
-      { role: "assistant", content: "Second" },
-    ],
-    model: "workflow-model",
-    reasoning: "high",
-  });
-}`,
-  );
-  const requests: unknown[] = [];
-
-  const result = await runWorkflowFromDirectory({
-    maxParallelAgents: 4,
-    cwd: project,
-    workflowName: "context-llm",
-    input: {},
-    agent: () => Promise.resolve("unused"),
-    llm: (request) => {
-      requests.push(request);
-      return Promise.resolve(llmCompletion("answer"));
-    },
-  });
-
-  assert.deepEqual(requests, [
-    {
-      system: "System instructions",
       model: "workflow-model",
       reasoning: "high",
       messages: [
-        { role: "user", content: "First" },
-        { role: "assistant", content: "Second" },
+        { role: "user", content: "Earlier question" },
+        { role: "assistant", content: "Earlier answer" },
         { role: "user", content: "Current question" },
       ],
     },

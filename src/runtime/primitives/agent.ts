@@ -1,6 +1,5 @@
 /** Provides agent behavior. */
 import type {
-  WorkflowAgentLaunchMetadata,
   WorkflowAgentOptions,
   WorkflowAgentTask,
   WorkflowAgentProgress,
@@ -21,10 +20,8 @@ import { checkpointHash } from "../checkpoint-hash.ts";
 export const agentPrimitive: WorkflowPrimitive<{
   agent: (task: WorkflowAgentTask, agentOptions?: WorkflowAgentOptions) => Promise<unknown>;
 }> = {
-  name: "agent",
   docs: [
     {
-      name: "agent",
       signature: "agent(task, options?)",
       summary:
         "Launches a child agent from inline task text or a workflow-owned { template, values } task; schema adds a terminal StructuredOutput tool.",
@@ -138,18 +135,12 @@ export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, a
     runtime.emit();
     let reporter: RuntimeWorkflowAgentReporter | undefined;
     try {
-      const heartbeat = setInterval(runtime.emit, 1000);
-      let result: unknown;
-      try {
-        reporter = workflowAgentReporter(runtime, agent);
-        result = await runtime.options.agent(
-          prompt,
-          workflowAgentOptionsForLaunch(runtime, agent, callOptions, agentCwd),
-          reporter.reporter,
-        );
-      } finally {
-        clearInterval(heartbeat);
-      }
+      reporter = workflowAgentReporter(runtime, agent);
+      const result = await runtime.options.agent(
+        prompt,
+        workflowAgentOptionsForLaunch(runtime, agent, callOptions, agentCwd),
+        reporter.reporter,
+      );
       throwIfWorkflowAborted(runtime.options.signal);
       await reporter.flush();
       agent.status = "done";
@@ -221,9 +212,9 @@ function workflowAgentReporter(runtime: ActiveWorkflowRuntime, agent: WorkflowAg
   return {
     reporter: {
       progress: reportProgress,
-      launched(metadata: WorkflowAgentLaunchMetadata): void {
+      launched(prompt: string): void {
         if (!runtime.options.outputsDir) return;
-        promptWrite = writeWorkflowAgentPrompt(runtime.options.outputsDir, agent.id, agent.label, metadata.prompt)
+        promptWrite = writeWorkflowAgentPrompt(runtime.options.outputsDir, agent.id, agent.label, prompt)
           .then((promptPath) => {
             if (agent.promptPath === promptPath) return;
             agent.promptPath = promptPath;
@@ -340,22 +331,14 @@ function workflowAgentOptionsForLaunch(
 }
 
 function workflowAgentSessionKey(agent: WorkflowAgentSnapshot): string {
+  const phaseLabel = agent.phase ?? (agent.phaseIndex === 0 ? "setup" : `phase-${String(agent.phaseIndex)}`);
   return [
-    phaseSessionSlug(agent),
+    `phase-${String(agent.phaseIndex).padStart(3, "0")}-${slugText(phaseLabel, 36)}`,
     agent.fanOutId !== undefined ? `fanout-${String(agent.fanOutId).padStart(3, "0")}` : undefined,
-    agentSessionSlug(agent),
+    `agent-${String(agent.id).padStart(3, "0")}-${slugText(agent.label, 48)}`,
   ]
     .filter((part): part is string => part !== undefined)
     .join("--");
-}
-
-function phaseSessionSlug(agent: WorkflowAgentSnapshot): string {
-  const phaseLabel = agent.phase ?? (agent.phaseIndex === 0 ? "setup" : `phase-${String(agent.phaseIndex)}`);
-  return `phase-${String(agent.phaseIndex).padStart(3, "0")}-${slugText(phaseLabel, 36)}`;
-}
-
-function agentSessionSlug(agent: WorkflowAgentSnapshot): string {
-  return `agent-${String(agent.id).padStart(3, "0")}-${slugText(agent.label, 48)}`;
 }
 
 function slugText(value: string, maxLength: number): string {

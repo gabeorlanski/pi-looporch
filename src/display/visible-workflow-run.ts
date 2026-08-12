@@ -4,6 +4,7 @@ import type { BackgroundWorkflowRun } from "../workflow/background-runs.ts";
 import { errorMessage } from "../errors.ts";
 import { workflowFailureHandoffPrompt } from "../prompt-templates.ts";
 import type { WorkflowAgent, WorkflowLLM, WorkflowSnapshot } from "../runtime/types.ts";
+import { createInitialWorkflowSnapshot } from "../runtime/snapshot.ts";
 import { WorkflowInputError } from "../workflow/input-contract.ts";
 import { prepareWorkflowResume, prepareWorkflowRun, startPreparedWorkflowRun, type PreparedWorkflowRun } from "../workflow/start.ts";
 import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "./running-workflow-ui.ts";
@@ -92,7 +93,7 @@ async function startVisiblePreparedWorkflowRun(
     if (showRunningUi) {
       updateRunningWorkflowUi(options.ctx, {
         runId,
-        snapshot: prepared.initialSnapshot,
+        snapshot: createInitialWorkflowSnapshot(prepared.workflowName, prepared.workflow.metadata, prepared.input),
         abortWorkflow,
       });
     }

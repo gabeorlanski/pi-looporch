@@ -3,8 +3,7 @@ import { appendRunMessage } from "../messages.ts";
 import type { WorkflowPrimitive } from "../context.ts";
 
 export const phasePrimitive: WorkflowPrimitive<{ phase: (title: string) => void }> = {
-  name: "phase",
-  docs: [{ name: "phase", signature: "phase(title)", summary: "Records a visible progress phase; pass data explicitly between phases." }],
+  docs: [{ signature: "phase(title)", summary: "Records a visible progress phase; pass data explicitly between phases." }],
   globals: ({ runtime }) => ({
     phase: (title: string) => {
       runtime.snapshot.phases.push(title);

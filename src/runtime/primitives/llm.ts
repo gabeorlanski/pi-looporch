@@ -13,7 +13,6 @@ import { llmStructuredOutputPrompt } from "../../prompt-templates.ts";
 import { appendRunMessage } from "../messages.ts";
 import { errorMessage } from "../../errors.ts";
 import { writeWorkflowLLMOutput, writeWorkflowLLMPrompt } from "../../workflow/outputs.ts";
-import { unknownWorkflowCost } from "../usage.ts";
 import { checkpointHash } from "../checkpoint-hash.ts";
 import { cloneSerializable } from "../serialization.ts";
 
@@ -29,10 +28,8 @@ interface WorkflowLLMOptions {
 export const llmPrimitive: WorkflowPrimitive<{
   LLM: (prompt: string, options?: WorkflowLLMOptions) => Promise<unknown>;
 }> = {
-  name: "LLM",
   docs: [
     {
-      name: "LLM",
       signature: "LLM(prompt, options?)",
       summary:
         "Makes a generation-only call with optional model, reasoning, system instructions, prior messages, schema, and structured-output retries.",
@@ -123,7 +120,7 @@ export const llmPrimitive: WorkflowPrimitive<{
         inputTokenCount: 0,
         cacheReadTokenCount: 0,
         outputTokenCount: 0,
-        cost: unknownWorkflowCost(),
+        cost: { knownUsd: 0, complete: false },
       };
       runtime.snapshot.llms.push(llm);
       appendRunMessage(runtime, {

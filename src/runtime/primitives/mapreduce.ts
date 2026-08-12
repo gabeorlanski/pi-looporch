@@ -5,10 +5,8 @@ import { runAgent } from "./agent.ts";
 import { runParallel } from "./parallel.ts";
 
 export const mapReducePrimitive: WorkflowPrimitive<{ mapreduce: (options: MapReduceOptions) => Promise<unknown> }> = {
-  name: "mapreduce",
   docs: [
     {
-      name: "mapreduce",
       signature: "mapreduce({ inputPrompt, mapPrompt, reducePrompt, extensions?, tools?, ...context })",
       summary:
         "Selects items through terminal structured output, maps them through bounded child-agent fan-out, then reduces mapped outputs with one child agent.",

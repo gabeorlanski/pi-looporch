@@ -1,8 +1,8 @@
 /** Provides progress behavior. */
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../runtime/types.ts";
 import { workflowUsageTotals, type WorkflowUsageTotals } from "../runtime/usage.ts";
-import { fmtCostUsd } from "./workflow-tui-format.ts";
-import { fit, titleLine, trimFixed } from "./text.ts";
+import { fmtCostUsd, formatTokenCount } from "./workflow-tui-format.ts";
 
 const DEFAULT_WIDTH = 96;
 const MIN_WIDTH = 64;
@@ -34,27 +34,6 @@ const plainTheme: ProgressTheme = {
   bold: (text) => text,
 };
 
-/** Provides the initialProgressDisplay function contract. */
-export function initialProgressDisplay(
-  workflowName = "workflow",
-  width = DEFAULT_WIDTH,
-  theme: ProgressTheme = plainTheme,
-  input?: unknown,
-): ProgressDisplay {
-  const safeWidth = Math.max(MIN_WIDTH, width);
-  const widgetLines = [
-    titleLine(`workflow ${workflowName}`, safeWidth, theme),
-    ...optionalInputLine(input, safeWidth, theme),
-    theme.fg("warning", fit("  STARTING · waiting for workflow runtime update", safeWidth)),
-    theme.fg("muted", fit("  NET 0/0 agents · in 0 · cached 0 · out 0 · cost $0.00 · total 0 · tools 0", safeWidth)),
-  ];
-  return {
-    statusLine: `${workflowName}: STARTING · 0/0 agents · in 0 · cached 0 · out 0 · cost $0.00 · tools 0`,
-    widgetLines,
-    text: widgetLines.join("\n"),
-  };
-}
-
 /** Provides the progressDisplay function contract. */
 export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDTH, theme: ProgressTheme = plainTheme): ProgressDisplay {
   const safeWidth = Math.max(MIN_WIDTH, width);
@@ -70,14 +49,6 @@ export function progressDisplay(snapshot: WorkflowSnapshot, width = DEFAULT_WIDT
     netLine(snapshot, stats, safeWidth, theme),
   ];
   return { statusLine, widgetLines, text: widgetLines.join("\n") };
-}
-
-/** Provides the formatTokenCount function contract. */
-export function formatTokenCount(tokenCount: number): string {
-  if (tokenCount === 1) return "1";
-  if (tokenCount < 1000) return String(tokenCount);
-  if (tokenCount < 1_000_000) return `${trimFixed(tokenCount / 1000)}k`;
-  return `${trimFixed(tokenCount / 1_000_000)}M`;
 }
 
 function optionalInputLine(input: unknown, width: number, theme: ProgressTheme): string[] {
@@ -170,4 +141,19 @@ function workflowState(snapshot: WorkflowSnapshot, stats: NetStats): WorkflowDis
 function currentPhase(snapshot: WorkflowSnapshot): string {
   const title = snapshot.phases.at(-1);
   return title ? `P${String(snapshot.phases.length)} ${title}` : "setup";
+}
+
+function fit(text: string, width: number, ellipsis = "..."): string {
+  if (!text.includes("\u001B")) return text.length <= width ? text : `${text.slice(0, Math.max(0, width - ellipsis.length))}${ellipsis}`;
+  return truncateToWidth(text, width, ellipsis);
+}
+
+function titleLine(title: string, width: number, theme: ProgressTheme, ellipsis = "..."): string {
+  const label = ` ${title} `;
+  const fillLen = Math.max(0, width - visibleWidth(label) - 4);
+  return fit(
+    theme.fg("borderMuted", "──") + theme.fg("accent", theme.bold(label)) + theme.fg("borderMuted", "─".repeat(fillLen)),
+    width,
+    ellipsis,
+  );
 }

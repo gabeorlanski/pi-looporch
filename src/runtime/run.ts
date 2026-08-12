@@ -9,7 +9,7 @@ import type { ActiveWorkflowRuntime } from "./context.ts";
 import { workflowGlobals } from "./globals.ts";
 import { parseWorkflowSourceMetadata } from "../workflow/metadata.ts";
 import { appendRunMessage } from "./messages.ts";
-import { createAgentLaunchQueue, normalizeMaxParallelAgents } from "./queue.ts";
+import { createAgentLaunchQueue } from "./queue.ts";
 import { createInitialWorkflowSnapshot } from "./snapshot.ts";
 import { cloneSerializable, cloneSnapshot } from "./serialization.ts";
 import { errorMessage } from "../errors.ts";
@@ -19,7 +19,8 @@ import { throwIfWorkflowAborted } from "./abort.ts";
 export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Promise<WorkflowRunResult> {
   throwIfWorkflowAborted(options.signal);
   const workflowName = normalizeWorkflowName(options.workflowName);
-  const maxParallelAgents = normalizeMaxParallelAgents(options.maxParallelAgents);
+  if (!Number.isInteger(options.maxParallelAgents) || options.maxParallelAgents < 1)
+    throw new Error("maxParallelAgents must be a positive integer");
   const workflowDir = resolveWorkflowDirectory(options.cwd, workflowName, options.workflowRoots);
   const entryFile = path.join(workflowDir, "workflow.js");
   const source = await readFile(entryFile, "utf8");
@@ -27,12 +28,9 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
 
   const snapshot = createInitialWorkflowSnapshot(workflowName, metadata, options.input);
   const runtime: ActiveWorkflowRuntime = {
-    options: {
-      ...options,
-      maxParallelAgents,
-    },
+    options: { ...options },
     snapshot,
-    agentLaunchQueue: createAgentLaunchQueue(maxParallelAgents),
+    agentLaunchQueue: createAgentLaunchQueue(options.maxParallelAgents),
     executionCounters: new Map(),
     emit: () => options.onSnapshot?.(cloneSnapshot(snapshot)),
   };

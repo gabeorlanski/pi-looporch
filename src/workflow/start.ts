@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { discoverWorkflows, type WorkflowReference, workflowRootsForProject } from "../discovery.ts";
 import type { WorkflowAgent, WorkflowAgentDefaults, WorkflowLLM, WorkflowSnapshot } from "../runtime/types.ts";
-import { createInitialWorkflowSnapshot } from "../runtime/snapshot.ts";
 import { startBackgroundWorkflowRun, type BackgroundWorkflowRun, type WorkflowRunAttempt } from "./background-runs.ts";
 import { extractWorkflowInputContract, validateWorkflowInput, type WorkflowInputContract } from "./input-contract.ts";
 import { normalizeWorkflowName } from "./paths.ts";
@@ -20,7 +19,6 @@ export interface PreparedWorkflowRun {
   workflowRoots: string[];
   maxParallelAgents: number;
   agentDefaults: WorkflowAgentDefaults;
-  initialSnapshot: WorkflowSnapshot;
   attempt: WorkflowRunAttempt;
 }
 
@@ -54,7 +52,6 @@ export async function prepareWorkflowRun(options: {
       extensions: workflowSettings.childAgentExtensions,
       tools: workflowSettings.childAgentTools,
     },
-    initialSnapshot: createInitialWorkflowSnapshot(workflow.name, workflow.metadata, input),
     attempt: { kind: "new" },
   };
 }
@@ -96,7 +93,6 @@ export async function prepareWorkflowResume(options: {
         extensions: workflowSettings.childAgentExtensions,
         tools: workflowSettings.childAgentTools,
       },
-      initialSnapshot: createInitialWorkflowSnapshot(workflow.name, workflow.metadata, input),
       attempt: {
         kind: "resume",
         startedAt: record.startedAt,

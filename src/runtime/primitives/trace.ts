@@ -5,10 +5,8 @@ import { appendRunMessage } from "../messages.ts";
 import { cloneSerializable } from "../serialization.ts";
 
 export const tracePrimitive: WorkflowPrimitive<{ trace: (label: string, value?: unknown) => void }> = {
-  name: "trace",
   docs: [
     {
-      name: "trace",
       signature: "trace(label, value?)",
       summary: "Records structured debug or handoff state in workflow snapshots and session summaries.",
     },
@@ -16,8 +14,7 @@ export const tracePrimitive: WorkflowPrimitive<{ trace: (label: string, value?: 
   globals: ({ runtime }) => ({ trace: (label: string, value?: unknown) => recordTrace(runtime, label, value) }),
 };
 
-/** Provides the recordTrace function contract. */
-export function recordTrace(runtime: ActiveWorkflowRuntime, label: string, value?: unknown): void {
+function recordTrace(runtime: ActiveWorkflowRuntime, label: string, value?: unknown): void {
   if (typeof label !== "string" || !label.trim()) throw new Error("trace label must be non-empty");
   const phase = runtime.snapshot.phases.at(-1);
   const trace: WorkflowTraceSnapshot = {
@@ -31,7 +28,9 @@ export function recordTrace(runtime: ActiveWorkflowRuntime, label: string, value
     phaseIndex: trace.phaseIndex,
     ...(trace.phase ? { phase: trace.phase } : {}),
     level: "debug",
-    message: `trace ${trace.label}${trace.value === undefined ? "" : ` ${traceValueText(trace.value)}`}`,
+    message: `trace ${trace.label}${
+      trace.value === undefined ? "" : ` ${typeof trace.value === "string" ? trace.value : JSON.stringify(trace.value)}`
+    }`,
   });
   runtime.emit();
 }
@@ -42,10 +41,4 @@ function traceValue(value: unknown): unknown {
   } catch {
     return String(value);
   }
-}
-
-function traceValueText(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value === undefined) return "undefined";
-  return JSON.stringify(value);
 }

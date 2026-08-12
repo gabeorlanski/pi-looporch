@@ -12,30 +12,24 @@ export const filePrimitive: WorkflowPrimitive<{
   writeJson: (filePath: string, value: unknown) => string;
   renderPrompt: (templatePath: string, values: unknown) => string;
 }> = {
-  name: "files",
   docs: [
     {
-      name: "readText",
       signature: "readText(filePath)",
       summary: "Reads UTF-8 text from an absolute path, project-cwd relative path, or @workflow/... path.",
     },
     {
-      name: "readJson",
       signature: "readJson(filePath)",
       summary: "Reads and parses JSON from an absolute path, project-cwd relative path, or @workflow/... path.",
     },
     {
-      name: "writeText",
       signature: "writeText(filePath, content)",
       summary: "Atomically writes UTF-8 text and returns the resolved absolute path.",
     },
     {
-      name: "writeJson",
       signature: "writeJson(filePath, value)",
       summary: "Pretty-prints JSON atomically and returns the resolved absolute path.",
     },
     {
-      name: "renderPrompt",
       signature: "renderPrompt(templatePath, values)",
       summary: "Renders a workflow-owned prompts/ template with {{name}} placeholders.",
     },
@@ -53,11 +47,9 @@ export const environmentPrimitive: WorkflowPrimitive<{
   cwd: string;
   budget: { readonly agentCount: number; readonly tokenCount: number };
 }> = {
-  name: "environment",
   docs: [
-    { name: "cwd", signature: "cwd", summary: "Absolute project working directory for this workflow run." },
+    { signature: "cwd", summary: "Absolute project working directory for this workflow run." },
     {
-      name: "budget",
       signature: "budget.agentCount / budget.tokenCount",
       summary: "Observed child-agent and token counters for the current run; values are usage, not estimates.",
     },

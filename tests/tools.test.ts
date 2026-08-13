@@ -40,7 +40,16 @@ void test("guidance tool returns index and focused guidance", async () => {
   const overviewText = overview.content[0]?.type === "text" ? overview.content[0].text : "";
   assert.ok(overviewText.length > 0);
   assert.match(overviewText, new RegExp(escapeRegExp(defaultWorkflowDraftRoot())));
+  assert.match(overviewText, /Write straight-line workflow orchestration/);
+  assert.match(overviewText, /user request or an authoritative existing contract explicitly requires that observable behavior/);
   assert.deepEqual(overview.details, { topic: "overview" });
+
+  const workflowApi = await tool.execute("call-4", { topic: "workflow-api" }, undefined, undefined, {} as never);
+  const workflowApiText = workflowApi.content[0]?.type === "text" ? workflowApi.content[0].text : "";
+  assert.match(workflowApiText, /Write straight-line workflow orchestration/);
+  assert.match(workflowApiText, /Do not add speculative input checks, assertions, custom errors, manual `throw` statements/);
+  assert.match(workflowApiText, /user request or an authoritative existing contract explicitly requires that observable behavior/);
+  assert.deepEqual(workflowApi.details, { topic: "workflow-api" });
   assert.doesNotMatch(overviewText, /\{\{(?:draftRoot|primitiveReference)\}\}/);
   assert.throws(
     () => tool.execute("call-3", { topic: "unknown" }, undefined, undefined, {} as never),

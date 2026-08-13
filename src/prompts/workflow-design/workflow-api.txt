@@ -6,6 +6,7 @@
 - `agent`, `mapreduce`, and `verifier` accept `extensions?: string[]` and `tools?: string[]`. Omit a list only when intentionally inheriting settings, use `[]` to grant none, and name the exact tools when only those tools should be exposed. Schema-enabled agents always receive terminal `StructuredOutput`.
 - `propose_workflow` validates inline and top-level `const` capability lists plus inherited defaults against Pi metadata and saves nothing when any validation fails.
 - Receive workflow input through `workflow({ field, optional = default })` parameters. State every required field, default, and validation expectation in the JSDoc and `inputInstructions`.
+- Write straight-line workflow orchestration. Trust the workflow input contract, runtime primitives, and established validated boundaries. Do not add speculative input checks, assertions, custom errors, manual `throw` statements, catch-and-rethrow blocks, fallback branches, or recovery logic. Add error behavior only when the user request or an authoritative existing contract explicitly requires that observable behavior; otherwise let runtime and helper errors propagate naturally.
 - Workflows cannot import modules or use ambient Node globals. Use file helpers and workflow-owned templates for every file or artifact operation.
 
 ```js

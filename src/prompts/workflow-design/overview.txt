@@ -14,6 +14,7 @@ Then implement the design as a direct, inspectable runbook:
 
 - Keep orchestration in `workflow.js`. Put reusable child prompts in `prompts/*.txt` and launch them with `agent({ template, values }, options)`.
 - Before authoring a child prompt, request `prompt-files`. **Default to explicitness:** spell out the exact goal, scope, reads, actions, priorities, constraints, deliverable, and completion evidence. Remove only irrelevant or duplicated wording; never remove a requirement for token economy.
+- Write straight-line workflow orchestration. Trust workflow input contracts, runtime primitives, and established validated boundaries; add validation or error behavior only when the user request or an authoritative existing contract explicitly requires that observable behavior.
 - Fan out only independent, selected inputs. Cap the set, preserve every worker artifact path in an explicit manifest for reduction, and report skipped scope.
 - Use `LLM` for one generation-only response without tools or a child session. Use `agent` for tool use, iterative work, or persistent child state.
 - Add an evidence-based review and at most one repair pass only for high-risk or important artifact-producing work.

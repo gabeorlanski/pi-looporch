@@ -123,6 +123,7 @@ Attribution:
 - Keep the extension small and dependency-light.
 - Keep generated workflow drafts outside the project by default.
 - Write child-agent prompts as explicit, self-contained task packets. State the exact goal, boundary, authoritative reads, required actions, constraints, deliverable, completion evidence, and blocker conditions; never rely on a role label or inference when a requirement can be written directly.
+- Write generated `workflow.js` code as straight-line orchestration that trusts workflow input contracts, runtime primitives, and established validated boundaries. Add validation or error behavior only when the user request or an authoritative existing contract explicitly requires that observable behavior; otherwise do not add speculative checks, custom errors, manual throws, catch-and-rethrow blocks, fallbacks, or recovery logic.
 - Keep structured JSON compact as a transport format: status, decisions, IDs, counts, paths, and short summaries; put large artifacts in files. Compact output never justifies an implicit task or result contract.
 - Use deterministic fake agents in tests; never call real models from tests.
 - Add or update tests for behavior changes.

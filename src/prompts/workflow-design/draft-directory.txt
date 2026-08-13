@@ -1,10 +1,10 @@
 # Draft directory
 
-- Create a complete draft directory with `workflow.js` plus workflow-owned prompts, schemas, fixtures, or examples.
-- Use `{{draftRoot}}/<workflow-name>/` by default so authoring does not dirty the worktree.
-- Call `propose_workflow` with the workflow name. Omit `draftDir` for the default directory; otherwise pass the directory path, not the `workflow.js` path.
-- Before saving, `propose_workflow` validates inline and top-level `const` capability lists plus inherited `childAgentExtensions` and `childAgentTools`, reports source-located failures, and leaves published files unchanged on error.
-- Drafts copy to `.pi/workflows/<name>/` so `workflow.js` and resources land together.
+- Create one complete draft directory containing `workflow.js` and every workflow-owned prompt, schema, fixture, or example the workflow needs.
+- Use `{{draftRoot}}/<workflow-name>/` by default so authoring does not modify the project worktree.
+- Call `propose_workflow` with the workflow name. Omit `draftDir` only for the default directory; otherwise pass the complete directory path, never the `workflow.js` file path.
+- Before saving, `propose_workflow` validates inline and top-level `const` capability lists plus inherited `childAgentExtensions` and `childAgentTools`. It reports source-located failures and leaves published files unchanged when validation fails.
+- Saving copies the directory to `.pi/workflows/<name>/`; ensure `workflow.js` and all referenced resources are present before proposing it.
 
 ```text
 {{draftRoot}}/review/

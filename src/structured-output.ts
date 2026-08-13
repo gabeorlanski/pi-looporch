@@ -21,7 +21,7 @@ export function createStructuredOutput(schema: unknown): StructuredOutput {
     tool: {
       name: "StructuredOutput",
       label: "Structured Output",
-      description: "Submit the final structured result and end this agent session.",
+      description: "Submit the exact final structured result required by the task and end this agent session.",
       parameters,
       execute: (_toolCallId, params) => {
         if (!Check(parameters, params)) return Promise.reject(new Error("StructuredOutput arguments do not match its schema"));
@@ -48,7 +48,7 @@ function outputParams(schema: unknown): Record<string, unknown> {
   return {
     ...objectSchema,
     properties: {
-      message: { type: "string", description: "Optional human-readable context for this result." },
+      message: { type: "string", description: "Optional human-readable context when it helps interpret this result." },
       ...objectSchema.properties,
     },
     propertyNames: {

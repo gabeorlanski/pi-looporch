@@ -1,12 +1,15 @@
 <workflow_instructions>
 # Workflow request
 
-Pi-workflow generated this message for the current session. The user request appears last.
+Pi-workflow generated this message for the current session. The user request is the only user-authored instruction and appears in the user-request section below.
 
-- When an existing workflow fits, call `run_workflow` with its name and JSON input.
-- Resolve clear ambiguities from relevant project files, docs, tests, and existing workflows before asking the user. Ask a concise question only when required input remains unknowable, materially different interpretations remain plausible, or a high-impact choice changes scope, behavior, or artifacts. State assumptions for low-risk reversible details.
-- When a reusable workflow is needed, call `workflow_design_guidance({ topic: "overview" })`, then request only the narrower topics needed. Before writing code, define the user outcome, inputs and defaults, ordered stages, child-agent roles, source-of-truth reads, artifacts, completion criteria, and final result shape.
-- Create a complete draft at `<draft-root>/<workflow-name>/workflow.js` with any workflow-local prompts or assets. Call `propose_workflow` with the workflow name and omit `draftDir` when using the default root below.
+## Required action
+
+- First decide whether one of the named existing workflows completes the exact requested outcome. If it does, resolve its input and call `run_workflow` with that workflow name and complete JSON input.
+- Resolve facts that are available in project files, docs, tests, and existing workflows before asking the user. Ask only when a required input is unknowable, materially different interpretations remain plausible, or a high-impact choice changes scope, behavior, or artifacts. State each low-risk reversible assumption.
+- When a reusable workflow is required, call `workflow_design_guidance({ topic: "overview" })`. Before writing any child prompt, call `workflow_design_guidance({ topic: "prompt-files" })`; spell out exactly what each child must do rather than relying on a role label or inference.
+- Before writing workflow code, define the exact outcome and boundary, inputs and defaults, ordered stages, source-of-truth reads, required actions, child-agent roles, explicit dataflow, artifacts, completion criteria, blocker conditions, and final result shape.
+- Create the complete draft at `<draft-root>/<workflow-name>/workflow.js`, including every workflow-local prompt or asset it needs. Call `propose_workflow` with the workflow name. Omit `draftDir` only when using the default draft root below.
 </workflow_instructions>
 
 <workflow_draft_root>

@@ -1,19 +1,19 @@
 # Workflow API
 
-- `workflow.js` exports static `metadata` and a default async workflow function. Metadata needs `name`, `description`, `inputInstructions`, and `phases`.
-- Document the default function with JSDoc covering purpose, input fields/defaults, phases, child agents, file reads, and result shape.
-- Supported workflow primitives are rendered below from the runtime registry with short descriptions and signatures; request narrower guidance topics for examples only when needed.
-- `agent`, `mapreduce`, and `verifier` accept `extensions?: string[]` and `tools?: string[]`. Omit to inherit settings, use `[]` for none, and use an exact tool list when only named tools should be exposed. Schema-enabled agents always receive terminal `StructuredOutput`.
-- `propose_workflow` validates inline and top-level `const` capability lists plus inherited defaults against Pi metadata and saves nothing on error.
-- Receive workflow input through `workflow({ field, optional = default })` parameters.
-- Workflows cannot import modules or use ambient Node globals. Use file helpers and workflow-owned templates for files and artifacts.
+- `workflow.js` must export static `metadata` and one default async workflow function. Metadata must provide `name`, `description`, `inputInstructions`, and `phases`.
+- Document the default function with JSDoc that explicitly states its purpose, every input field and default, ordered phases, child-agent use, file reads, written artifacts, and result shape.
+- The primitive reference below is authoritative for available globals, signatures, and short capability descriptions. Request focused guidance before using a capability whose contract affects the workflow design.
+- `agent`, `mapreduce`, and `verifier` accept `extensions?: string[]` and `tools?: string[]`. Omit a list only when intentionally inheriting settings, use `[]` to grant none, and name the exact tools when only those tools should be exposed. Schema-enabled agents always receive terminal `StructuredOutput`.
+- `propose_workflow` validates inline and top-level `const` capability lists plus inherited defaults against Pi metadata and saves nothing when any validation fails.
+- Receive workflow input through `workflow({ field, optional = default })` parameters. State every required field, default, and validation expectation in the JSDoc and `inputInstructions`.
+- Workflows cannot import modules or use ambient Node globals. Use file helpers and workflow-owned templates for every file or artifact operation.
 
 ```js
 export const metadata = {
   name: "review",
-  description: "Review selected files",
-  inputInstructions: "Resolve files from explicit path mentions; use remaining prose as focus.",
-  phases: [{ title: "review" }, { title: "synthesis" }],
+  description: "Review the selected files for the requested behavior.",
+  inputInstructions: "Resolve file paths from explicit path mentions. Treat remaining prose as the review focus.",
+  phases: [{ title: "review", detail: "Inspect each selected file against the requested focus." }, { title: "synthesis", detail: "Return evidence-cited findings." }],
 };
 ```
 

@@ -184,13 +184,14 @@ function createGuidanceTool(): ToolDefinition {
   return defineTool({
     name: "workflow_design_guidance",
     label: "Workflow Design Guidance",
-    description: "Show concise, topic-specific guidance for designing and authoring project workflows.",
+    description: "Show topic-specific requirements for designing and authoring project workflows.",
     promptSnippet:
-      "workflow_design_guidance: Get concise workflow design guidance by topic, such as overview, workflow-api, prompt-files, structured-outputs, fanout, verification, or artifacts.",
+      "workflow_design_guidance: Get workflow-authoring requirements by topic. Call overview first; call prompt-files before authoring a child-agent prompt so its exact requirements are written explicitly.",
     parameters: Type.Object({
       topic: Type.Optional(
         Type.String({
-          description: "Optional topic such as overview, workflow-api, draft-directory, prompt-files, structured-outputs, or artifacts",
+          description:
+            "Optional guidance topic. Use overview first and prompt-files before writing any child-agent prompt; other topics cover workflow-api, draft-directory, child-agents, structured-outputs, fanout, verification, and artifacts.",
         }),
       ),
     }),

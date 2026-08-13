@@ -122,9 +122,8 @@ Attribution:
 
 - Keep the extension small and dependency-light.
 - Keep generated workflow drafts outside the project by default.
-- Keep child-agent prompts self-contained and source-of-truth oriented.
-- Keep structured JSON compact: status, decisions, IDs, counts, paths, and short
-  summaries; put large artifacts in files.
+- Write child-agent prompts as explicit, self-contained task packets. State the exact goal, boundary, authoritative reads, required actions, constraints, deliverable, completion evidence, and blocker conditions; never rely on a role label or inference when a requirement can be written directly.
+- Keep structured JSON compact as a transport format: status, decisions, IDs, counts, paths, and short summaries; put large artifacts in files. Compact output never justifies an implicit task or result contract.
 - Use deterministic fake agents in tests; never call real models from tests.
 - Add or update tests for behavior changes.
 - Keep strict ESLint, Prettier, docs checks, and TypeScript clean.

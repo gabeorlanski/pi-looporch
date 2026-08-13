@@ -183,7 +183,7 @@ export const llmPrimitive: WorkflowPrimitive<{
                 { role: "assistant", content: completion.text },
                 {
                   role: "user",
-                  content: `Your previous response was not valid structured output: ${failure}\nReturn a corrected JSON value that matches the schema. Do not use Markdown fences.`,
+                  content: `Your previous response was not valid structured output: ${failure}\nReturn exactly one corrected JSON value. Include every required property, use only permitted properties, and satisfy every schema constraint. Do not use Markdown fences or explanatory prose.`,
                 },
               ],
             };

@@ -51,11 +51,12 @@ async function mapReduceWithAgents(runtime: ActiveWorkflowRuntime, options: MapR
 
 const mapReduceInputSchema = {
   type: "object",
-  description: "Select the bounded set of work items that should receive one map-agent launch each.",
+  description: "Select the exact bounded, ordered set of work items that should receive one map-agent launch each.",
   properties: {
     items: {
       type: "array",
-      description: "The ordered work items to fan out to map agents. Keep the selection bounded and relevant to the input prompt.",
+      description:
+        "The exact ordered work items to fan out to map agents. Include every item required by the input prompt, exclude unrelated items, and keep the selection bounded.",
       items: {},
     },
   },

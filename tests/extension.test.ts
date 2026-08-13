@@ -111,9 +111,9 @@ export default async function workflow(input) {
 
   assert.deepEqual(handoff.options, undefined);
   assert.match(handoff.text, /<workflow_handoff event="completed">/);
-  assert.match(handoff.text, /Workflow:\n\n```json\n\{"workflowName":"echo"/);
-  assert.ok(handoff.text.includes('Result:\n\n```json\n{\n  "message": "hello"\n}'));
-  assert.match(handoff.text, /Paths:\n\n- Workflow result: .*final\.json/);
+  assert.match(handoff.text, /## Workflow metadata\n\n```json\n\{"workflowName":"echo"/);
+  assert.ok(handoff.text.includes('## Complete result\n\nResult:\n\n```json\n{\n  "message": "hello"\n}'));
+  assert.match(handoff.text, /## Output and session paths\n\n- Workflow result: .*final\.json/);
   assert.doesNotMatch(handoff.text, /<workflow_(?:instructions|metadata|result|paths)>/);
   assert.ok(harness.notifications.some((entry) => entry.message === "Workflow 'echo' complete." && entry.type === "info"));
   assert.deepEqual(JSON.parse(await readFile(workflowResultPathFrom(handoff.text), "utf8")), { message: "hello" });
@@ -589,9 +589,9 @@ export default async function workflow() {
   assert.equal(harness.sentUserMessages[0]?.options, undefined);
   const failureHandoff = String(harness.sentUserMessages[0]?.message);
   assert.match(failureHandoff, /^<workflow_handoff event="failed">/);
-  assert.match(failureHandoff, /Call `resume_workflow` with run ID `(?!unavailable`)[^`]+`/);
-  assert.match(failureHandoff, /Workflow: `fail`/);
-  assert.match(failureHandoff, /Run ID: `(?!unavailable`)[^`]+`/);
+  assert.match(failureHandoff, /Use `resume_workflow` with run ID `(?!unavailable`)[^`]+`/);
+  assert.match(failureHandoff, /## Workflow\n\n`fail`/);
+  assert.match(failureHandoff, /## Run ID\n\n`(?!unavailable`)[^`]+`/);
   assert.match(failureHandoff, /Workflow 'fail' failed: workflow exploded/);
   assert.doesNotMatch(failureHandoff, /<workflow_(?:instructions|run_id|name|failure)>/);
   assert.equal(harness.widgetUpdates.at(-1), undefined);
@@ -709,9 +709,9 @@ export default async function workflow({ message }) {
   assert.match(prompt, /<workflow_instructions>/);
   assert.match(prompt, /<workflow_metadata>\n\{"name":"echo"/);
   assert.match(prompt, /<user_request>\nhello from natural language\n<\/user_request>/);
-  assert.match(prompt, /call `run_workflow`/);
-  assert.match(prompt, /Resolve clear ambiguities/);
-  assert.match(prompt, /Ask a concise question only when required input remains unknowable/);
+  assert.match(prompt, /Call `run_workflow` only after the input is complete/);
+  assert.match(prompt, /Resolve each fact that project files, docs, tests, existing workflows, or the user request make clear/);
+  assert.match(prompt, /Ask the user only when a required value is unknowable/);
   assert.match(prompt, /Treat bare text as the message field/);
   assert.match(prompt, /input\.message/);
   assert.doesNotMatch(prompt, /workflow\.js, for secondary context only/);

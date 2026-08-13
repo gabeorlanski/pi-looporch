@@ -151,7 +151,7 @@ export default async function workflow() {
   assert.equal(sentUserMessages.length, 1);
   assert.equal(sentUserMessages[0]?.options, undefined);
   const failureHandoff = sentUserMessages[0]?.message ?? "";
-  assert.match(failureHandoff, /Run ID: `(?!unavailable`)[^`]+`/);
+  assert.match(failureHandoff, /## Run ID\n\n`(?!unavailable`)[^`]+`/);
   assert.match(failureHandoff, /Workflow 'fail' failed: tool exploded/);
 });
 

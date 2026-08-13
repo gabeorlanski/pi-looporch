@@ -12,27 +12,35 @@ interface DesignTopic {
 const workflowDesignIndexTemplate = readFileSync(new URL("./prompts/workflow-design/index.txt", import.meta.url), "utf8").trim();
 
 const designTopics: DesignTopic[] = [
-  { name: "overview", summary: "Shortest path for deciding whether and how to author a workflow.", promptFile: "overview.txt" },
-  { name: "workflow-api", summary: "Sandbox globals and metadata contract for workflow.js.", promptFile: "workflow-api.txt" },
+  {
+    name: "overview",
+    summary: "Required first: define an explicit workflow outcome, stages, dataflow, and result.",
+    promptFile: "overview.txt",
+  },
+  { name: "workflow-api", summary: "Exact sandbox globals and metadata requirements for workflow.js.", promptFile: "workflow-api.txt" },
   {
     name: "draft-directory",
-    summary: "How to stage generated workflows with resources for saving.",
+    summary: "How to stage every workflow resource in one complete draft directory.",
     promptFile: "draft-directory.txt",
   },
-  { name: "prompt-files", summary: "How to keep child-agent prompts in workflow-owned prompt files.", promptFile: "prompt-files.txt" },
+  {
+    name: "prompt-files",
+    summary: "Required before child prompts: spell out exact task requirements in workflow-owned prompt files.",
+    promptFile: "prompt-files.txt",
+  },
   {
     name: "child-agents",
-    summary: "How to launch child agents with clear boundaries and compact handoffs.",
+    summary: "How to give child agents explicit boundaries, work, deliverables, and handoffs.",
     promptFile: "child-agents.txt",
   },
   {
     name: "structured-outputs",
-    summary: "How to require terminal structured fields without parsing assistant text.",
+    summary: "How to require exact terminal structured fields without parsing assistant text.",
     promptFile: "structured-outputs.txt",
   },
-  { name: "fanout", summary: "How to use parallelism without launching unbounded agents.", promptFile: "fanout.txt" },
-  { name: "verification", summary: "When to add verifier/repair stages.", promptFile: "verification.txt" },
-  { name: "artifacts", summary: "How to handle large generated outputs and resource files.", promptFile: "artifacts.txt" },
+  { name: "fanout", summary: "How to bound parallel work and state every worker contract.", promptFile: "fanout.txt" },
+  { name: "verification", summary: "When and how to define explicit verifier and repair stages.", promptFile: "verification.txt" },
+  { name: "artifacts", summary: "How to name and pass generated outputs and resource files.", promptFile: "artifacts.txt" },
 ];
 
 /** Provides the workflowDesignGuidance function contract. */

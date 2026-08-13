@@ -370,6 +370,11 @@ void test("schema agents are reminded to call StructuredOutput", async () => {
   );
 
   assert.ok(prompts.some((prompt) => prompt.includes("You attempted to exit without calling the required StructuredOutput tool")));
+  assert.ok(
+    prompts.some((prompt) =>
+      prompt.includes("include every required field, use only permitted fields, and satisfy every schema constraint"),
+    ),
+  );
   assert.deepEqual(result, {
     message: null,
     name: "agent",

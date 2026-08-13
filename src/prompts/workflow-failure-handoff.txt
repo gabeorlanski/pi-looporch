@@ -1,10 +1,20 @@
 <workflow_handoff event="failed">
-Call `resume_workflow` with run ID `{{runId}}` to replay unchanged completed model calls and continue from the first changed or incomplete call.
+A workflow run failed after it started.
 
-Workflow: `{{workflowName}}`
-Run ID: `{{runId}}`
+## Required action
 
-Failure:
+- Use `resume_workflow` with run ID `{{runId}}` to replay unchanged completed model calls and continue from the first changed or incomplete call.
+- Before resuming, read the workflow name and failure below. Preserve the reported failure evidence when deciding whether source or input changes are needed.
+
+## Workflow
+
+`{{workflowName}}`
+
+## Run ID
+
+`{{runId}}`
+
+## Failure evidence
 
 {{failure}}
 </workflow_handoff>

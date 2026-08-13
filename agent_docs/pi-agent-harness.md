@@ -22,7 +22,7 @@
 <!-- rule:7 -->
 - Treat a per-call tool list as an exact allowlist, loading an extension owner when one of its tools is named but exposing no sibling tools; when extensions are explicit and tools are unrestricted, expose built-ins plus all tools from those extensions — separates extension hooks/resources from exact tool exposure — keeps child behavior predictable.
 <!-- rule:8 -->
-- Write self-contained child-agent prompts that carry all context they need — children do not share parent memory — avoids silent failures when a child cannot see state the parent assumed was available.
+- Write self-contained, explicit child-agent prompts — children do not share parent memory — that state the exact goal and boundary, authoritative reads, required actions, constraints, inputs and their use, deliverable, completion evidence, and blocker conditions. Do not expect a role label, convention, or model inference to supply a requirement; omit wording only when it is irrelevant or duplicated.
 <!-- rule:9 -->
 - Use structured JSON as a control surface carrying status, ids, and paths — not as a payload channel for large content — keeps machine-readable output small and parseable while heavy data stays out of band.
 <!-- rule:10 -->

@@ -24,7 +24,7 @@ export const agentPrimitive: WorkflowPrimitive<{
     {
       signature: "agent(task, options?)",
       summary:
-        "Launches a child agent from inline task text or a workflow-owned { template, values } task; schema adds a terminal StructuredOutput tool.",
+        "Launches a child agent from an explicit inline task or workflow-owned { template, values } task; schema adds a terminal StructuredOutput tool.",
     },
   ],
   globals: ({ runtime, workflowDir }) => ({

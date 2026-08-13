@@ -1,15 +1,24 @@
 <workflow_handoff event="completed">
-Review and summarize this complete result for the user. If it is a report, surface it directly with only the orientation needed to make it useful. If it is structured data, summarize key outcomes, decisions, errors, and next actions. Use output paths for related artifacts and session logs.
+A workflow has completed. Use the complete result below to give the user the requested outcome.
 
-Workflow:
+## Required action
+
+- Read the workflow metadata, result, and paths before responding.
+- Surface every material outcome, decision, error, limitation, and next action that the result contains. If the result is a report, present the report directly with only the orientation needed to use it.
+- Name every relevant artifact and session-log path. Do not claim that an artifact was reviewed unless the result or path evidence establishes it.
+- If the result is incomplete or contradictory, state the exact gap rather than inventing a conclusion.
+
+## Workflow metadata
 
 ```json
 {{metadata}}
 ```
 
+## Complete result
+
 {{result}}
 
-Paths:
+## Output and session paths
 
 {{paths}}
 </workflow_handoff>

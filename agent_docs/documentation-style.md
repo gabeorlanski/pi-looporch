@@ -16,8 +16,10 @@
 <!-- rule:4 -->
 - Use the exact names of commands, APIs, settings, environment variables, and types — precision is non-negotiable in reference docs — an approximate or paraphrased name is unusable and sends readers hunting through source to recover the real one.
 <!-- rule:5 -->
-- Put commands, signatures, and contracts in fenced code blocks — formatting signals what is literal — code blocks distinguish copy-paste-exact text from prose and preserve whitespace that meaning depends on.
+- In agent-facing prompts and instructions, state the exact objective, scope, authoritative sources, required actions, constraints, deliverable, completion evidence, and blockers whenever they apply — explicit requirements beat model inference — remove wording only when it is irrelevant or duplicates an already-stated requirement.
 <!-- rule:6 -->
+- Put commands, signatures, and contracts in fenced code blocks — formatting signals what is literal — code blocks distinguish copy-paste-exact text from prose and preserve whitespace that meaning depends on.
+<!-- rule:7 -->
 - Keep examples complete enough to run or adapt, including required imports, input shape, and expected output — partial examples fail on first use — a runnable example is verifiable and lets readers confirm they wired it up correctly.
 <!-- rule:7 -->
 - Show the recommended path rather than every possible option — docs teach the right way — an exhaustive option dump obscures the intended usage and invites readers down dead ends.

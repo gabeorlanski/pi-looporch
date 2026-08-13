@@ -178,7 +178,7 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       ) {
         reminders++;
         void session.steer(
-          "You attempted to exit without calling the required StructuredOutput tool. Call StructuredOutput exactly once with your final result matching the provided schema before finishing.",
+          "You attempted to exit without calling the required StructuredOutput tool. Call StructuredOutput exactly once with the final result: include every required field, use only permitted fields, and satisfy every schema constraint before finishing.",
         );
       }
     });

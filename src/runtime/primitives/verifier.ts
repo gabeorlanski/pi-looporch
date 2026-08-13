@@ -8,7 +8,7 @@ export const verifierPrimitive: WorkflowPrimitive<{ verifier: (options: Verifier
   docs: [
     {
       signature: "verifier({ criteria, criteriaPrompt, reducePrompt, extensions?, tools?, ...context })",
-      summary: "Runs criterion voter child agents followed by a reducer for adversarial review or validation workflows.",
+      summary: "Runs explicit-criterion voter child agents followed by a reducer for adversarial review or validation workflows.",
     },
   ],
   globals: ({ runtime }) => ({ verifier: (options: VerifierOptions) => verifyWithAgents(runtime, options) }),

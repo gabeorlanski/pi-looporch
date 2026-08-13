@@ -154,7 +154,7 @@ export default async function workflow() {
   assert.deepEqual(requests, [
     {
       system:
-        'Return only one JSON value matching this schema. Do not use Markdown fences.\n{"type":"object","properties":{"stable":{"type":"boolean"},"summary":{"type":"string"}},"required":["stable","summary"],"additionalProperties":false}',
+        'Return exactly one JSON value that conforms to this schema. Include every required property, use only permitted properties, and satisfy each property\'s type, enum, and description. Do not use Markdown fences or explanatory prose.\n\n{"type":"object","properties":{"stable":{"type":"boolean"},"summary":{"type":"string"}},"required":["stable","summary"],"additionalProperties":false}',
       messages: [{ role: "user", content: "Classify the release." }],
     },
   ]);
@@ -270,6 +270,10 @@ export default async function workflow() {
   assert.deepEqual((result.result as { output: unknown }).output, { count: 2 });
   const repair = (requests[1] as { messages: { role: string; content: string }[] }).messages;
   assert.match(repair[2]?.content ?? "", /does not match its schema/);
+  assert.match(
+    repair[2]?.content ?? "",
+    /Include every required property, use only permitted properties, and satisfy every schema constraint/,
+  );
 });
 
 void test("LLM can disable structured-output retries", async () => {

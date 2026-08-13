@@ -31,7 +31,7 @@ export const filePrimitive: WorkflowPrimitive<{
     },
     {
       signature: "renderPrompt(templatePath, values)",
-      summary: "Renders a workflow-owned prompts/ template with {{name}} placeholders.",
+      summary: "Renders a workflow-owned prompts/ template; every {{name}} placeholder needs one supplied value.",
     },
   ],
   globals: ({ runtime, workflowDir }) => ({

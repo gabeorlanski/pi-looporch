@@ -3,7 +3,6 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { progressDisplay } from "../src/display/progress.ts";
 import { formatTokenCount } from "../src/display/workflow-tui-format.ts";
@@ -11,7 +10,6 @@ import { WorkflowInspectorModel } from "../src/display/workflow-inspector-model.
 import { WorkflowInspector } from "../src/display/workflow-inspector.ts";
 import type { WorkflowTuiTheme } from "../src/display/workflow-tui-format.ts";
 import { WorkflowWidget } from "../src/display/workflow-widget.ts";
-import { clearRunningWorkflowUi, updateRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
 import type { WorkflowAgentSnapshot, WorkflowSnapshot } from "../src/runtime/types.ts";
 
 const plainWorkflowTuiTheme: WorkflowTuiTheme = {
@@ -24,11 +22,6 @@ const plainWorkflowTuiTheme: WorkflowTuiTheme = {
   border: (text) => text,
   bold: (text) => text,
   selected: (text) => text,
-};
-
-const plainTheme = {
-  fg: (_color: string, text: string) => text,
-  bold: (text: string) => text,
 };
 
 void test("progress summarizes status, input, tokens, and agents", () => {
@@ -116,11 +109,6 @@ void test("format_token_count_uses_readable_suffixes", () => {
   assert.equal(formatTokenCount(1450), "1.4k");
   assert.equal(formatTokenCount(1_000_000), "1M");
 });
-
-interface TestWorkflowComponent {
-  render(width: number): string[];
-  handleInput?(data: string): void;
-}
 
 void test("workflow_widget_and_inspector_render_within_width", () => {
   const model = new WorkflowInspectorModel({
@@ -440,122 +428,6 @@ void test("inspector shows activity, output, and expandable prompts", async () =
 
   assert.match(expanded, /EXACT PROMPT/);
 });
-
-void test("running workflow UI selects, inspects, and aborts", () => {
-  const editorText = "";
-  let terminalInputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
-  let widget: TestWorkflowComponent | undefined;
-  let overlay: TestWorkflowComponent | undefined;
-  let workflowStatus: string | undefined;
-  let aborted = false;
-  const ctx = {
-    mode: "tui",
-    hasUI: true,
-    cwd: process.cwd(),
-    sessionManager: {
-      getSessionId: () => "progress-test-session",
-    },
-    ui: {
-      setStatus(key: string, text: string | undefined): void {
-        if (key === "workflow") workflowStatus = text;
-      },
-      onTerminalInput(handler: (data: string) => { consume?: boolean } | undefined): () => void {
-        terminalInputHandler = handler;
-        return () => {
-          terminalInputHandler = undefined;
-        };
-      },
-      getEditorText(): string {
-        return editorText;
-      },
-      custom<T>(
-        factory: (
-          tui: { requestRender(): void; terminal: { rows: number } },
-          theme: typeof plainTheme,
-          keybindings: unknown,
-          done: (result: T) => void,
-        ) => TestWorkflowComponent,
-      ): Promise<T> {
-        return new Promise<T>((resolve) => {
-          overlay = factory({ terminal: { rows: 24 }, requestRender: noop }, plainTheme, {}, resolve);
-        });
-      },
-      setWidget(key: string, content: unknown): void {
-        if (key !== "pi-workflow-running") return;
-        if (typeof content === "function") {
-          const factory = content as (
-            tui: { requestRender(): void; terminal: { rows: number } },
-            theme: typeof plainTheme,
-          ) => TestWorkflowComponent;
-          widget = factory({ terminal: { rows: 24 }, requestRender: noop }, plainTheme);
-        } else widget = undefined;
-      },
-    },
-  } as unknown as ExtensionCommandContext;
-
-  updateRunningWorkflowUi(ctx, { runId: "run-1", snapshot: workflowSnapshot(), abortWorkflow: () => (aborted = true) });
-  assert.equal(workflowStatus, undefined);
-  updateRunningWorkflowUi(ctx, {
-    runId: "run-1",
-    snapshot: {
-      ...workflowSnapshot(),
-      agents: [
-        agent({
-          id: 1,
-          phaseIndex: 1,
-          phase: "collect",
-          label: "inventory",
-          status: "running",
-          startedAt: Date.now(),
-          inputTokenCount: 100,
-          cacheReadTokenCount: 50,
-          outputTokenCount: 30,
-          cost: { knownUsd: 0.12, complete: true },
-        }),
-      ],
-    },
-  });
-  assert.equal(workflowStatus, undefined);
-  updateRunningWorkflowUi(ctx, { runId: "run-2", snapshot: workflowSnapshot(), abortWorkflow: () => (aborted = true) });
-  assert.equal(workflowStatus, undefined);
-  clearRunningWorkflowUi(ctx, "run-1");
-  assert.equal(workflowStatus, undefined);
-  assert.ok(terminalInputHandler);
-  assert.ok(widget);
-  const handler = terminalInputHandler;
-  assert.deepEqual(handler("\u001B[B"), { consume: true });
-  assert.deepEqual(handler("\u001B[B"), { consume: true });
-  assert.equal(handler("\u001B[1;1:3B"), undefined);
-  assert.deepEqual(handler("\r"), { consume: true });
-  assert.ok(overlay);
-  const overlayComponent = overlay;
-  assert.ok(overlayComponent.render(100).some((line) => line.includes("workflow review")));
-
-  overlayComponent.handleInput?.("x");
-
-  assert.equal(aborted, true);
-  clearRunningWorkflowUi(ctx, "run-2");
-  assert.equal(workflowStatus, undefined);
-});
-
-function noop(): void {
-  return undefined;
-}
-
-function workflowSnapshot(): WorkflowSnapshot {
-  return {
-    workflowName: "review",
-    description: "Review auth-sensitive files",
-    plannedPhases: [{ title: "collect" }],
-    phases: ["collect"],
-    traces: [],
-    agents: [agent({ id: 1, phaseIndex: 1, phase: "collect", label: "inventory", status: "running", startedAt: Date.now() })],
-    llms: [],
-    fanOuts: [],
-    messages: [],
-    status: "running",
-  };
-}
 
 function agent(overrides: Partial<WorkflowAgentSnapshot> & Pick<WorkflowAgentSnapshot, "id" | "label" | "status">): WorkflowAgentSnapshot {
   return {

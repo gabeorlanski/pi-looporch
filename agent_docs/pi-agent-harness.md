@@ -8,7 +8,7 @@
 
 <!-- rule:1 -->
 
-- Inject agents, sessions, settings, and loaders into core logic instead of constructing them there — keeps business logic decoupled from the SDK — lets you swap providers, run deterministically, and test without live services.
+- Inject workflow-facing agent and LLM interfaces into core orchestration, but construct Pi SDK sessions, settings, and loaders only inside adapter modules — keeps business logic decoupled from the SDK without adding test-only adapter-factory overrides.
 <!-- rule:2 -->
 - Treat SDK/session construction as an integration boundary confined to adapter modules — isolates vendor coupling to one seam — a provider change or API break touches one file instead of rippling through core code.
 <!-- rule:3 -->
@@ -44,7 +44,7 @@
 <!-- rule:18 -->
 - Bound parallelism across both direct concurrent agent calls and fan-out helpers — caps concurrency at every spawn path — prevents rate-limit storms, resource exhaustion, and runaway cost.
 <!-- rule:19 -->
-- Test harness code with deterministic fake agents and never call real providers or models in tests; a local SDK session is allowed only for an extension-runtime identity probe that performs no model turn — determinism over network flakiness — asserts isolation, allowlists, settings merge, abort, and cleanup reliably and fast.
+- Test local filesystem, serialization, sandbox, queue, and lifecycle boundaries directly; mock only an explicit stable external data source and never call real providers or models in tests — avoids parallel SDK-host simulations while preserving deterministic behavior coverage.
 <!-- rule:20 -->
 - Keep running-workflow inspector reattachment scoped by parent Pi session id, but keep `workflow_status`, `/workflow-status`, and the passive monitor widget project-scoped by default — separates ownership from observation — one session cannot adopt another session's run while users and agents can still monitor project-wide work.
 <!-- rule:21 -->

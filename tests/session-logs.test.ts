@@ -3,7 +3,10 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { workflowAgentLogEvent } from "../src/session/events.ts";
 import { writeWorkflowSessionSummary } from "../src/session/logs.ts";
+import { parseSessionTokens } from "../src/session/usage.ts";
+import { workflowAgentSessionLogDirectory } from "../src/session/logs.ts";
 import { readWorkflowSnapshot, workflowSnapshotPath } from "../src/workflow/outputs.ts";
 import type { WorkflowSnapshot } from "../src/runtime/types.ts";
 
@@ -62,7 +65,7 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
         phase: "scan",
         status: "done",
         startedAt: 0,
-        model: "fake-model",
+        model: "recorded-model",
         reasoning: "low",
         endedAt: 10,
         inputTokenCount: 9,
@@ -113,4 +116,125 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
   assert.equal("message" in summaryAgent, false);
   assert.deepEqual(summary.llms, []);
   assert.equal(summary.resultPath, resultPath);
+});
+
+void test("workflow_agent_event_log_omits_streamed_message_updates", () => {
+  assert.equal(
+    workflowAgentLogEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "hello" },
+      message: { role: "assistant", content: [{ type: "text", text: "hello" }] },
+    }),
+    undefined,
+  );
+});
+
+void test("event log keeps message lifecycle metadata", () => {
+  assert.deepEqual(
+    workflowAgentLogEvent({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "final full answer belongs in the session transcript" }],
+        usage: { input: 10, output: 3 },
+        provider: "openai-codex",
+        model: "gpt-5.5",
+      },
+    }),
+    { type: "message_end", message: { role: "assistant", usage: { input: 10, output: 3 }, provider: "openai-codex", model: "gpt-5.5" } },
+  );
+});
+
+void test("event log keeps agent completion metadata", () => {
+  assert.deepEqual(
+    workflowAgentLogEvent({
+      type: "agent_end",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "prompt" }] },
+        { role: "assistant", content: [{ type: "text", text: "final" }] },
+      ],
+      willRetry: false,
+    }),
+    { type: "agent_end", messageCount: 2, willRetry: false },
+  );
+});
+
+void test("event log keeps tool lifecycle metadata", () => {
+  assert.deepEqual(
+    workflowAgentLogEvent({
+      type: "tool_execution_end",
+      toolCallId: "call-1",
+      toolName: "read",
+      args: { path: "large.md" },
+      result: { content: [{ type: "text", text: "large file content belongs in the session transcript" }] },
+      partialResult: { content: [{ type: "text", text: "partial" }] },
+      isError: false,
+    }),
+    { type: "tool_execution_end", toolCallId: "call-1", toolName: "read", isError: false },
+  );
+});
+
+void test("event log keeps turn completion metadata", () => {
+  assert.deepEqual(
+    workflowAgentLogEvent({
+      type: "turn_end",
+      message: { role: "assistant", content: [{ type: "text", text: "final response" }], usage: { input: 12, output: 4 } },
+      toolResults: [{ content: [{ type: "text", text: "large tool output" }] }],
+    }),
+    { type: "turn_end", message: { role: "assistant", usage: { input: 12, output: 4 } }, toolResultCount: 1 },
+  );
+});
+
+void test("session tokens parse provider usage aliases", async () => {
+  const sessionDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-session-tokens-"));
+  await writeFile(
+    path.join(sessionDir, "workflow-agent-1.jsonl"),
+    [
+      JSON.stringify({ usage: { prompt_tokens: 3, completion_tokens: 2, cache_read_input_tokens: 500 } }),
+      JSON.stringify({ message: { usage: { input_tokens: 5, output_tokens: 7, total_tokens: 900 } } }),
+      JSON.stringify({ usage: { totalTokens: 1234, cacheRead: 1000 } }),
+    ].join("\n"),
+    "utf8",
+  );
+
+  assert.deepEqual(parseSessionTokens(sessionDir), {
+    input: 8,
+    cacheRead: 1500,
+    cacheWrite: 0,
+    output: 9,
+    total: 17,
+    cost: { knownUsd: 0, complete: false },
+  });
+});
+
+void test("workflow_session_tokens_parse_actual_usage_from_session_file", async () => {
+  const sessionDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-session-"));
+  await writeFile(
+    path.join(sessionDir, "session.jsonl"),
+    [
+      JSON.stringify({ type: "session", id: "session-1" }),
+      JSON.stringify({ message: { usage: { inputTokens: 10, cacheRead: 2, outputTokens: 4, cost: { total: 0.01 } } } }),
+      "not json",
+      JSON.stringify({ usage: { input: 3, cacheRead: 1, output: 2, cost: { total: 0.02 } } }),
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await writeFile(path.join(sessionDir, "events.jsonl"), `${JSON.stringify({ usage: { input: 100, output: 100 } })}\n`, "utf8");
+
+  assert.deepEqual(parseSessionTokens(sessionDir), {
+    input: 13,
+    cacheRead: 3,
+    cacheWrite: 0,
+    output: 6,
+    total: 19,
+    cost: { knownUsd: 0.03, complete: true },
+  });
+});
+
+void test("agent session logs use the project key and parent ID", () => {
+  assert.equal(
+    workflowAgentSessionLogDirectory("/tmp/example/project", "parent-1", "agent-001-review", "/home/user/.pi/agent/sessions"),
+    path.join("/home/user/.pi/agent/sessions", "--tmp-example-project--", "parent-1", "agent-001-review"),
+  );
 });

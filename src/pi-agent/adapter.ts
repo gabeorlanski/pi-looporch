@@ -34,8 +34,6 @@ export interface PiWorkflowAgentOptions {
   cwd: string;
   /** Parent-session capability metadata; avoids initializing extension factories for discovery. */
   agentCapabilityCatalog?: AgentCapabilityCatalogProvider;
-  /** External Pi SDK session factory; overridden only by deterministic adapter tests. */
-  createSession?: typeof createAgentSession;
 }
 
 /** Provides the createPiWorkflowAgent function contract. */
@@ -123,7 +121,7 @@ export function createPiWorkflowAgent(options: PiWorkflowAgentOptions): Workflow
       ? await createLoggedWorkflowAgentSession(options.cwd, effectiveCwd, agentOptions.sessionLog)
       : undefined;
     const sessionManager = loggedSession?.sessionManager;
-    const { session } = await (options.createSession ?? createAgentSession)({
+    const { session } = await createAgentSession({
       cwd: effectiveCwd,
       agentDir,
       sessionManager: sessionManager ?? SessionManager.inMemory(effectiveCwd),

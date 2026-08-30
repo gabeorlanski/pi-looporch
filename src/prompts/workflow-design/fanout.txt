@@ -1,8 +1,8 @@
 # Fan-out
 
-- Select the exact bounded input set before fan-out; never map an unbounded project tree.
-- Use `parallel(items, worker, { label })` only when every selected item is independent. State the worker's identical task contract and the reducer's required use of each worker result.
-- Use `pipeline(items, stages)` when every selected item must complete the same ordered stages.
-- `mapreduce` applies its `extensions` and `tools` selection to input selection, every map worker, and reduction. `verifier` applies its selection to every voter and reduction. Set or intentionally inherit this authority explicitly.
-- Record exact skipped scope with `log(...)` or `trace(...)` so users can see which inputs were intentionally excluded and why.
-- Workflow runs obey the project `maxParallelAgents` cap. Design fan-out as a bounded queue, not an unbounded launch burst.
+- Select a bounded input set before fan-out. Record skipped scope and why it was excluded.
+- Use `parallel(items, worker, { label })` only for independent items; use `pipeline(items, stages)` when each item needs the same ordered stages.
+- Give every matching worker the same static task prefix and a small dynamic suffix containing only its item ID, path, or manifest entry.
+- Preserve every worker artifact path or compact result in an explicit reducer manifest.
+- `mapreduce` applies one capability selection to input selection, workers, and reduction. `verifier` does the same for voters and reduction.
+- Workflow runs enforce `maxParallelAgents`; design fan-out as a bounded queue.

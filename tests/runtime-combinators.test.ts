@@ -58,7 +58,12 @@ export default async function workflow() {
     agentOptions.map((options) => Array.from((options as { extensions?: string[] }).extensions ?? [])),
     Array.from({ length: 4 }, () => ["./extensions/letters.ts"]),
   );
-  assert.equal((agentOptions[0] as { schema?: unknown }).schema !== undefined, true);
+  assert.deepEqual((agentOptions[0] as { schema?: unknown }).schema, {
+    type: "object",
+    properties: { items: { type: "array", items: {} } },
+    required: ["items"],
+    additionalProperties: false,
+  });
   assert.deepEqual(
     agentOptions.map((options) => Array.from((options as { tools?: string[] }).tools ?? [])),
     Array.from({ length: 4 }, () => ["read", "letter_lookup"]),

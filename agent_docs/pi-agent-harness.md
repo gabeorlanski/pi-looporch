@@ -22,7 +22,7 @@
 <!-- rule:7 -->
 - Treat a per-call tool list as an exact allowlist, loading an extension owner when one of its tools is named but exposing no sibling tools; when extensions are explicit and tools are unrestricted, expose built-ins plus all tools from those extensions — separates extension hooks/resources from exact tool exposure — keeps child behavior predictable.
 <!-- rule:8 -->
-- Write self-contained, explicit child-agent prompts — children do not share parent memory — that state the exact goal and boundary, authoritative reads, required actions, constraints, inputs and their use, deliverable, completion evidence, and blocker conditions. Do not expect a role label, convention, or model inference to supply a requirement; omit wording only when it is irrelevant or duplicated.
+- Shape each child prompt as one branch-complete task — children do not share parent memory — with active steps, authoritative input pointers, a consumed deliverable, and a checkable completion bound; leave other branches out of context and let cheap environment facts remain discoverable at their source.
 <!-- rule:9 -->
 - Use structured JSON as a control surface carrying status, ids, and paths — not as a payload channel for large content — keeps machine-readable output small and parseable while heavy data stays out of band.
 <!-- rule:10 -->
@@ -55,3 +55,18 @@
 - Build child capability catalogs from the already-bound parent session when available; initialize only explicitly selected extension paths that are absent from the bound metadata so their tool names can still be validated. Then create every child with a fresh `DefaultResourceLoader({ noExtensions: true, additionalExtensionPaths })`; never reuse loaded extension objects or clone their runtime because extension API actions close over the original runtime. Pi's public `getAllTools()` reports the effective tool registry, so a parent-derived catalog cannot reconstruct registrations that Pi has already shadowed under the same name; reject every ambiguity visible in the catalog and rely on the fresh child load for final extension-load errors.
 <!-- rule:24 -->
 - Propagate a terminal provider error from a child session before interpreting its assistant text — avoids misreporting failed model requests as empty or malformed structured output.
+
+## Test interactive mode
+
+Use a controlled tmux terminal from the repository root:
+
+```bash
+tmux new-session -d -s pi-test -x 80 -y 24
+tmux send-keys -t pi-test "npm run dev" Enter
+sleep 3 && tmux capture-pane -t pi-test -p
+tmux send-keys -t pi-test "your prompt here" Enter
+tmux send-keys -t pi-test Escape
+tmux kill-session -t pi-test
+```
+
+The procedure is complete when the captured pane shows the expected state and the tmux session is removed.

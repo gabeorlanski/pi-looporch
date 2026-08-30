@@ -1,11 +1,6 @@
 # Workflow authoring guidance
 
-Start with **overview**. Before authoring or changing a child-agent prompt, also request **prompt-files**. Request each remaining topic when its capability is part of the workflow you are designing.
-
-**Prompt-authoring rule:** default to explicitness. State the exact outcome, boundary, authoritative reads, required actions, constraints, deliverable, evidence, and blocker conditions. Remove only irrelevant or duplicated text; never omit a requirement for brevity or token economy.
+Start with **overview**. Load **prompt-files** before writing a child prompt. Load each other topic only when its branch is active.
 
 ## Topics
 {{topicList}}
-
-## Supported workflow primitives
-{{primitiveReference}}

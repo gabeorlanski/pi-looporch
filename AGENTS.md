@@ -1,132 +1,40 @@
 # pi-workflow Agent Instructions
 
-## Commands
+## Validate
 
-Run before handing off or committing:
+Run `npm run check` before handoff or commit. Use individual `package.json` scripts only for focused diagnosis.
 
-```bash
-npm run check
-```
+## Repository goal
 
-Useful focused checks:
+`pi-workflow` is a small, dependency-light Pi extension for code-first project workflows under `.pi/workflows/<name>/`.
 
-```bash
-npm run lint
-npm run format:check
-npm run docs:check
-npm run typecheck
-npm test
-npm run loadcheck
-```
+## Context pointers
 
-## Repository Goal
-
-`pi-workflow` is a small, dependency-light pi extension for code-first project
-workflows. Workflows live under `.pi/workflows/<name>/workflow.js` and use
-runtime primitives such as `agent`, `parallel`, `phase`, file helpers, and
-`renderPrompt`.
-
-## Documentation Scope
-
-Keep this root `AGENTS.md` limited to durable, repo-wide guidance. Do not add
-feature-specific behavior details, implementation notes, or test recipes here.
-Put those in `docs/`, `agent_docs/`, or a narrower `AGENTS.md`.
-
-Keep documentation synchronized with behavior changes:
-
-- `README.md`: concise user-facing front door.
-- `docs/`: design specs and product/architecture decisions.
-- `agent_docs/`: concise agent-facing coding rules and repository map.
-- Narrow `AGENTS.md` files: directory-local editing instructions.
-
-When user guidance is generalizable, add it to `agent_docs/INDEX.md`. Do not
-record one-off preferences or stale workarounds.
+- **Workflow authoring:** before generating or editing a workflow, child prompt, authoring guide, or schema, read `agent_docs/workflow-authoring.md`; it owns task hierarchy, context budgets, cache layout, minimal schemas, and runbook constraints.
+- **Interactive Pi testing:** before manually exercising the TUI, read the tmux procedure in `agent_docs/pi-agent-harness.md`.
+- **Topic rules and repository map:** use `agent_docs/INDEX.md` to locate the guide for the active branch; load that guide rather than every topic.
 
 ## Architecture
 
-- Parse and normalize at boundaries: commands, tools, UI handlers, and config.
-- Keep core runtime logic strict and already-normalized.
-- Keep pi command/TUI wiring in `extensions/`; keep workflow orchestration in
-  `src/`.
-- Put display rendering in `src/display/` and raw prompt text in
-  `src/prompts/`.
-- Inject agents and external services; do not hardcode providers in core logic.
-- Prefer direct functions and existing local helpers over new abstractions.
+- Parse and normalize at CLI, IO, API, and config boundaries; keep core logic strict.
+- Keep Pi command/TUI wiring in `extensions/`, orchestration in `src/`, display rendering in `src/display/`, and raw prompt text in `src/prompts/`.
+- Inject agents and external services; never hardcode providers in business logic.
+- Prefer direct functions and existing helpers over managers, inheritance, or premature abstractions.
+- Keep workflow phases as progress markers. Pass required results explicitly between stages.
 
-## Workflow Model
+## Code quality
 
-Keep the user-facing model simple:
+- Read files in full before broad changes or editing unfamiliar files.
+- Keep TypeScript strict and erasable under Node strip-only mode. Use top-level imports and avoid `any`.
+- Check installed external API types instead of guessing.
+- Inline single-use helpers that only rename an expression.
+- Ask before removing intentional functionality. Preserve backward compatibility only when requested.
+- Put configurable key defaults in `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` instead of hardcoding key checks.
+- Add or update deterministic tests for behavior changes; tests use fake agents, never live models.
+- Synchronize behavior changes with `README.md`, `docs/`, and the relevant agent guide.
 
-```text
-user asks for workflow help
-  -> use an existing workflow or author a new one
-  -> propose_workflow saves generated drafts
-  -> run_workflow or /workflow runs saved workflows
-```
+## Communication
 
-Workflow phases are progress markers, not shared memory. If later work needs an
-earlier result, pass that result explicitly through the workflow.
-
-## Conversational Style
-
-- Keep answers short and concise
-- No emojis in commits, issues, PR comments, or code
-- No fluff or cheerful filler text (e.g., "Thanks @user" not "Thanks so much @user!")
-- Technical prose only, be direct
-- When the user asks a question, answer it first before making edits or running implementation commands.
-- When responding to user feedback or an analysis, explicitly say whether you agree or disagree before saying what you changed.
-
-## Code Quality
-
-- Read files in full before wide-ranging changes, before editing files you have not fully inspected, and when asked to investigate or audit. Do not rely on search snippets for broad changes.
-- No `any` unless absolutely necessary.
-- Inline single-line helpers that have only one call site.
-- Check node_modules for external API types; don't guess.
-- **No inline imports** (`await import()`, `import("pkg").Type`, dynamic type imports). Top-level imports only.
-- Never remove or downgrade code to fix type errors from outdated deps; upgrade the dep instead.
-- Use only erasable TypeScript syntax (Node strip-only mode) in code checked by the root config (`packages/*/src`, `packages/*/test`, `packages/coding-agent/examples`): no parameter properties, `enum`, `namespace`/`module`, `import =`, `export =`, or other constructs needing JS emit. Use explicit fields with constructor assignments.
-- Always ask before removing functionality or code that appears intentional.
-- Do not preserve backward compatibility unless the user asks for it.
-- Never hardcode key checks (e.g. `matchesKey(keyData, "ctrl+x")`). Add defaults to `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` so they stay configurable.
-
-## Testing pi Interactive Mode with tmux
-
-Run the TUI in a controlled terminal (from the repo root):
-
-```bash
-tmux new-session -d -s pi-test -x 80 -y 24
-tmux send-keys -t pi-test "./pi-test.sh" Enter
-sleep 3 && tmux capture-pane -t pi-test -p     # capture after startup
-tmux send-keys -t pi-test "your prompt here" Enter
-tmux send-keys -t pi-test Escape               # special keys (also C-o for ctrl+o, etc.)
-tmux kill-session -t pi-test
-```
-
-## Changelog
-
-Location: `packages/*/CHANGELOG.md` (one per package).
-
-Sections under `## [Unreleased]`: `### Breaking Changes` (API changes requiring migration), `### Added`, `### Changed`, `### Fixed`, `### Removed`.
-
-Rules:
-
-- All new entries go under `## [Unreleased]`. Read the full section first and append to existing subsections; never duplicate them.
-- Released version sections (e.g. `## [0.12.2]`) are immutable; never modify them.
-
-Attribution:
-
-- Internal (from issues): `Fixed foo bar ([#123](https://github.com/gabeorlanski/pi-looporch/issues/123))`
-- External contributions: `Added feature X ([#456](https://github.com/gabeorlanski/pi-looporch/pull/456) by [@username](https://github.com/username))`
-
-## Coding Standards
-
-- Keep the extension small and dependency-light.
-- Keep generated workflow drafts outside the project by default.
-- Write child-agent prompts as explicit, self-contained task packets. State the exact goal, boundary, authoritative reads, required actions, constraints, deliverable, completion evidence, and blocker conditions; never rely on a role label or inference when a requirement can be written directly.
-- Write generated `workflow.js` code as straight-line orchestration that trusts workflow input contracts, runtime primitives, and established validated boundaries. Add validation or error behavior only when the user request or an authoritative existing contract explicitly requires that observable behavior; otherwise do not add speculative checks, custom errors, manual throws, catch-and-rethrow blocks, fallbacks, or recovery logic.
-- Keep structured JSON compact as a transport format: status, decisions, IDs, counts, paths, and short summaries; put large artifacts in files. Compact output never justifies an implicit task or result contract.
-- Use deterministic fake agents in tests; never call real models from tests.
-- Add or update tests for behavior changes.
-- Keep strict ESLint, Prettier, docs checks, and TypeScript clean.
-
-For detailed patterns, read `agent_docs/INDEX.md` before changing conventions.
+- Answer questions before editing.
+- State agreement or disagreement before acting on feedback.
+- Use concise technical prose. Avoid fluff and emojis in code, commits, issues, and PR comments.

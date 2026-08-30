@@ -34,7 +34,7 @@ void test("guidance tool returns index and focused guidance", async () => {
   const allText = all.content[0]?.type === "text" ? all.content[0].text : "";
   assert.ok(allText.length > 0);
   assert.deepEqual(all.details, { topic: "index" });
-  assert.doesNotMatch(allText, /\{\{(?:topicList|primitiveReference)\}\}/);
+  assert.doesNotMatch(allText, /Supported workflow primitives|Prompt-authoring rule|\{\{(?:topicList|primitiveReference)\}\}/);
 
   const overview = await tool.execute("call-2", { topic: "overview" }, undefined, undefined, {} as never);
   const overviewText = overview.content[0]?.type === "text" ? overview.content[0].text : "";
@@ -42,6 +42,7 @@ void test("guidance tool returns index and focused guidance", async () => {
   assert.match(overviewText, new RegExp(escapeRegExp(defaultWorkflowDraftRoot())));
   assert.match(overviewText, /Write straight-line workflow orchestration/);
   assert.match(overviewText, /user request or an authoritative existing contract explicitly requires that observable behavior/);
+  assert.doesNotMatch(overviewText, /Supported workflow primitives/);
   assert.deepEqual(overview.details, { topic: "overview" });
 
   const workflowApi = await tool.execute("call-4", { topic: "workflow-api" }, undefined, undefined, {} as never);
@@ -49,7 +50,21 @@ void test("guidance tool returns index and focused guidance", async () => {
   assert.match(workflowApiText, /Write straight-line workflow orchestration/);
   assert.match(workflowApiText, /Do not add speculative input checks, assertions, custom errors, manual `throw` statements/);
   assert.match(workflowApiText, /user request or an authoritative existing contract explicitly requires that observable behavior/);
+  assert.match(workflowApiText, /Supported workflow primitives/);
   assert.deepEqual(workflowApi.details, { topic: "workflow-api" });
+
+  const promptFiles = await tool.execute("call-5", { topic: "prompt-files" }, undefined, undefined, {} as never);
+  const promptFilesText = promptFiles.content[0]?.type === "text" ? promptFiles.content[0].text : "";
+  assert.match(promptFilesText, /static prefix/);
+  assert.match(promptFilesText, /dynamic suffix/);
+  assert.match(promptFilesText, /environment is the source of truth/i);
+  assert.doesNotMatch(promptFilesText, /const schema =|<structured_output_schema>/);
+
+  const structuredOutputs = await tool.execute("call-6", { topic: "structured-outputs" }, undefined, undefined, {} as never);
+  const structuredOutputsText = structuredOutputs.content[0]?.type === "text" ? structuredOutputs.content[0].text : "";
+  assert.match(structuredOutputsText, /transport contract/);
+  assert.match(structuredOutputsText, /downstream consumer/);
+  assert.match(structuredOutputsText, /Descriptions belong only on fields whose meaning/);
   assert.doesNotMatch(overviewText, /\{\{(?:draftRoot|primitiveReference)\}\}/);
   assert.throws(
     () => tool.execute("call-3", { topic: "unknown" }, undefined, undefined, {} as never),

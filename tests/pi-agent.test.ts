@@ -46,11 +46,15 @@ void test("schema agents validate and return terminal output", async () => {
             );
             await assert.rejects(
               terminalTool.execute("output-runtime", { name: "forged", status: "pass" }, undefined, undefined, { abort: () => undefined }),
-              /arguments do not match its schema/,
+              /reserved runtime field "name"/,
             );
-            await terminalTool.execute("output-1", { message: "Completed", status: "pass" }, undefined, undefined, {
-              abort: () => undefined,
-            });
+            await assert.rejects(
+              terminalTool.execute("output-message", { message: "Completed", status: "pass" }, undefined, undefined, {
+                abort: () => undefined,
+              }),
+              /reserved runtime field "message"/,
+            );
+            await terminalTool.execute("output-1", { status: "pass" }, undefined, undefined, { abort: () => undefined });
           },
           getSessionStats: () => ({
             tokens: { input: 10, output: 2, cacheRead: 4, cacheWrite: 1, total: 17 },
@@ -87,10 +91,14 @@ void test("schema agents validate and return terminal output", async () => {
 
   assert.deepEqual(sessionTools, ["StructuredOutput"]);
   assert.ok(terminalTool);
-  assert.match(JSON.stringify(terminalTool.parameters), /"message"/);
-  assert.match(JSON.stringify(terminalTool.parameters), /"status"/);
+  assert.deepEqual(terminalTool.parameters, {
+    type: "object",
+    properties: { status: { type: "string", description: "The final outcome." } },
+    required: ["status"],
+    additionalProperties: true,
+  });
   assert.deepEqual(result, {
-    message: "Completed",
+    message: null,
     name: "analysis",
     steps: 0,
     usage: { input: 10, output: 2, cacheRead: 4, cacheWrite: 1, total: 17 },

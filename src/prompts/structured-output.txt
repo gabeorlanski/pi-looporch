@@ -1,13 +1,3 @@
 <structured_output_contract>
-## Required structured result
-
-Pi-workflow supplied the exact result schema below.
-
-- When every task requirement is complete, call `StructuredOutput` exactly once with every required schema field and no fields besides schema-permitted fields and the optional runtime-provided `message`. Use `message` only when human-readable context helps interpret the result.
-- Make every schema field match its type, enum, format, description, and every other schema constraint. Include the concrete status, decisions, evidence, and artifact paths the task requires.
-- The tool arguments are the final result. The call ends this session after the current tool batch; do not send a final assistant response.
-
-<structured_output_schema>
-{{schema}}
-</structured_output_schema>
+Finish by calling `StructuredOutput` exactly once with the fields required by the task. Its tool parameter schema is the authoritative transport contract. The call ends this session after the current tool batch.
 </structured_output_contract>

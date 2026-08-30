@@ -1,6 +1,6 @@
 # Artifacts
 
-- Write large generated content to named files. Every prompt that creates or consumes an artifact must state its exact path, format, ownership, and downstream use.
-- Return `artifactPaths` plus the required status, decisions, summary, and evidence references; do not return full file contents when a later stage can read the file.
-- Use `@workflow/...` with `readText` and `readJson` for workflow-owned prompts, schemas, fixtures, and small deterministic inputs. Use `writeText` and `writeJson` for artifacts and manifests that later stages read by path.
-- Do not bulk-read project source merely to paste it into a prompt. Pass authoritative paths and state exactly what the child must inspect in them.
+- Write large generated content to named files. State each artifact's path, format, ownership, and downstream use in the producing and consuming task.
+- Return only the control fields a later stage reads, such as an artifact path, status, decision, stable ID, or short summary.
+- Use `@workflow/...` with `readText` and `readJson` for workflow-owned resources. Use `writeText` and `writeJson` for generated artifacts and manifests.
+- Pass project source by path and let the child read it. Copy source into a prompt only when the task must analyze that exact captured snapshot and no durable artifact already provides it.

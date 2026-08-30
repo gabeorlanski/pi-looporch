@@ -1,26 +1,21 @@
 # Workflow overview
 
-Use an existing workflow when it completes the requested job. Author a new workflow only when the request is reusable or multi-step enough to require an executable runbook.
+Use an existing workflow when it completes the requested job. Author a workflow only for a reusable or genuinely multi-step runbook.
 
-Before writing code, inspect the request, project instructions, relevant docs, tests, and existing workflows. Define this explicit design:
+Before writing code, inspect the request and the project's authoritative instructions, docs, tests, and existing workflows. Define:
 
-- **Outcome and boundary:** the exact user-visible job, included scope, excluded scope, and preserved constraints.
-- **Inputs:** every required field, inferred default, validation rule, and the few choices that genuinely require clarification.
-- **Stages:** for each ordered phase, state authoritative reads, required actions, inputs from earlier stages, written or returned output, failure/blocker conditions, and checkable completion evidence.
-- **Dataflow:** pass every prior result a stage needs. Explain how the stage uses each value; phases are progress markers, not memory.
-- **Result:** the exact final value, artifact paths, and evidence the user or later agent receives.
+1. **Outcome:** the exact user-visible result and scope boundary.
+2. **Inputs:** required values, context-supported defaults, and only the choices that require clarification.
+3. **Stages:** ordered work with each stage's reads, prior inputs, output, blockers, and checkable completion criterion.
+4. **Dataflow:** the value or artifact path passed between stages; phases are progress markers, not memory.
+5. **Result:** the final value, artifact paths, and evidence returned to the user.
 
-Then implement the design as a direct, inspectable runbook:
+Then implement a direct runbook:
 
-- Keep orchestration in `workflow.js`. Put reusable child prompts in `prompts/*.txt` and launch them with `agent({ template, values }, options)`.
-- Before authoring a child prompt, request `prompt-files`. **Default to explicitness:** spell out the exact goal, scope, reads, actions, priorities, constraints, deliverable, and completion evidence. Remove only irrelevant or duplicated wording; never remove a requirement for token economy.
-- Write straight-line workflow orchestration. Trust workflow input contracts, runtime primitives, and established validated boundaries; add validation or error behavior only when the user request or an authoritative existing contract explicitly requires that observable behavior.
-- Fan out only independent, selected inputs. Cap the set, preserve every worker artifact path in an explicit manifest for reduction, and report skipped scope.
-- Use `LLM` for one generation-only response without tools or a child session. Use `agent` for tool use, iterative work, or persistent child state.
-- Add an evidence-based review and at most one repair pass only for high-risk or important artifact-producing work.
-- Draft under `{{draftRoot}}`, validate the complete directory, then call `propose_workflow` with the workflow name.
+- Keep orchestration in `workflow.js`; keep reusable child tasks in `prompts/*.txt`.
+- Write straight-line workflow orchestration. Trust workflow input contracts, runtime primitives, and established validated boundaries. Add error behavior only when the user request or an authoritative existing contract explicitly requires that observable behavior.
+- Use `LLM` for one generation without tools or a child session; use `agent` for tool use or iterative work.
+- Bound fan-out before launching workers. Add review and one repair pass only when artifact risk justifies them.
+- Draft under `{{draftRoot}}`, then call `propose_workflow` with the workflow name.
 
-Request `workflow-api`, `draft-directory`, `prompt-files`, `child-agents`, `structured-outputs`, `fanout`, `verification`, or `artifacts` when their focused guidance is needed.
-
-## Supported workflow primitives
-{{primitiveReference}}
+Before a child prompt, load `prompt-files`. Load `workflow-api`, `draft-directory`, `child-agents`, `structured-outputs`, `fanout`, `verification`, or `artifacts` only for capabilities this design uses.

@@ -1,12 +1,6 @@
 # tests/ Agent Instructions
 
-## Commands
-
-```bash
-npm run lint
-npm test
-npm run check
-```
+Run `npm run check` from the repository root before handoff.
 
 ## Purpose
 

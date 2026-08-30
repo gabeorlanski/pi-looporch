@@ -12,35 +12,19 @@ interface DesignTopic {
 const workflowDesignIndexTemplate = readFileSync(new URL("./prompts/workflow-design/index.txt", import.meta.url), "utf8").trim();
 
 const designTopics: DesignTopic[] = [
-  {
-    name: "overview",
-    summary: "Required first: define an explicit workflow outcome, stages, dataflow, and result.",
-    promptFile: "overview.txt",
-  },
-  { name: "workflow-api", summary: "Exact sandbox globals and metadata requirements for workflow.js.", promptFile: "workflow-api.txt" },
-  {
-    name: "draft-directory",
-    summary: "How to stage every workflow resource in one complete draft directory.",
-    promptFile: "draft-directory.txt",
-  },
-  {
-    name: "prompt-files",
-    summary: "Required before child prompts: spell out exact task requirements in workflow-owned prompt files.",
-    promptFile: "prompt-files.txt",
-  },
-  {
-    name: "child-agents",
-    summary: "How to give child agents explicit boundaries, work, deliverables, and handoffs.",
-    promptFile: "child-agents.txt",
-  },
+  { name: "overview", summary: "Start here: define the outcome, stages, dataflow, and result.", promptFile: "overview.txt" },
+  { name: "workflow-api", summary: "API: sandbox globals, metadata, and primitive reference.", promptFile: "workflow-api.txt" },
+  { name: "draft-directory", summary: "Drafts: stage and save the complete workflow directory.", promptFile: "draft-directory.txt" },
+  { name: "prompt-files", summary: "Prompts: task hierarchy, disclosure, and cache shape.", promptFile: "prompt-files.txt" },
+  { name: "child-agents", summary: "Agents: task inputs, capabilities, and handoffs.", promptFile: "child-agents.txt" },
   {
     name: "structured-outputs",
-    summary: "How to require exact terminal structured fields without parsing assistant text.",
+    summary: "Schemas: minimal transport contracts for consumed fields.",
     promptFile: "structured-outputs.txt",
   },
-  { name: "fanout", summary: "How to bound parallel work and state every worker contract.", promptFile: "fanout.txt" },
-  { name: "verification", summary: "When and how to define explicit verifier and repair stages.", promptFile: "verification.txt" },
-  { name: "artifacts", summary: "How to name and pass generated outputs and resource files.", promptFile: "artifacts.txt" },
+  { name: "fanout", summary: "Fan-out: bounded workers and reducer manifests.", promptFile: "fanout.txt" },
+  { name: "verification", summary: "Verification: risk-based gates and bounded repair.", promptFile: "verification.txt" },
+  { name: "artifacts", summary: "Artifacts: durable payloads passed by path.", promptFile: "artifacts.txt" },
 ];
 
 /** Provides the workflowDesignGuidance function contract. */
@@ -52,14 +36,15 @@ export function workflowDesignGuidance(topic?: string): string {
 }
 
 function workflowDesignTopicIndex(): string {
-  return workflowDesignIndexTemplate
-    .replaceAll("{{topicList}}", designTopics.map((topic) => `- **${topic.name}** — ${topic.summary}`).join("\n"))
-    .replaceAll("{{primitiveReference}}", renderWorkflowPrimitiveReference());
+  return workflowDesignIndexTemplate.replaceAll(
+    "{{topicList}}",
+    designTopics.map((topic) => `- **${topic.name}** — ${topic.summary}`).join("\n"),
+  );
 }
 
 function renderDesignTopic(topic: DesignTopic): string {
-  return readFileSync(new URL(`./prompts/workflow-design/${topic.promptFile}`, import.meta.url), "utf8")
+  const template = readFileSync(new URL(`./prompts/workflow-design/${topic.promptFile}`, import.meta.url), "utf8")
     .trim()
-    .replaceAll("{{draftRoot}}", defaultWorkflowDraftRoot())
-    .replaceAll("{{primitiveReference}}", renderWorkflowPrimitiveReference());
+    .replaceAll("{{draftRoot}}", defaultWorkflowDraftRoot());
+  return topic.name === "workflow-api" ? template.replaceAll("{{primitiveReference}}", renderWorkflowPrimitiveReference()) : template;
 }

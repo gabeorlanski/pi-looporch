@@ -4,7 +4,7 @@ import { defineTool, getAgentDir, type ExtensionContext, type ToolDefinition } f
 import { resumeVisibleWorkflowRun, startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
 import type { SendWorkflowUserMessage } from "./display/workflow-user-message.ts";
 import { workflowFinalOutputPath } from "./workflow/outputs.ts";
-import type { WorkflowAgent, WorkflowLLM } from "./runtime/types.ts";
+import type { WorkflowAgent, WorkflowLLM, WorkflowSnapshot } from "./runtime/types.ts";
 import { progressDisplay } from "./display/progress.ts";
 import { saveWorkflowDraft } from "./workflow/draft-save.ts";
 import { workflowDesignGuidance } from "./authoring-guide.ts";
@@ -12,27 +12,27 @@ import { readWorkflowDraft } from "./workflow/drafts.ts";
 import { normalizeWorkflowName } from "./workflow/paths.ts";
 import { renderWorkflowStatus, renderWorkflowStatusJson } from "./display/workflow-status.ts";
 import { readSelectedWorkflowStatus, type WorkflowStatusQuery } from "./workflow/status.ts";
-import { createAgentCapabilityCatalogProvider, type AgentCapabilityCatalogProvider } from "./pi-agent/capabilities/catalog.ts";
+import type { AgentCapabilityCatalogProvider } from "./pi-agent/capabilities/catalog.ts";
 import { validateWorkflowAgentCapabilities } from "./workflow/agent-capability-validation.ts";
 import { readWorkflowSettings } from "./workflow/settings.ts";
 
-/** Dependencies used to construct workflow tools for either an extension session or tests. */
+/** Dependencies used to construct the complete production workflow tool surface. */
 export interface WorkflowToolsOptions {
-  run?: WorkflowRunToolOptions;
-  agentCapabilityCatalogForContext?: (ctx: ExtensionContext) => AgentCapabilityCatalogProvider;
+  run: WorkflowRunToolOptions;
+  agentCapabilityCatalogForContext: (ctx: ExtensionContext) => AgentCapabilityCatalogProvider;
 }
 
-/** Complete dependency set required to expose the run_workflow tool. */
+/** Pi-owned runtime and message boundaries required by run and resume tools. */
 export interface WorkflowRunToolOptions {
-  agentForContext: (ctx: ExtensionContext) => WorkflowAgent;
-  llmForContext: (ctx: ExtensionContext) => WorkflowLLM;
+  runtimeForContext: (ctx: ExtensionContext) => { agent: WorkflowAgent; llm: WorkflowLLM };
   sendUserMessageForContext: (ctx: ExtensionContext) => SendWorkflowUserMessage;
 }
 
 /** Builds the public tool surface for running, authoring guidance, and proposing workflows. */
 export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefinition[] {
   return [
-    ...(options.run === undefined ? [] : [createRunWorkflowTool(options.run), createResumeWorkflowTool(options.run)]),
+    createRunWorkflowTool(options.run),
+    createResumeWorkflowTool(options.run),
     createWorkflowStatusTool(),
     createGuidanceTool(),
     createProposeWorkflowTool(options),
@@ -52,8 +52,7 @@ function createRunWorkflowTool(options: WorkflowRunToolOptions): ToolDefinition 
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const cwd = ctx.cwd;
       const workflowName = normalizeWorkflowName(params.name);
-      const agent = options.agentForContext(ctx);
-      const llm = options.llmForContext(ctx);
+      const { agent, llm } = options.runtimeForContext(ctx);
       const sendUserMessage = options.sendUserMessageForContext(ctx);
       const visible = await startVisibleWorkflowRun({
         ctx,
@@ -65,22 +64,9 @@ function createRunWorkflowTool(options: WorkflowRunToolOptions): ToolDefinition 
         llm,
         signal,
         sendUserMessage,
-        onSnapshot: (snapshot, prepared, run) => {
-          onUpdate?.({
-            content: [{ type: "text", text: progressDisplay(snapshot).text }],
-            details: runningWorkflowToolDetails(prepared.workflowName, prepared.runId, run.outputsDir),
-          });
-        },
+        onSnapshot: workflowToolSnapshot(onUpdate),
       });
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Workflow ${workflowName} started in the background.\n\nWorkflow run ID: ${visible.run.runId}\nWorkflow outputs: ${visible.run.outputsDir}\nWorkflow result: ${workflowFinalOutputPath(visible.run.outputsDir)}`,
-          },
-        ],
-        details: runningWorkflowToolDetails(visible.prepared.workflowName, visible.prepared.runId, visible.run.outputsDir),
-      };
+      return runningWorkflowToolResult("started", visible);
     },
   });
 }
@@ -101,28 +87,45 @@ function createResumeWorkflowTool(options: WorkflowRunToolOptions): ToolDefiniti
         cwd,
         runId: params.runId,
         agentDir: getAgentDir(),
-        agent: options.agentForContext(ctx),
-        llm: options.llmForContext(ctx),
+        ...options.runtimeForContext(ctx),
         signal,
         sendUserMessage: options.sendUserMessageForContext(ctx),
-        onSnapshot: (snapshot, prepared, run) => {
-          onUpdate?.({
-            content: [{ type: "text", text: progressDisplay(snapshot).text }],
-            details: runningWorkflowToolDetails(prepared.workflowName, prepared.runId, run.outputsDir),
-          });
-        },
+        onSnapshot: workflowToolSnapshot(onUpdate),
       });
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Workflow ${visible.prepared.workflowName} resumed in the background.\n\nWorkflow run ID: ${visible.run.runId}\nWorkflow outputs: ${visible.run.outputsDir}\nWorkflow result: ${workflowFinalOutputPath(visible.run.outputsDir)}`,
-          },
-        ],
-        details: runningWorkflowToolDetails(visible.prepared.workflowName, visible.prepared.runId, visible.run.outputsDir),
-      };
+      return runningWorkflowToolResult("resumed", visible);
     },
   });
+}
+
+function workflowToolSnapshot(
+  onUpdate:
+    | ((partialResult: { content: { type: "text"; text: string }[]; details: ReturnType<typeof runningWorkflowToolDetails> }) => void)
+    | undefined,
+): (snapshot: WorkflowSnapshot, prepared: { workflowName: string; runId: string }, run: { outputsDir: string }) => void {
+  return (snapshot, prepared, run) => {
+    onUpdate?.({
+      content: [{ type: "text", text: progressDisplay(snapshot).text }],
+      details: runningWorkflowToolDetails(prepared.workflowName, prepared.runId, run.outputsDir),
+    });
+  };
+}
+
+function runningWorkflowToolResult(
+  action: "started" | "resumed",
+  visible: { prepared: { workflowName: string }; run: { runId: string; outputsDir: string } },
+): {
+  content: { type: "text"; text: string }[];
+  details: ReturnType<typeof runningWorkflowToolDetails>;
+} {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: `Workflow ${visible.prepared.workflowName} ${action} in the background.\n\nWorkflow run ID: ${visible.run.runId}\nWorkflow outputs: ${visible.run.outputsDir}\nWorkflow result: ${workflowFinalOutputPath(visible.run.outputsDir)}`,
+      },
+    ],
+    details: runningWorkflowToolDetails(visible.prepared.workflowName, visible.run.runId, visible.run.outputsDir),
+  };
 }
 
 function runningWorkflowToolDetails(
@@ -154,7 +157,6 @@ function createWorkflowStatusTool(): ToolDefinition {
     parameters: Type.Object({
       scope: Type.Optional(Type.Union([Type.Literal("project"), Type.Literal("current-session")])),
       ref: Type.Optional(Type.String()),
-      includeCompleted: Type.Optional(Type.Boolean()),
       format: Type.Optional(Type.Union([Type.Literal("summary"), Type.Literal("json")])),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -163,7 +165,6 @@ function createWorkflowStatusTool(): ToolDefinition {
         scope: params.scope ?? "project",
         ownerSessionId: ctx.sessionManager.getSessionId(),
         ref: params.ref ?? "latest",
-        includeCompleted: params.includeCompleted ?? false,
         now: Date.now(),
       };
       const status = await readSelectedWorkflowStatus(cwd, query);
@@ -226,7 +227,7 @@ function createProposeWorkflowTool(options: WorkflowToolsOptions): ToolDefinitio
         workflowName: name,
         defaultExtensions: settings.childAgentExtensions,
         defaultTools: settings.childAgentTools,
-        catalogProvider: options.agentCapabilityCatalogForContext?.(ctx) ?? createAgentCapabilityCatalogProvider({ cwd }),
+        catalogProvider: options.agentCapabilityCatalogForContext(ctx),
       });
       await saveWorkflowDraft({ cwd, draft });
       return {

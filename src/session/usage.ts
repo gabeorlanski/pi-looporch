@@ -16,6 +16,11 @@ export interface TokenUsage {
 export function parseSessionTokens(sessionDir: string): TokenUsage | null {
   const sessionFile = findLatestSessionFile(sessionDir);
   if (!sessionFile) return null;
+  return parseSessionTokenFile(sessionFile);
+}
+
+/** Parses provider usage from one canonical Pi session transcript. */
+export function parseSessionTokenFile(sessionFile: string): TokenUsage | null {
   try {
     let input = 0;
     let cacheRead = 0;
@@ -103,7 +108,8 @@ function tokenProperty(value: object, keys: string[]): number {
   return 0;
 }
 
-function findLatestSessionFile(sessionDir: string): string | undefined {
+/** Finds the newest transcript only when a caller has no declared transcript path. */
+export function findLatestSessionFile(sessionDir: string): string | undefined {
   if (!existsSync(sessionDir)) return undefined;
   return readdirSync(sessionDir)
     .filter((file) => file.endsWith(".jsonl") && file !== "events.jsonl")

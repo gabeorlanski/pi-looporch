@@ -1,11 +1,11 @@
 /** Provides agent session logs behavior. */
 import { appendFileSync } from "node:fs";
 import path from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { WorkflowAgentSessionLog } from "../runtime/types.ts";
 import { workflowAgentSessionLogDirectory } from "./logs.ts";
 import { workflowAgentLogEvent } from "./events.ts";
+import { writeJsonFileAtomic, writeTextFileAtomic } from "../workflow/files.ts";
 
 export interface LoggedWorkflowAgentSession {
   sessionManager: SessionManager;
@@ -23,29 +23,20 @@ export async function createLoggedWorkflowAgentSession(
 ): Promise<LoggedWorkflowAgentSession> {
   const sessionDir = workflowAgentSessionLogDirectory(projectCwd, sessionLog.parentId, sessionLog.agentKey);
   const eventsFile = path.join(sessionDir, "events.jsonl");
-  await mkdir(sessionDir, { recursive: true });
   const sessionId = `workflow-agent-${String(sessionLog.agentId)}`;
   const sessionManager = SessionManager.create(agentCwd, sessionDir, { id: sessionId });
   const sessionFile = sessionManager.getSessionFile() ?? path.join(sessionDir, `${sessionId}.jsonl`);
   await Promise.all([
-    writeFile(
-      path.join(sessionDir, "metadata.json"),
-      `${JSON.stringify(
-        {
-          ...sessionLog,
-          cwd: path.resolve(agentCwd),
-          projectCwd: path.resolve(projectCwd),
-          sessionDir,
-          sessionFile,
-          eventsFile,
-          startedAt: new Date().toISOString(),
-        },
-        null,
-        2,
-      )}\n`,
-      "utf8",
-    ),
-    writeFile(eventsFile, "", "utf8"),
+    writeJsonFileAtomic(path.join(sessionDir, "metadata.json"), {
+      ...sessionLog,
+      cwd: path.resolve(agentCwd),
+      projectCwd: path.resolve(projectCwd),
+      sessionDir,
+      sessionFile,
+      eventsFile,
+      startedAt: new Date().toISOString(),
+    }),
+    writeTextFileAtomic(eventsFile, ""),
   ]);
   let seq = 0;
   return {

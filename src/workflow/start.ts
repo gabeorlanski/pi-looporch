@@ -37,14 +37,31 @@ export async function prepareWorkflowRun(options: {
   const workflowName = normalizeWorkflowName(options.workflowName);
   const workflow = (await discoverWorkflows(options.cwd)).find((candidate) => candidate.name === workflowName);
   if (!workflow) throw new Error(`Workflow '${workflowName}' not found.`);
-  const input = validateWorkflowInput(options.input, workflow.name, await readWorkflowInputContract(workflow));
-  const runId = createWorkflowRunId(workflow.name);
+  return prepareDiscoveredWorkflowRun({
+    cwd: options.cwd,
+    workflow,
+    input: options.input,
+    contract: await readWorkflowInputContract(workflow),
+    agentDir: options.agentDir,
+  });
+}
+
+/** Prepares an already discovered and validated-input-contract workflow without rediscovering it. */
+export async function prepareDiscoveredWorkflowRun(options: {
+  cwd: string;
+  workflow: WorkflowReference;
+  input: unknown;
+  contract: WorkflowInputContract;
+  agentDir: string;
+}): Promise<PreparedWorkflowRun> {
+  const input = validateWorkflowInput(options.input, options.workflow.name, options.contract);
+  const runId = createWorkflowRunId(options.workflow.name);
   const workflowSettings = await readWorkflowSettings(options.cwd, options.agentDir);
   return {
     runId,
     cwd: options.cwd,
-    workflowName: workflow.name,
-    workflow,
+    workflowName: options.workflow.name,
+    workflow: options.workflow,
     input,
     workflowRoots: await workflowRootsForProject(options.cwd),
     maxParallelAgents: workflowSettings.maxParallelAgents,

@@ -78,11 +78,9 @@ export function workflowFailureHandoffPrompt(workflowName: string, failure: stri
 }
 
 function renderPromptTemplate(template: string, values: Record<string, string>): string {
-  return interpolatePromptTemplate(template, values).trim();
-}
-
-function interpolatePromptTemplate(template: string, values: Record<string, string>): string {
-  return Object.entries(values).reduce((rendered, [key, value]) => rendered.replaceAll(`{{${key}}}`, escapePromptValue(value)), template);
+  return Object.entries(values)
+    .reduce((rendered, [key, value]) => rendered.replaceAll(`{{${key}}}`, escapePromptValue(value)), template)
+    .trim();
 }
 
 function escapePromptValue(value: string): string {

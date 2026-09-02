@@ -10,13 +10,12 @@ import { createParentAgentCapabilityCatalogProvider, type AgentCapabilityCatalog
 import { parseWorkflowInput } from "../src/input.ts";
 import { startWorkflowMonitorWidget, stopWorkflowMonitorWidget } from "../src/display/workflow-monitor-widget.ts";
 import { openRunningWorkflowInspector, restoreRunningWorkflowUi } from "../src/display/running-workflow-ui.ts";
-import { abortVisibleWorkflowRuns, startVisibleWorkflowRun } from "../src/display/visible-workflow-run.ts";
+import { abortVisibleWorkflowRuns, startVisiblePreparedWorkflowRun } from "../src/display/visible-workflow-run.ts";
 import { sendWorkflowUserMessage } from "../src/display/workflow-user-message.ts";
 import { createWorkflowTools } from "../src/tools.ts";
-import { validateWorkflowInput, WorkflowInputError, type WorkflowInputContract } from "../src/workflow/input-contract.ts";
-import type { WorkflowLLM, WorkflowMetadata } from "../src/runtime/types.ts";
-import { normalizeWorkflowName } from "../src/workflow/paths.ts";
-import { readWorkflowInputContract } from "../src/workflow/start.ts";
+import { WorkflowInputError, type WorkflowInputContract } from "../src/workflow/input-contract.ts";
+import type { WorkflowAgent, WorkflowLLM, WorkflowMetadata } from "../src/runtime/types.ts";
+import { prepareDiscoveredWorkflowRun, readWorkflowInputContract, type PreparedWorkflowRun } from "../src/workflow/start.ts";
 import { reviewWorkflowCommand } from "./commands/review.ts";
 import { workflowSettingsCommand } from "./commands/settings.ts";
 import { workflowStatusCommand } from "./commands/status.ts";
@@ -33,11 +32,14 @@ export default function piWorkflow(pi: ExtensionAPI): void {
     capabilityCatalogs.set(cwd, catalog);
     return catalog;
   };
+  const runtimeForContext = (ctx: ExtensionContext): { agent: WorkflowAgent; llm: WorkflowLLM } => ({
+    agent: createPiWorkflowAgent({ cwd: ctx.cwd, agentCapabilityCatalog: capabilityCatalogForCwd(ctx.cwd) }),
+    llm: createWorkflowLLM(ctx),
+  });
 
   for (const tool of createWorkflowTools({
     run: {
-      agentForContext: (ctx) => createPiWorkflowAgent({ cwd: ctx.cwd, agentCapabilityCatalog: capabilityCatalogForCwd(ctx.cwd) }),
-      llmForContext: createWorkflowLLM,
+      runtimeForContext,
       sendUserMessageForContext:
         () =>
         (message, options): void =>
@@ -51,7 +53,7 @@ export default function piWorkflow(pi: ExtensionAPI): void {
   pi.registerCommand("workflow", {
     description: "Run or create a project workflow in the current session",
     getArgumentCompletions: (prefix) => workflowCompletions(process.cwd(), prefix),
-    handler: async (args, ctx) => steerWorkflowCommand(pi, ctx, undefined, args, capabilityCatalogForCwd(ctx.cwd)),
+    handler: async (args, ctx) => steerWorkflowCommand(pi, runtimeForContext, ctx, undefined, args),
   });
 
   pi.registerCommand("workflow-review", {
@@ -85,8 +87,7 @@ export default function piWorkflow(pi: ExtensionAPI): void {
       aliases.add(command);
       pi.registerCommand(command, {
         description: workflow.metadata.description,
-        handler: async (args, commandCtx) =>
-          steerWorkflowCommand(pi, commandCtx, workflow.name, args, capabilityCatalogForCwd(commandCtx.cwd)),
+        handler: async (args, commandCtx) => steerWorkflowCommand(pi, runtimeForContext, commandCtx, workflow.name, args),
       });
     }
   });
@@ -100,13 +101,13 @@ export default function piWorkflow(pi: ExtensionAPI): void {
 
 async function steerWorkflowCommand(
   pi: ExtensionAPI,
+  runtimeForContext: (ctx: ExtensionContext) => { agent: WorkflowAgent; llm: WorkflowLLM },
   ctx: ExtensionCommandContext,
   fixedWorkflowName: string | undefined,
   args: string,
-  capabilityCatalog: AgentCapabilityCatalogProvider,
 ): Promise<void> {
   if (fixedWorkflowName) {
-    await runExistingWorkflowCommand(pi, ctx, normalizeWorkflowName(fixedWorkflowName), args, capabilityCatalog);
+    await runExistingWorkflowCommand(pi, runtimeForContext, ctx, fixedWorkflowName, args);
     return;
   }
 
@@ -120,7 +121,7 @@ async function steerWorkflowCommand(
 
   const [first, rest] = splitFirstWord(trimmed);
   if (names.includes(first)) {
-    await runExistingWorkflowCommand(pi, ctx, first, rest, capabilityCatalog);
+    await runExistingWorkflowCommand(pi, runtimeForContext, ctx, first, rest);
     return;
   }
 
@@ -130,10 +131,10 @@ async function steerWorkflowCommand(
 
 async function runExistingWorkflowCommand(
   pi: ExtensionAPI,
+  runtimeForContext: (ctx: ExtensionContext) => { agent: WorkflowAgent; llm: WorkflowLLM },
   ctx: ExtensionCommandContext,
   workflowName: string,
   rawInput: string,
-  capabilityCatalog: AgentCapabilityCatalogProvider,
 ): Promise<void> {
   const workflow = (await discoverWorkflows(ctx.cwd)).find((candidate) => candidate.name === workflowName);
   if (!workflow) {
@@ -148,9 +149,15 @@ async function runExistingWorkflowCommand(
     return;
   }
 
-  let input: unknown;
+  let prepared: PreparedWorkflowRun;
   try {
-    input = validateWorkflowInput(parsedInput.input, workflowName, inputContract);
+    prepared = await prepareDiscoveredWorkflowRun({
+      cwd: ctx.cwd,
+      workflow,
+      input: parsedInput.input,
+      contract: inputContract,
+      agentDir: getAgentDir(),
+    });
   } catch (error) {
     if (error instanceof WorkflowInputError) {
       resolveWorkflowInput(
@@ -167,15 +174,11 @@ async function runExistingWorkflowCommand(
   }
 
   try {
-    const agent = createPiWorkflowAgent({ cwd: ctx.cwd, agentCapabilityCatalog: capabilityCatalog });
-    const llm = createWorkflowLLM(ctx);
+    const { agent, llm } = runtimeForContext(ctx);
     ctx.ui.notify(`Running workflow '${workflowName}' in the background`, "info");
-    await startVisibleWorkflowRun({
+    await startVisiblePreparedWorkflowRun({
       ctx,
-      cwd: ctx.cwd,
-      workflowName,
-      input,
-      agentDir: getAgentDir(),
+      prepared,
       agent,
       llm,
       signal: ctx.signal,

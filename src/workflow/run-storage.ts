@@ -4,24 +4,24 @@ import path from "node:path";
 
 const WORKFLOW_TEMP_ROOT = "/tmp/pi-looporch";
 
-/** Returns the Claude-style project slug used for temporary workflow storage. */
-function workflowProjectSlug(cwd: string): string {
+/** Returns the canonical filesystem-safe project slug used by workflow storage. */
+export function workflowProjectSlug(cwd: string): string {
   return path.resolve(cwd).replace(/[/\\:]/g, "-");
 }
 
 /** Returns the temporary directory owned by one live Pi session. */
-export function workflowSessionDirectory(cwd: string, sessionId: string): string {
+function workflowSessionDirectory(cwd: string, sessionId: string): string {
   return path.join(WORKFLOW_TEMP_ROOT, workflowProjectSlug(cwd), storageComponent(sessionId));
 }
 
 /** Returns the temporary output and checkpoint directory for one workflow run. */
 export function workflowRunDirectory(cwd: string, sessionId: string, runId: string): string {
-  return path.join(workflowSessionDirectory(cwd, sessionId), "runs", storageComponent(runId));
+  return path.join(workflowRunsDirectory(cwd, sessionId), storageComponent(runId));
 }
 
-/** Returns the active-run registry directory for one live Pi session. */
-export function activeWorkflowRunsDirectory(cwd: string, sessionId: string): string {
-  return path.join(workflowSessionDirectory(cwd, sessionId), "active");
+/** Returns the temporary directory containing every workflow run for one live Pi session. */
+export function workflowRunsDirectory(cwd: string, sessionId: string): string {
+  return path.join(workflowSessionDirectory(cwd, sessionId), "runs");
 }
 
 /** Removes all temporary workflow state owned by one ending Pi session. */
@@ -35,6 +35,6 @@ export function workflowProjectDirectory(cwd: string): string {
 }
 
 /** Encodes an untrusted identifier as one non-traversing storage path component. */
-export function storageComponent(value: string): string {
+function storageComponent(value: string): string {
   return encodeURIComponent(value).replaceAll(".", "%2E");
 }

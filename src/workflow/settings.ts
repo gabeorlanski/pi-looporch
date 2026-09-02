@@ -1,7 +1,8 @@
 /** Provides settings behavior. */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { isMissingFileError } from "../errors.ts";
+import { writeJsonFileAtomic } from "./files.ts";
 
 export type CapabilitySelection = "all" | string[];
 
@@ -120,8 +121,7 @@ async function writeWorkflowSettingsFile(settingsPath: string, settings: Workflo
   }
   const workflow = isRecord(rawSettings.workflow) ? rawSettings.workflow : {};
   rawSettings.workflow = { ...workflow, ...patch };
-  await mkdir(path.dirname(settingsPath), { recursive: true });
-  await writeFile(settingsPath, `${JSON.stringify(rawSettings, null, 2)}\n`, "utf8");
+  await writeJsonFileAtomic(settingsPath, rawSettings);
 }
 
 function normalizeWorkflowSettingsPatch(settings: WorkflowSettingsPatch): WorkflowSettingsPatch {

@@ -95,7 +95,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 ## Key data shapes
 
 - Runtime types: `src/runtime/types.ts` defines `WorkflowMetadata`, `WorkflowAgentOptions`, `WorkflowAgent`, `WorkflowSnapshot`, `RunWorkflowOptions`, and `WorkflowRunResult`.
-- Runtime execution: `src/runtime/run.ts` wires sandboxed execution; `src/workflow/start.ts` owns shared run preparation/start policy for commands and tools; `src/workflow/background-runs.ts` owns background execution, active-run registration, outputs, and session-summary closeout.
+- Runtime execution: `src/runtime/run.ts` wires sandboxed execution; `src/workflow/start.ts` owns shared run preparation/start policy for commands and tools; `src/workflow/background-runs.ts` owns background execution, canonical run-record updates, outputs, and session-summary closeout.
 - Workflow source analysis: `src/workflow/source-analysis.ts`, `src/workflow/sandbox.ts`, `src/workflow/metadata.ts`, `src/workflow/input-contract.ts`, and `src/workflow/agent-capability-source.ts` own AST restrictions, sandbox transforms, static metadata/input parsing, and child-agent capability extraction.
 - Workflow saving: `src/workflow/draft-save.ts` defines `GeneratedWorkflowDraft` validation and draft saving.
 - Discovery: `src/discovery.ts` defines `WorkflowReference` and workflow root handling; workflow root settings come from `src/workflow/settings.ts`.
@@ -114,7 +114,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - Discover workflows and configured roots: `src/discovery.ts` plus `src/workflow/settings.ts`.
 - Save generated workflow drafts: `src/workflow/draft-save.ts` saves validated draft directories, `src/workflow/drafts.ts` reads them from the default draft root, and `src/workflow/agent-capability-validation.ts` rejects invalid child-agent capability selections before saving.
 - Understand runtime primitives: `src/runtime/globals.ts` registers primitives from `src/runtime/primitives/`; shared primitive context lives in `src/runtime/context.ts`.
-- Inspect active workflow status: data comes from `src/workflow/status.ts`, active records from `src/workflow/active-runs.ts`, snapshots from `src/workflow/active-run-snapshots.ts`, rendering from `src/display/workflow-status.ts`, slash command parsing from `extensions/commands/status.ts`, and tool wiring from `src/tools.ts`.
+- Inspect active workflow status: data comes from `src/workflow/status.ts`, canonical lifecycle records from `src/workflow/run-record.ts`, snapshots from `src/workflow/active-run-snapshots.ts`, rendering from `src/display/workflow-status.ts`, slash command parsing from `extensions/commands/status.ts`, and tool wiring from `src/tools.ts`.
 - Inspect workflow UI: running widget lifecycle lives in `src/display/running-workflow-ui.ts`, command/tool visible-run startup in `src/display/visible-workflow-run.ts`, compact widget rendering in `src/display/workflow-widget.ts`, and detail inspector rendering in `src/display/workflow-inspector.ts`.
 - Inspect outputs and artifacts: `src/workflow/outputs.ts` writes final output, snapshots, manifests, child-agent prompts, child-agent output, and tool activity artifacts.
 - Inspect session logs and cost review: `src/session/logs.ts` writes workflow summaries, `src/session/agent-logs.ts` creates child-agent session logs, `src/session/events.ts` filters event metadata, `src/session/usage.ts` parses token usage, and `src/log-review.ts` builds `/workflow-review`.
@@ -130,7 +130,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - `src/runtime/run.ts`: sandboxed workflow execution wiring and progress snapshots.
 - `src/runtime/types.ts`: runtime public type contracts.
 - `src/workflow/start.ts`: shared workflow lookup, input validation, settings, run id, and background-start policy.
-- `src/workflow/background-runs.ts`: background run lifecycle, active-run record registration, final output/session summary persistence, and cleanup.
+- `src/workflow/background-runs.ts`: background run lifecycle, canonical run-record updates, final output/session summary persistence, and cleanup.
 - `src/workflow/source-analysis.ts`, `src/workflow/agent-capability-source.ts`: shared workflow AST validation plus static child-agent capability analysis.
 - `src/workflow/input-contract.ts`: default workflow function/JSDoc input contract extraction and normalized input validation.
 - `src/workflow/paths.ts`: workflow path/name/cwd helpers.
@@ -138,7 +138,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 - `src/workflow/metadata.ts`: static metadata extraction.
 - `src/workflow/outputs.ts`: workflow final results, snapshot/manifest persistence, and child-agent artifacts; `src/workflow/run-storage.ts`, `src/workflow/run-record.ts`, and `src/workflow/checkpoints.ts` own session temp paths and replay state.
 - `src/workflow/status.ts`: active-run status projection for tools and commands.
-- `src/workflow/active-runs.ts`, `src/workflow/active-run-snapshots.ts`: active-run records and snapshot rehydration.
+- `src/workflow/run-record.ts`, `src/workflow/active-run-snapshots.ts`: canonical lifecycle records and snapshot rehydration.
 - `src/workflow/drafts.ts`: generated draft directory reading and default draft path helpers.
 - `src/discovery.ts`: local and configured workflow root discovery.
 - `src/workflow/settings.ts`: global `~/.pi/agent/settings.json` and project `.pi/settings.json` workflow settings.

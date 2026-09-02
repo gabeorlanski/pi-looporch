@@ -14,7 +14,7 @@ import { appendRunMessage } from "../messages.ts";
 import { errorMessage } from "../../errors.ts";
 import { writeWorkflowLLMOutput, writeWorkflowLLMPrompt } from "../../workflow/outputs.ts";
 import { checkpointHash } from "../checkpoint-hash.ts";
-import { cloneSerializable } from "../serialization.ts";
+import { replayWorkflowCheckpoint } from "../checkpoint-replay.ts";
 
 interface WorkflowLLMOptions {
   system?: string;
@@ -82,33 +82,13 @@ export const llmPrimitive: WorkflowPrimitive<{
         ...cacheRequest,
         adapter: await runtime.options.llm.cacheContext?.(request),
       });
-      const checkpoint = await runtime.options.checkpoints?.get("llm", executionId, requestHash);
-      if (checkpoint?.kind === "llm") {
-        const phase = runtime.snapshot.phases.at(-1);
-        const llm: WorkflowLLMSnapshot = {
-          ...checkpoint.snapshot,
-          id: runtime.snapshot.llms.length + 1,
-          phaseIndex: runtime.snapshot.phases.length,
-          ...(phase ? { phase } : {}),
-          status: "done",
-        };
-        if (!phase) delete llm.phase;
-        runtime.snapshot.llms.push(llm);
-        appendRunMessage(runtime, {
-          phaseIndex: llm.phaseIndex,
-          ...(llm.phase ? { phase: llm.phase } : {}),
-          level: "info",
-          message: `LLM #${String(llm.id)} started`,
-        });
-        appendRunMessage(runtime, {
-          phaseIndex: llm.phaseIndex,
-          ...(llm.phase ? { phase: llm.phase } : {}),
-          level: "info",
-          message: `LLM #${String(llm.id)} done`,
-        });
-        runtime.emit();
-        return cloneSerializable(checkpoint.result);
-      }
+      const replay = await replayWorkflowCheckpoint({
+        runtime,
+        kind: "llm",
+        executionId,
+        requestHash,
+      });
+      if (replay) return replay.result;
       const llm: WorkflowLLMSnapshot = {
         id: runtime.snapshot.llms.length + 1,
         phaseIndex: runtime.snapshot.phases.length,
@@ -206,15 +186,13 @@ export const llmPrimitive: WorkflowPrimitive<{
             level: "info",
             message: `LLM #${String(llm.id)} done`,
           });
-          if (runtime.options.checkpoints) {
-            await runtime.options.checkpoints.put({
-              kind: "llm",
-              executionId,
-              requestHash,
-              result,
-              snapshot: { ...llm },
-            });
-          }
+          await runtime.options.checkpoints?.put({
+            kind: "llm",
+            executionId,
+            requestHash,
+            result,
+            snapshot: { ...llm },
+          });
           runtime.emit();
           return result;
         }

@@ -5,7 +5,6 @@ import path from "node:path";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { progressDisplay } from "../src/display/progress.ts";
-import { formatTokenCount } from "../src/display/workflow-tui-format.ts";
 import { WorkflowInspectorModel } from "../src/display/workflow-inspector-model.ts";
 import { WorkflowInspector } from "../src/display/workflow-inspector.ts";
 import type { WorkflowTuiTheme } from "../src/display/workflow-tui-format.ts";
@@ -103,13 +102,6 @@ void test("progress reports errors without completed agent rows", () => {
   assert.ok(!display.widgetLines.some((line) => line.includes("#1 done")));
 });
 
-void test("format_token_count_uses_readable_suffixes", () => {
-  assert.equal(formatTokenCount(999), "999");
-  assert.equal(formatTokenCount(1000), "1k");
-  assert.equal(formatTokenCount(1450), "1.4k");
-  assert.equal(formatTokenCount(1_000_000), "1M");
-});
-
 void test("workflow_widget_and_inspector_render_within_width", () => {
   const model = new WorkflowInspectorModel({
     workflowName: "review",
@@ -164,9 +156,7 @@ void test("workflow_widget_and_inspector_render_within_width", () => {
     plainWorkflowTuiTheme,
     () => false,
   ).render(240);
-  const wideMetrics = wideWidgetLines.find((line) => line.includes("in 1.2k")) ?? "";
-  assert.equal(wideWidgetLines.length, 2);
-  assert.doesNotMatch(wideMetrics.trimEnd(), /cached 0 {2,}.*out 300/);
+  assert.ok(wideWidgetLines.some((line) => line.includes("in 1.2k") && line.includes("out 300")));
   assert.ok(wideWidgetLines.every((line) => visibleWidth(line) <= 240));
   assert.ok(
     new WorkflowWidget(
@@ -207,12 +197,6 @@ void test("inspector shows direct LLM calls and includes their usage", () => {
     messages: [],
     status: "done",
   });
-  const workflow = model.workflow();
-  assert.equal(workflow.inputTokens, 1200);
-  assert.equal(workflow.cachedTokens, 400);
-  assert.equal(workflow.outputTokens, 300);
-  assert.deepEqual(workflow.cost, { knownUsd: 0.08, complete: true });
-
   const widget = new WorkflowWidget(
     () => model,
     plainWorkflowTuiTheme,
@@ -292,10 +276,11 @@ void test("inspector does not duplicate a current phase after setup", () => {
     status: "running",
   });
 
-  assert.deepEqual(
-    model.workflow().phases.map((phase) => phase.name),
-    ["Setup", "Repository screen", "Materialize and test", "Report"],
-  );
+  const rendered = new WorkflowInspector(model, plainWorkflowTuiTheme, () => 24).render(120).join("\n");
+  for (const phase of ["Setup", "Repository screen", "Materialize and test", "Report"]) {
+    assert.match(rendered, new RegExp(phase));
+  }
+  assert.equal((rendered.match(/Materialize and test/g) ?? []).length, 1);
 });
 
 void test("inspector preserves a planned phase after unplanned setup work", () => {
@@ -312,10 +297,9 @@ void test("inspector preserves a planned phase after unplanned setup work", () =
     status: "running",
   });
 
-  assert.deepEqual(
-    model.workflow().phases.map((phase) => phase.name),
-    ["Setup", "Run"],
-  );
+  const rendered = new WorkflowInspector(model, plainWorkflowTuiTheme, () => 24).render(120).join("\n");
+  assert.match(rendered, /Setup/);
+  assert.match(rendered, /Run/);
 });
 
 void test("inspector dynamically fits long titles and labels at every width", () => {

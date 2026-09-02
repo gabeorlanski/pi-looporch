@@ -8,7 +8,6 @@ const WORKFLOW_STATUS_USAGE = "Usage: /workflow-status [--json] [--all] [latest|
 
 interface WorkflowStatusCommandArgs {
   ref: string;
-  includeCompleted: boolean;
   all: boolean;
   format: "summary" | "json";
 }
@@ -21,7 +20,6 @@ export async function workflowStatusCommand(pi: ExtensionAPI, ctx: ExtensionComm
       scope: "project",
       ownerSessionId: ctx.sessionManager.getSessionId(),
       ref: parsed.ref,
-      includeCompleted: parsed.includeCompleted,
       now: Date.now(),
     };
     const { content, details } = parsed.all
@@ -40,13 +38,11 @@ export async function workflowStatusCommand(pi: ExtensionAPI, ctx: ExtensionComm
 
 function parseWorkflowStatusArgs(args: string): WorkflowStatusCommandArgs {
   let ref: string | undefined;
-  const parsed: Omit<WorkflowStatusCommandArgs, "ref"> = { includeCompleted: false, all: false, format: "summary" };
+  const parsed: Omit<WorkflowStatusCommandArgs, "ref"> = { all: false, format: "summary" };
   for (const token of args.trim().split(/\s+/).filter(Boolean)) {
     if (token === "--json") parsed.format = "json";
-    else if (token === "--all") {
-      parsed.all = true;
-      parsed.includeCompleted = true;
-    } else if (token.startsWith("--")) throw new Error(WORKFLOW_STATUS_USAGE);
+    else if (token === "--all") parsed.all = true;
+    else if (token.startsWith("--")) throw new Error(WORKFLOW_STATUS_USAGE);
     else if (!ref) ref = token;
     else throw new Error(WORKFLOW_STATUS_USAGE);
   }

@@ -21,6 +21,7 @@ interface RunningWorkflowRunState {
 }
 
 interface RunningWorkflowUiState {
+  ctx: ExtensionContext;
   runs: Map<string, RunningWorkflowRunState>;
   activeRunId: string;
   armed: boolean;
@@ -44,7 +45,6 @@ interface RefreshState {
 }
 
 const dynamicWorkflowCounts = new WeakMap<ExtensionContext, number>();
-const runningWorkflowUiStates = new WeakMap<ExtensionContext, RunningWorkflowUiState>();
 const runningWorkflowUiStatesByScope = new Map<string, RunningWorkflowUiState>();
 const refreshStatesByScope = new Map<string, RefreshState>();
 
@@ -87,18 +87,10 @@ export async function restoreRunningWorkflowUi(ctx: ExtensionContext): Promise<n
 
 /** Provides the updateRunningWorkflowUi function contract. */
 export function updateRunningWorkflowUi(ctx: ExtensionContext, update: RunningWorkflowUiUpdate): void {
-  const existing = runningWorkflowUiStates.get(ctx);
-  const state = existing ?? installRunningWorkflowUi(ctx, update);
-  if (existing) {
-    const run = existing.runs.get(update.runId);
-    if (run) {
-      run.model.update(update.snapshot);
-      run.abortWorkflow = update.abortWorkflow;
-    } else {
-      existing.runs.set(update.runId, workflowRunState(update));
-    }
-    existing.activeRunId = update.runId;
-  }
+  const scope = extensionSessionScope(ctx);
+  const existing = runningWorkflowUiStatesByScope.get(scope);
+  const state = existing?.ctx === ctx ? existing : replaceRunningWorkflowUi(ctx, scope, existing, update);
+  if (existing?.ctx === ctx) applyRunningWorkflowUiUpdate(state, update);
   requestRender(state);
 }
 
@@ -113,7 +105,7 @@ export async function openRunningWorkflowInspector(ctx: ExtensionContext): Promi
 /** Provides the clearRunningWorkflowUi function contract. */
 export function clearRunningWorkflowUi(ctx: ExtensionContext, runId?: string): void {
   const scope = extensionSessionScope(ctx);
-  const state = runningWorkflowUiStates.get(ctx) ?? runningWorkflowUiStatesByScope.get(scope);
+  const state = runningWorkflowUiStatesByScope.get(scope);
   if (state && runId) removeWorkflowRun(state, runId);
   if (state && state.runs.size > 0) {
     requestRender(state);
@@ -123,11 +115,15 @@ export function clearRunningWorkflowUi(ctx: ExtensionContext, runId?: string): v
     if (state) requestRender(state);
     return;
   }
-  if (state?.animationTimer) clearInterval(state.animationTimer);
+  disposeRunningWorkflowUiState(state);
   disposeRefreshState(scope);
-  state?.unsubscribeInput?.();
-  runningWorkflowUiStates.delete(ctx);
-  if (state && runningWorkflowUiStatesByScope.get(scope) === state) runningWorkflowUiStatesByScope.delete(scope);
+  runningWorkflowUiStatesByScope.delete(scope);
+  if (state?.ctx !== ctx) clearRunningWorkflowUiHost(state?.ctx);
+  clearRunningWorkflowUiHost(ctx);
+}
+
+function clearRunningWorkflowUiHost(ctx: ExtensionContext | undefined): void {
+  if (!ctx) return;
   ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, undefined);
   ctx.ui.setWidget(RUNNING_WORKFLOW_WIDGET, undefined);
 }
@@ -148,15 +144,25 @@ function disposeRefreshState(scope: string): void {
   refreshStatesByScope.delete(scope);
 }
 
-function installRunningWorkflowUi(ctx: ExtensionContext, update: RunningWorkflowUiUpdate): RunningWorkflowUiState {
+function replaceRunningWorkflowUi(
+  ctx: ExtensionContext,
+  scope: string,
+  previous: RunningWorkflowUiState | undefined,
+  update: RunningWorkflowUiUpdate,
+): RunningWorkflowUiState {
+  if (previous) {
+    disposeRunningWorkflowUiState(previous);
+    clearRunningWorkflowUiHost(previous.ctx);
+  }
   const state: RunningWorkflowUiState = {
-    runs: new Map([[update.runId, workflowRunState(update)]]),
+    ctx,
+    runs: new Map(previous?.runs),
     activeRunId: update.runId,
     armed: false,
     overlayOpen: false,
   };
-  runningWorkflowUiStates.set(ctx, state);
-  runningWorkflowUiStatesByScope.set(extensionSessionScope(ctx), state);
+  applyRunningWorkflowUiUpdate(state, update);
+  runningWorkflowUiStatesByScope.set(scope, state);
   installWorkflowWidget(ctx, state);
   installWorkflowInputHandler(ctx, state);
   ctx.ui.setStatus(RUNNING_WORKFLOW_STATUS, undefined);
@@ -166,6 +172,27 @@ function installRunningWorkflowUi(ctx: ExtensionContext, update: RunningWorkflow
   }, ANIMATION_INTERVAL_MS);
   state.animationTimer.unref();
   return state;
+}
+
+function applyRunningWorkflowUiUpdate(state: RunningWorkflowUiState, update: RunningWorkflowUiUpdate): void {
+  const run = state.runs.get(update.runId);
+  if (run) {
+    run.model.update(update.snapshot);
+    run.abortWorkflow = update.abortWorkflow;
+  } else {
+    state.runs.set(update.runId, {
+      runId: update.runId,
+      model: new WorkflowInspectorModel(update.snapshot),
+      abortWorkflow: update.abortWorkflow,
+    });
+  }
+  state.activeRunId = update.runId;
+}
+
+function disposeRunningWorkflowUiState(state: RunningWorkflowUiState | undefined): void {
+  if (!state) return;
+  if (state.animationTimer) clearInterval(state.animationTimer);
+  state.unsubscribeInput?.();
 }
 
 function removeWorkflowRun(state: RunningWorkflowUiState, runId: string): void {
@@ -233,19 +260,9 @@ async function openWorkflowInspector(ctx: ExtensionContext, state: RunningWorkfl
   }
 }
 
-function workflowRunState(update: RunningWorkflowUiUpdate): RunningWorkflowRunState {
-  return {
-    runId: update.runId,
-    model: new WorkflowInspectorModel(update.snapshot),
-    abortWorkflow: update.abortWorkflow,
-  };
-}
-
 function findRunningWorkflowUiState(ctx: ExtensionContext): RunningWorkflowUiState | undefined {
-  const local = runningWorkflowUiStates.get(ctx);
-  if (local && local.runs.size > 0) return local;
-  const scoped = runningWorkflowUiStatesByScope.get(extensionSessionScope(ctx));
-  return scoped && scoped.runs.size > 0 ? scoped : undefined;
+  const state = runningWorkflowUiStatesByScope.get(extensionSessionScope(ctx));
+  return state && state.runs.size > 0 ? state : undefined;
 }
 
 function activeRun(state: RunningWorkflowUiState): RunningWorkflowRunState {

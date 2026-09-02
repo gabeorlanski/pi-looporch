@@ -3,10 +3,9 @@ import { existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { formatTokenCount } from "./display/workflow-tui-format.ts";
-import { parseSessionTokens } from "./session/usage.ts";
-import { workflowAgentSessionLogParentDirectory } from "./session/logs.ts";
+import { findLatestSessionFile, parseSessionTokenFile } from "./session/usage.ts";
+import { workflowProjectSessionRoot } from "./session/logs.ts";
 
 export interface WorkflowLogReviewOptions {
   cwd: string;
@@ -81,10 +80,6 @@ async function latestWorkflowLogDirectory(cwd: string, sessionsRoot: string | un
   return latest.runDir;
 }
 
-function workflowProjectSessionRoot(cwd: string, sessionsRoot = path.join(getAgentDir(), "sessions")): string {
-  return path.dirname(workflowAgentSessionLogParentDirectory(cwd, "__placeholder__", sessionsRoot));
-}
-
 function expandHomePath(value: string): string {
   return value === "~" || value.startsWith("~/") ? path.join(homedir(), value.slice(2)) : value;
 }
@@ -102,14 +97,14 @@ async function analyzeWorkflowLogDirectory(logDir: string, summary: Record<strin
 async function analyzeAgentLog(rawAgent: unknown): Promise<WorkflowLogAgentReview> {
   const agent = recordValue(rawAgent);
   const sessionDir = stringValue(agent.sessionDir);
-  const sessionUsage = sessionDir ? parseSessionTokens(sessionDir) : null;
+  const sessionFile = stringValue(agent.sessionFile) ?? (sessionDir ? findLatestSessionFile(sessionDir) : undefined);
+  const sessionUsage = sessionFile ? parseSessionTokenFile(sessionFile) : null;
   const eventsFile = stringValue(agent.eventsFile);
-  const sessionFile = stringValue(agent.sessionFile);
   const toolCounts = eventsFile ? await readToolCounts(eventsFile) : new Map<string, number>();
   const bashCommands = sessionFile ? await readBashCommands(sessionFile) : [];
-  const toolCallCount = numberValue(agent.toolCallCount) ?? [...toolCounts.values()].reduce((total, count) => total + count, 0);
-  const inputTokenCount = sessionUsage?.input ?? numberValue(agent.inputTokenCount) ?? 0;
-  const outputTokenCount = sessionUsage?.output ?? numberValue(agent.outputTokenCount) ?? 0;
+  const toolCallCount = [...toolCounts.values()].reduce((total, count) => total + count, 0);
+  const inputTokenCount = sessionUsage?.input ?? 0;
+  const outputTokenCount = sessionUsage?.output ?? 0;
   return {
     id: numberValue(agent.id) ?? 0,
     label: stringValue(agent.label) ?? "agent",
@@ -117,7 +112,7 @@ async function analyzeAgentLog(rawAgent: unknown): Promise<WorkflowLogAgentRevie
     ...(stringValue(agent.model) ? { model: stringValue(agent.model) } : {}),
     inputTokenCount,
     outputTokenCount,
-    tokenCount: sessionUsage?.total ?? inputTokenCount + outputTokenCount,
+    tokenCount: sessionUsage?.total ?? 0,
     toolCallCount,
     toolCounts,
     bashCommands,

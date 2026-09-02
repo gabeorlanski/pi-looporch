@@ -2,7 +2,6 @@
 import type { RunWorkflowOptions, WorkflowRunResult, WorkflowSnapshot } from "../runtime/types.ts";
 import { runWorkflowFromDirectory } from "../runtime/run.ts";
 import { writeWorkflowSessionSummary } from "../session/logs.ts";
-import { registerActiveWorkflowRun, removeActiveWorkflowRun } from "./active-runs.ts";
 import { writeWorkflowSnapshot } from "./outputs.ts";
 import { createCheckpointCache } from "./checkpoints.ts";
 import { writeRunRecord, type RunRecord } from "./run-record.ts";
@@ -33,7 +32,7 @@ export interface BackgroundWorkflowRun {
   finished: Promise<BackgroundWorkflowRunResult>;
 }
 
-/** Starts a workflow run, registers it as active, writes snapshots, and cleans up the active record on completion. */
+/** Starts a workflow run, persists its canonical record and snapshots, and closes its record on completion. */
 export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflowRunOptions): Promise<BackgroundWorkflowRun> {
   const outputsDir = workflowRunDirectory(options.cwd, options.ownerSessionId, options.runId);
   const checkpoints = await createCheckpointCache(outputsDir, options.attempt.kind === "resume");
@@ -50,13 +49,6 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
     status: "running",
   };
   await writeRunRecord(outputsDir, runRecord);
-  await registerActiveWorkflowRun(options.cwd, {
-    runId: options.runId,
-    workflowName: options.workflowName,
-    outputsDir,
-    startedAt,
-    ownerSessionId: options.ownerSessionId,
-  });
   const controller = new AbortController();
   let latestSnapshot: WorkflowSnapshot | undefined;
   let snapshotWrite: Promise<void> = Promise.resolve();
@@ -105,11 +97,7 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
     .finally(async () => {
       removeParentAbortListener();
       await snapshotWrite;
-      try {
-        await removeActiveWorkflowRun(options.cwd, options.runId, options.ownerSessionId);
-      } finally {
-        if (options.attempt.kind === "resume") await options.attempt.releaseClaim();
-      }
+      if (options.attempt.kind === "resume") await options.attempt.releaseClaim();
     });
   return {
     runId: options.runId,

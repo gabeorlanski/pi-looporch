@@ -1,9 +1,9 @@
 /** Provides status behavior. */
 import path from "node:path";
-import { readActiveWorkflowRuns, type ActiveWorkflowRunRecord } from "./active-runs.ts";
+import { readActiveWorkflowRuns, type ActiveWorkflowRunRecord } from "./run-record.ts";
 import { readWorkflowOutputManifest, readWorkflowSnapshot } from "./outputs.ts";
 import type { WorkflowAgentSnapshot, WorkflowCost, WorkflowSnapshot } from "../runtime/types.ts";
-import { errorMessage, isMissingFileError } from "../errors.ts";
+import { errorMessage } from "../errors.ts";
 
 export type WorkflowStatusScope = "project" | "current-session";
 
@@ -11,7 +11,6 @@ export interface WorkflowStatusQuery {
   scope: WorkflowStatusScope;
   ownerSessionId: string;
   ref: string;
-  includeCompleted: boolean;
   now: number;
 }
 
@@ -78,11 +77,9 @@ export type SelectedWorkflowStatus =
 /** Provides the readWorkflowStatusList function contract. */
 export async function readWorkflowStatusList(cwd: string, query: WorkflowStatusQuery): Promise<WorkflowRunStatus[]> {
   const records = await readActiveWorkflowRuns(cwd, query.scope === "current-session" ? query.ownerSessionId : undefined);
-  const statuses = await Promise.all(records.map((record) => readWorkflowRunStatus(record, query)));
-  return statuses
-    .filter((status): status is WorkflowRunStatus => status !== undefined)
-    .filter((status) => query.includeCompleted || status.status === "running")
-    .sort((left, right) => right.startedAt - left.startedAt);
+  const statuses: WorkflowRunStatus[] = [];
+  for (const record of records) statuses.push(await readWorkflowRunStatus(record, query));
+  return statuses.sort((left, right) => right.startedAt - left.startedAt);
 }
 
 /** Provides the readSelectedWorkflowStatus function contract. */
@@ -90,8 +87,7 @@ export async function readSelectedWorkflowStatus(cwd: string, query: WorkflowSta
   return selectWorkflowStatus(cwd, await readWorkflowStatusList(cwd, query), query);
 }
 
-/** Provides the selectWorkflowStatus function contract. */
-export function selectWorkflowStatus(cwd: string, statuses: WorkflowRunStatus[], query: WorkflowStatusQuery): SelectedWorkflowStatus {
+function selectWorkflowStatus(cwd: string, statuses: WorkflowRunStatus[], query: WorkflowStatusQuery): SelectedWorkflowStatus {
   const selected = query.ref === "latest" ? statuses[0] : statuses.find((status) => matchesWorkflowRef(cwd, status, query.ref));
   return (
     selected ?? {
@@ -104,29 +100,26 @@ export function selectWorkflowStatus(cwd: string, statuses: WorkflowRunStatus[],
   );
 }
 
-async function readWorkflowRunStatus(record: ActiveWorkflowRunRecord, query: WorkflowStatusQuery): Promise<WorkflowRunStatus | undefined> {
-  const manifestResult = await readManifestStatus(record.outputsDir);
-  if (!manifestResult) return undefined;
-  if (manifestResult.kind === "error")
-    return degradedWorkflowRunStatus(record, query, "running", null, "manifest unavailable", manifestResult.error);
-  if (manifestResult.manifest.status !== "running" && !query.includeCompleted) return undefined;
-
-  const snapshotResult = await readSnapshotStatus(record.outputsDir);
+async function readWorkflowRunStatus(record: ActiveWorkflowRunRecord, query: WorkflowStatusQuery): Promise<WorkflowRunStatus> {
+  const [manifestResult, snapshotResult] = await Promise.all([
+    readManifestStatus(record.outputsDir),
+    readSnapshotStatus(record.outputsDir),
+  ]);
   if (snapshotResult.kind === "ok") {
     return workflowRunStatusFromSnapshot(
       record,
       query,
-      manifestResult.manifest.status,
-      manifestResult.manifest.resultPath ?? null,
-      manifestResult.manifest.error,
+      record.status,
+      manifestResult.kind === "ok" ? (manifestResult.manifest.resultPath ?? null) : null,
+      manifestResult.kind === "ok" ? manifestResult.manifest.error : manifestResult.error,
       snapshotResult.snapshot,
     );
   }
   return degradedWorkflowRunStatus(
     record,
     query,
-    manifestResult.manifest.status,
-    manifestResult.manifest.resultPath ?? null,
+    record.status,
+    manifestResult.kind === "ok" ? (manifestResult.manifest.resultPath ?? null) : null,
     "snapshot unavailable",
     snapshotResult.error,
   );
@@ -134,13 +127,10 @@ async function readWorkflowRunStatus(record: ActiveWorkflowRunRecord, query: Wor
 
 async function readManifestStatus(
   outputsDir: string,
-): Promise<
-  { kind: "ok"; manifest: Awaited<ReturnType<typeof readWorkflowOutputManifest>> } | { kind: "error"; error: string } | undefined
-> {
+): Promise<{ kind: "ok"; manifest: Awaited<ReturnType<typeof readWorkflowOutputManifest>> } | { kind: "error"; error: string }> {
   try {
     return { kind: "ok", manifest: await readWorkflowOutputManifest(outputsDir) };
   } catch (error) {
-    if (isMissingFileError(error)) return undefined;
     return { kind: "error", error: errorMessage(error) };
   }
 }

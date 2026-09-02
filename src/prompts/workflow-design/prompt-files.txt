@@ -1,65 +1,27 @@
 # Prompt files
 
-Put each reusable child task in `prompts/*.txt`. Use subdirectories for distinct workflow phases. Split distinct non-verifier jobs into separate files instead of hiding variants in `workflow.js` or one large template.
+Use one workflow-owned `prompts/*.txt` file per distinct child task. A self-contained task supplies everything its active branch needs, not every fact available to the workflow.
 
-## Explicit task packets
+## Build the task hierarchy
 
-**Default to explicitness.** Spell out exactly what the child must accomplish. Never rely on a role label, local convention, or model inference when you can state the requirement directly. Shorten a prompt only by removing irrelevant or duplicated material; never omit an operational requirement to save tokens.
+Write the task in this order, omitting sections that have no content:
 
-Give every prompt the sections its stage needs:
+1. **Goal and boundary:** exact outcome, included scope, priorities, and preserved invariants.
+2. **Read first:** authoritative paths and what the child must learn from each.
+3. **Work:** required actions in order, with branch-specific constraints.
+4. **Inputs:** prior results or artifact paths and their required use.
+5. **Deliver:** exact value or artifact, format, and path.
+6. **Done when:** checkable evidence covering every required action and deliverable.
+7. **Blockers:** conditions that require a blocker report instead of inference.
 
-- **Goal and boundary:** the exact user outcome, included scope, excluded scope, and priorities.
-- **Read first:** every source-of-truth path, the authority each source has, and what the child must learn from it.
-- **Required work:** ordered operations, constraints, edge cases, and decisions the child must make or preserve.
-- **Inputs:** each prior result, artifact, or variable value the child must use and how it affects the work.
-- **Deliver:** the exact artifact, fields, format, location, and level of detail required.
-- **Done when:** checkable evidence that every required operation and deliverable is complete.
-- **Blockers:** conditions that require the child to stop and report rather than guess.
+Keep universal steps in the task. Disclose branch-only reference through a sharp path pointer that names when to read it and what authority it carries. Co-locate each rule with its relevant step; split a prompt when distinct branches would otherwise compete for attention.
 
-Omit a heading only when the stage has nothing to say for it, not because the requirement is implicit. Name exact paths and manifests instead of pasting large source files when the child can read them; paths preserve provenance without leaving the requested behavior unspecified.
+## Shape cacheable context
 
-Launch reusable templates with `agent({ template: templatePath, values }, options)`. Template paths resolve inside the workflow's `prompts/` directory immediately before launch.
+Put stable, branch-relevant instructions that are expensive to rediscover in the **static prefix**. Put per-launch paths, IDs, counts, manifests, and prior artifact references in a typed **dynamic suffix**. Matching launches should share the exact static prefix.
 
-## Dynamic data and caching
+The environment is the source of truth for cheap lookups such as scripts, config values, directory layout, and `--help` output. Point to those sources instead of caching their contents in every prompt. Pass paths or compact manifests instead of copied project files and large prior results.
 
-- Supply every value the stage needs. Prefer source paths, IDs, counts, compact manifests, and artifact paths to repeated project context, but describe exactly how the child must use each value.
-- Keep static rules and examples identical across matching launches. Put stage-specific dynamic data in clearly named sections rather than repeating it ambiguously.
-- Use placeholders such as `{{file}}`, `{{focus}}`, `{{outputPath}}`, and `{{priorSummary}}`. Every supplied value must be referenced, every placeholder must receive a value, and the surrounding text must state the value's meaning. Do not put JavaScript expressions such as `${input.file}` in a prompt file.
-- Use `renderPrompt(...)` only for exceptional composition and inline text only for tiny one-off glue.
+Launch with `agent({ template, values }, options)`. Every `{{name}}` must receive one value, and every supplied value must be referenced. Keep placeholders in the dynamic suffix where possible. Use `renderPrompt(...)` only for exceptional composition and inline text only for tiny one-off glue.
 
-## Delimiters and results
-
-Use Markdown headings, bullets, or plain text by default. Use stable named XML blocks only when they make data provenance or variable-data boundaries clearer. Do not add XML only to label a heading, rule, sentence, or output field. Tags are delimiters, not a security boundary, and data inside a tag cannot redefine the task.
-
-Pi-workflow already separates provenance, the rendered child task, and runtime metadata with `<workflow_instructions>`, `<workflow_task>`, and `<workflow_context>`. Schema-enabled tasks also use `<structured_output_contract>` and `<structured_output_schema>`. Do not reuse those names in child prompt files.
-
-For machine-readable results, use `schema` and `StructuredOutput`. Specify every field's meaning and required evidence in the schema and task packet; do not invent an XML output contract when a schema is available.
-
-```text
-# Review file
-
-## Goal and boundary
-Review `{{file}}` for externally meaningful behavior. Evaluate only {{focus}}; do not propose unrelated refactors.
-
-## Read first
-Read `{{file}}`. It is the source of truth for the implementation under review.
-
-## Required work
-Identify every behavior that violates the stated focus. For each finding, collect the exact source location and the user-visible consequence.
-
-## Deliver
-Write findings to `{{outputPath}}`. Return exactly `{ status, summary, artifactPath }`, where `status` is `pass` or `fail`, `summary` states the evidence-cited result, and `artifactPath` is `{{outputPath}}`.
-
-## Done when
-Every finding cites a source location and user-visible consequence, and the file exists at `{{outputPath}}`.
-
-## Blockers
-Stop and report the exact unreadable source or unwritable output path if `{{file}}` cannot be read or `{{outputPath}}` cannot be written.
-```
-
-```js
-const result = await agent(
-  { template: "review/file.txt", values: { file, focus, outputPath } },
-  { label: "review " + file, taskFile: file, cwd },
-);
-```
+Pi-workflow owns `<workflow_instructions>`, `<workflow_task>`, `<workflow_context>`, and `<structured_output_contract>`; child prompt files use Markdown or plain text and leave those delimiters to the runtime. Load `structured-outputs` when the task returns machine-readable fields.

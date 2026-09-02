@@ -1,11 +1,6 @@
 # docs/ Agent Instructions
 
-## Commands
-
-```bash
-npm run format:check
-npm run check
-```
+Run `npm run check` from the repository root before handoff.
 
 ## Purpose
 

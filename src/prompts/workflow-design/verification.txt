@@ -1,8 +1,8 @@
 # Verification
 
-- Add verification only for high-risk, user-visible, or artifact-producing workflows when its assurance justifies the added agents.
-- Give the reviewer one explicit decision question. List every falsifiable check, each named source of truth, required evidence, and the exact distinction between correctness failures and recommendations.
-- Prefer one verifier voter. Return a schema with `verdict`, check-specific booleans, evidence, and concrete `mustFix` items that identify the required repair.
-- When review fails, pass every `mustFix` item directly to one bounded repair stage, then re-run the same gate once. Do not create an open-ended review loop unless the user explicitly requests stronger assurance.
-- Give a verifier one explicit `extensions` and `tools` selection for all voters and its reducer; omit either list only when intentionally inheriting workflow defaults.
-- Skip optional verification when observed `budget.agentCount` or `budget.tokenCount` shows the run is already expensive. These are observed counters, not estimates.
+- Add verification only when user-visible or artifact risk justifies another agent.
+- Ask one decision question. Name every falsifiable check, source of truth, required evidence, and distinction between a failure and a recommendation.
+- Prefer one voter. Return only the verdict and compact `mustFix` references consumed by repair; write detailed evidence to an artifact.
+- On failure, pass the exact `mustFix` references to one repair stage, then run the same gate once.
+- Select verifier `extensions` and `tools` intentionally; omission inherits workflow defaults.
+- Skip optional verification when observed `budget.agentCount` or `budget.tokenCount` shows the run is already expensive.

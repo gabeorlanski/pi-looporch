@@ -15,15 +15,24 @@ export interface StructuredOutput {
 /** Creates a terminal StructuredOutput tool that validates and retains one schema-conforming result. */
 export function createStructuredOutput(schema: unknown): StructuredOutput {
   let value: Output | undefined;
-  const parameters = outputParams(schema) as unknown as OutputParameters;
+  const objectSchema = requireWorkflowObjectSchema(schema, "StructuredOutput");
+  const reservedFields = ["message", "name", "steps", "usage"];
+  for (const name of reservedFields) {
+    if (Object.hasOwn(objectSchema.properties, name) || (Array.isArray(objectSchema.required) && objectSchema.required.includes(name)))
+      throw new Error(`StructuredOutput schema cannot define reserved property ${JSON.stringify(name)}`);
+  }
+  const parameters = objectSchema as unknown as OutputParameters;
 
   return {
     tool: {
       name: "StructuredOutput",
       label: "Structured Output",
-      description: "Submit the exact final structured result required by the task and end this agent session.",
+      description: "Submit the final structured result required by the task and end this agent session.",
       parameters,
       execute: (_toolCallId, params) => {
+        const reservedField = reservedFields.find((name) => Object.hasOwn(params, name));
+        if (reservedField)
+          return Promise.reject(new Error(`StructuredOutput arguments contain reserved runtime field ${JSON.stringify(reservedField)}`));
         if (!Check(parameters, params)) return Promise.reject(new Error("StructuredOutput arguments do not match its schema"));
         value = params;
         return Promise.resolve({
@@ -33,26 +42,5 @@ export function createStructuredOutput(schema: unknown): StructuredOutput {
       },
     },
     result: () => value,
-  };
-}
-
-function outputParams(schema: unknown): Record<string, unknown> {
-  const objectSchema = requireWorkflowObjectSchema(schema, "StructuredOutput");
-
-  const runtimeProperties = ["name", "steps", "usage"];
-  for (const name of ["message", ...runtimeProperties]) {
-    if (Object.hasOwn(objectSchema.properties, name) || (Array.isArray(objectSchema.required) && objectSchema.required.includes(name)))
-      throw new Error(`StructuredOutput schema cannot define reserved property ${JSON.stringify(name)}`);
-  }
-
-  return {
-    ...objectSchema,
-    properties: {
-      message: { type: "string", description: "Optional human-readable context when it helps interpret this result." },
-      ...objectSchema.properties,
-    },
-    propertyNames: {
-      allOf: [...(objectSchema.propertyNames === undefined ? [] : [objectSchema.propertyNames]), { not: { enum: runtimeProperties } }],
-    },
   };
 }

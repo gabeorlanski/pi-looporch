@@ -1,21 +1,27 @@
 # Structured outputs
 
-- Use `agent({ template, values }, { schema })` when a child must return named structured fields. State the exact meaning, allowed values, and required evidence for every field in the schema and the task packet.
-- Use `LLM(prompt, { schema, retries? })` when structured data needs one generation without tools or a child session. It retries malformed or schema-invalid output up to three times by default; set `retries` to a non-negative integer to change the budget.
-- `LLM` always returns `text`, `output`, `usage`, `model`, `provider`, and `stopReason`. Raw calls use `output: null`; schema calls place the validated JSON value in `output`.
-- The runtime places the schema before the child task and exposes it through the terminal `StructuredOutput` tool. The tool validates keyword arguments, captures the result, and ends the child session. A schema-enabled child that does not call it fails.
-- Keep schemas shallow and semantic: require all needed fields, write useful descriptions, use enums or booleans for fixed decisions, and set `additionalProperties: false`. Add bounds only for real downstream limits.
-- Use JSON only for the explicit control result: status, decisions, IDs, counts, summaries, artifact paths, evidence paths, and line references. Write large reasoning, transcripts, diffs, reports, and generated artifacts to named files and return their paths.
-- For large lists, return a bounded selector or manifest first, then launch follow-up agents only for selected items that need detail. Use stable IDs and lookup tables instead of repeating long source text.
+Treat a schema as a minimal **transport contract**. Put task semantics, evidence requirements, and completion criteria in the prompt; the schema carries only fields consumed by workflow code.
+
+- Add a field only when a downstream consumer reads it. Prefer a decision enum or boolean, stable IDs, counts, and artifact paths.
+- Keep the object shallow, require every consumed field, and set `additionalProperties: false`.
+- Use short domain names. Descriptions belong only on fields whose meaning or allowed value cannot be made clear by the name, type, enum, and task packet.
+- Add length or item bounds only for real downstream limits.
+- Keep reports, reasoning, evidence collections, diffs, and transcripts in files; return their paths.
+- For large sets, return a bounded manifest or selector, then expand only selected IDs in a later stage.
+- Runtime fields `message`, `name`, `steps`, and `usage` are reserved. A schema-enabled child returns the authored fields plus runtime `message: null`, `name`, `steps`, and `usage`.
+
+`agent({ template, values }, { schema })` exposes the authored schema unchanged as the terminal `StructuredOutput` tool parameters. The runtime does not repeat that JSON in the task prompt. The child must call the tool once to finish.
+
+`LLM(prompt, { schema, retries? })` has no tool, so its system instruction includes the schema. It retries malformed or nonconforming JSON up to three times by default.
 
 ```js
 const schema = {
   type: "object",
   properties: {
-    status: { type: "string", enum: ["pass", "fail"], description: "Whether every required check passed." },
-    summary: { type: "string", description: "Evidence-cited explanation of the status." },
+    verdict: { type: "string", enum: ["pass", "fail"] },
+    reportPath: { type: "string" },
   },
-  required: ["status", "summary"],
+  required: ["verdict", "reportPath"],
   additionalProperties: false,
 };
 ```

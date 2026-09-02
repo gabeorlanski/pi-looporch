@@ -104,32 +104,33 @@ code runs in a sandbox with globals such as `LLM`, `agent`, `parallel`, `pipelin
 `mapreduce`, `verifier`, `phase`, `log`, `trace`, and file helpers.
 Reusable child prompts live in `prompts/*.txt` and launch through
 `agent({ template, values }, options)`; `renderPrompt` remains available for
-exceptional composition. Write prompts as compact task packets: goal, exact
-sources to read, work to perform, artifact or value to deliver, and the evidence
-that means the task is done. Use Markdown or plain text by default. Use one
-of a few descriptive XML wrappers only when complex variable data would otherwise
-blur into instructions; do not tag headings, rules, sentences, or output fields
-or build nested tag taxonomies.
-Tags are delimiters, not a security boundary. For machine-readable results,
-prefer `schema` and `StructuredOutput`. The runtime uses stable top-level
-`<workflow_instructions>`, `<workflow_task>`, and `<workflow_context>` sections
-to separate provenance, the rendered task, and escaped metadata. Schema-enabled
-agents also receive `<structured_output_contract>` and
-`<structured_output_schema>` sections. Do not reuse those names in child prompt
-files.
+exceptional composition. Keep the active task steps and completion bound in the
+prompt, and point to branch-specific references and project files instead of
+copying them. Matching launches should share a stable static prefix and put
+per-launch paths, IDs, counts, and manifests in a small dynamic suffix. Let
+scripts, config, layout, and command help remain discoverable from the
+environment.
+
+Use Markdown or plain text in child prompt files. The runtime owns
+`<workflow_instructions>`, `<workflow_task>`, optional `<workflow_context>`, and
+`<structured_output_contract>` provenance delimiters. For machine-readable
+results, use a minimal `schema` and `StructuredOutput` rather than an output
+format embedded in prompt prose.
 
 `agent`, `mapreduce`, and `verifier` accept `extensions` and `tools`
 string lists. Omit either list to inherit workflow settings; use `[]` for none.
 Naming an extension-owned tool loads its extension while keeping the tool list
 exact.
 
-Pass an object JSON Schema as `agent(..., { schema })` when a child must return
-structured fields. The runtime prepends the schema and exposes a terminal
-`StructuredOutput` tool whose keyword arguments are validated by Pi. A validated
-call ends the child after its current tool batch; results always include
-`message`, `name`, `steps`, and standard token `usage` metadata. If the child attempts to finish without calling it, the
-runtime explicitly reminds it to call `StructuredOutput` up to twice before it
-fails.
+Pass an object JSON Schema as `agent(..., { schema })` when workflow code needs
+structured fields. Keep only downstream-consumed fields in that schema; put
+reports and evidence in files and return their paths. The runtime exposes the
+authored schema unchanged as the terminal `StructuredOutput` tool parameters
+instead of duplicating its JSON in the task prompt. A validated call ends the
+child after its current tool batch. Schema results add runtime `message: null`,
+`name`, `steps`, and token `usage`; those names are reserved and cannot appear in
+the authored schema. If the child attempts to finish without calling the tool,
+the runtime reminds it up to twice before failing.
 
 Use `LLM(prompt, options?)` for a generation-only call with Pi's active model
 and authentication. Options include `model`, `reasoning`, `system`, ordered prior
@@ -159,11 +160,12 @@ const result = await LLM("Classify this release.", {
 });
 ```
 
-Agents can call `workflow_design_guidance` for focused authoring help. Its
-primitive reference is generated from the runtime primitive registry so supported
-globals stay synchronized with implementation. Agents call `propose_workflow` to
-save complete generated workflow draft directories and `workflow_status` to check
-active project workflow progress. `propose_workflow` validates child-agent
+Agents can call `workflow_design_guidance` for progressively disclosed authoring
+help: start with `overview`, then load only active branches. The generated
+primitive reference appears only in `workflow-api`, where supported globals stay
+synchronized with implementation. Agents call `propose_workflow` to save complete
+generated workflow draft directories and `workflow_status` to check active project
+workflow progress. `propose_workflow` validates child-agent
 capabilities against Pi's installed extensions and tools before saving.
 
 Workflow outputs and resume caches live under

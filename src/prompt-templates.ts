@@ -45,22 +45,17 @@ export function naturalLanguageRequestMessage(request: string, availableWorkflow
   });
 }
 
-/** Provides the agentTaskPrompt function contract. */
+/** Renders the minimal runtime wrapper around one workflow-owned child task. */
 export function agentTaskPrompt(prompt: string, options: WorkflowAgentOptions): string {
-  const segments = agentTaskTemplate.split("{{prompt}}");
+  const workflowContext = options.taskFile
+    ? `<workflow_context>\nPrimary task file: ${escapePromptValue(options.taskFile)}\n</workflow_context>`
+    : "";
+  const renderedTemplate = agentTaskTemplate
+    .replace("{{structuredOutput}}", options.schema === undefined ? "" : structuredOutputTemplate)
+    .replace("{{workflowContext}}", workflowContext);
+  const segments = renderedTemplate.split("{{prompt}}");
   if (segments.length !== 2) throw new Error("agent task template must contain exactly one '{{prompt}}' placeholder");
-  const [beforePrompt, afterPrompt] = segments;
-  const context = JSON.stringify({
-    ...(options.label ? { label: options.label } : {}),
-    ...(options.taskFile ? { taskFile: options.taskFile } : {}),
-  });
-  const task =
-    `${interpolatePromptTemplate(beforePrompt, { context })}${prompt}${interpolatePromptTemplate(afterPrompt, { context })}`.trim();
-  return task.replace("{{structuredOutput}}", options.schema === undefined ? "" : structuredOutputPrompt(options.schema));
-}
-
-function structuredOutputPrompt(schema: unknown): string {
-  return renderPromptTemplate(structuredOutputTemplate, { schema: JSON.stringify(schema) });
+  return `${segments[0]}${prompt}${segments[1]}`.trim();
 }
 
 /** Renders the direct LLM structured-output instruction without altering JSON Schema text. */

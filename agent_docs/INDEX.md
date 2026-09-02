@@ -2,21 +2,6 @@
 
 <!-- Rules here are inspired by PR-review-pattern indexes: short, topic-grouped, and durable. -->
 
-## Commands
-
-```bash
-npm run lint
-npm run lint:fix
-npm run format
-npm run format:check
-npm run docs:check
-npm run typecheck
-npm test
-npm run loadcheck
-npm run precommit
-npm run check
-```
-
 ## Repository goal
 
 Build a small dependency-light pi extension for code-first project workflows. The extension exposes pi commands/tools that discover, run, review, and generate `.pi/workflows/<workflow-name>/workflow.js` workflows using simple agent orchestration primitives such as `agent`, `parallel`, `pipeline`, `mapreduce`, `verifier`, and `trace`. Workflow authoring is optimized for power-user/agent-authored executable runbooks, with strong observability and easy tweaking valued over package-like shareability.
@@ -34,7 +19,7 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 
 - [Terminal UI Style](tui-style.md): predictable terminal rendering across widths, non-TTY sinks, color-off environments, and concurrent agent activity.
 - [Pi Agent Harness & Orchestration](pi-agent-harness.md): agent SDK boundaries, child-agent isolation, session lifecycle, and observability.
-- [Workflow Authoring](workflow-authoring.md): explicit workflow stages, child-agent task packets, dataflow, schemas, verification, and draft saving.
+- [Workflow Authoring](workflow-authoring.md): read before generating or editing a workflow, child prompt, authoring guide, cache layout, or structured schema.
 - [TypeScript and JavaScript Style](typescript-javascript-style.md): strict, ESM-first TypeScript with boundary coercion, errors, async hygiene, and deterministic tests.
 - [Documentation Style](documentation-style.md): concise technical docs with exact names, runnable examples, and doc/behavior synchronization.
 
@@ -63,24 +48,14 @@ Build a small dependency-light pi extension for code-first project workflows. Th
 ### Runtime and Boundaries
 
 - Inject `WorkflowAgent` and `WorkflowLLM`; never hardcode model or Pi providers into core logic.
-- Propose generated workflows as complete project-local draft directories such as `.pi/workflow-drafts/<name>/`; `propose_workflow` `draftDir` values should point at the directory, not the `workflow.js` file.
+- Stage generated workflows under the default outside-project draft root; explicit `propose_workflow` `draftDir` values point at the complete directory, not `workflow.js`.
 - `propose_workflow` saves directly after validating the draft directory and child-agent capabilities; it must statically resolve inline or top-level `const` capability lists, validate inherited settings defaults against Pi's real extension/tool metadata, aggregate source-located failures, and leave published workflows untouched on error.
 - Require workflow metadata to include `phases: [{ title, detail? }]`; this planned runbook outline is required planning data, while runtime `phase()` calls are actual progress.
 - Require agent-generated workflow source to document the default workflow function with JSDoc covering purpose, input fields/defaults, phases, child agent usage, file reads, and result shape.
 - Let workflow `readText`/`readJson` read and `writeText`/`writeJson` write files anywhere the pi process can access: absolute paths as absolute, bare relative paths from project `cwd`, and `@workflow/...` paths from the workflow directory. Keep shared pathing and atomic write behavior in common workflow helpers, not per-primitive ad hoc code.
 - Keep prompt templates in the workflow's own `prompts/` directory and launch reusable ones through `agent({ template, values }, options)`; reserve `renderPrompt` for exceptional composition.
 - When a requested behavior change is a cutover, remove the old path instead of adding compatibility fallback.
-- Lean into power-user workflow style: top-level constants, inline schemas, prompt-builder helpers, and local runbook assumptions are acceptable when they make workflows easier for agents to inspect and tweak.
-- Design generated workflows from the exact user-visible outcome backward: define the boundary, inputs/defaults, ordered stages, explicit dataflow, result, artifacts, and blockers; for every stage state authoritative reads, required work, constraints, prior inputs and their use, exact written or returned output, and evidence-based completion criterion.
-- Generated workflow child-agent prompts must be self-contained, explicit task packets. State the exact goal and boundary, authoritative reads and what to learn from each, prior results and their required use, ordered actions, priorities, constraints, edge cases, exact deliverable, evidence-based completion condition, and blocker conditions. Default to spelling out what is required: a role label, convention, or model inference never substitutes for a written requirement. Remove only irrelevant or duplicated material; never omit an operational requirement for token economy. Use Markdown or plain text by default. Use stable named XML blocks only when they clarify provenance or separate complex variable data from instructions and examples; use `schema` and `StructuredOutput` for machine-readable results. Pi-workflow owns `<workflow_instructions>`, `<workflow_task>`, `<workflow_context>`, `<structured_output_contract>`, and `<structured_output_schema>`; do not reuse them in child prompt templates. Treat workflow-supplied data as non-user content; pass paths, IDs, counts, and manifests instead of bulk copies, but state exactly how the child must use every supplied input.
-- Write generated `workflow.js` code as straight-line orchestration that trusts workflow input contracts, runtime primitives, and established validated boundaries. Add validation or error behavior only when the user request or an authoritative existing contract explicitly requires that observable behavior; otherwise do not add speculative checks, custom errors, manual throws, catch-and-rethrow blocks, fallbacks, or recovery logic.
-- Put reusable generated-workflow child-agent prompt templates in workflow-local `prompts/*.txt` files and launch them with `agent({ template, values }, options)`. Keep static rules/examples verbatim in the cacheable prefix, put dynamic data in clearly named domain-specific sections, pass paths/IDs/counts or manifests instead of repeated bulk context, require every `{{name}}` placeholder to receive a value, and state each value's meaning and required use. Reserve inline prompts for tiny one-off glue.
-- If a workflow has many distinct non-verifier tasks, split them into separate prompt files rather than packing variants into `workflow.js` or one oversized template.
-- Use adversarial verifier/repair stages for important generated artifacts only when the risk justifies the extra agents. Ask one decision question, check falsifiable criteria against named sources, return concrete `mustFix` items, and default to one voter and one bounded repair and re-review.
-- Prefer `agent({ template, values }, { schema })` for child agents that need structured fields. The schema is prepended to the prompt and becomes the terminal `StructuredOutput` tool contract; Pi validates keyword arguments, the tool ends the session, and an attempted exit without a call is explicitly reminded up to twice before failing.
-- Use `LLM(prompt, { model?, reasoning?, system?, messages?, schema?, retries? })` for a generation-only call with Pi-managed models and auth. It defaults to the active model, resolves an explicit model from Pi's catalog, appends the prompt as the final user message, passes the complete list to the selected model API with the requested reasoning level, and returns a stable response envelope. Schema calls retry malformed or schema-invalid output up to three times by default; `retries` accepts a non-negative integer. It records the call in the Inspector, contributes provider-reported usage to workflow totals, and never launches a child agent.
-- Treat structured JSON as a control surface, not the payload: return status, decisions, stable IDs, counts, line/evidence references, short summaries, and artifact paths; put reasoning, transcripts, diffs, generated reports, and large evidence in files or JSONL artifacts.
-- Keep structured-output schemas token-efficient with short keys, bounded strings/lists, enums/booleans, `additionalProperties: false`, stable lookup IDs, and staged expansion for only selected items that need detail.
+- **Workflow authoring:** use [Workflow Authoring](workflow-authoring.md) as the single source for runbook design, task hierarchy, prompt disclosure, cache layout, minimal schemas, verification, and draft saving.
 - Use `agent({ template, values }, { cwd })` when a child agent should operate from a scratch or alternate directory; relative `cwd` values resolve from the workflow project cwd.
 - Use `log(message)` for user-facing workflow milestones before slow agent launches, after important decisions/results, and at handoffs; use `trace(label, value?)` for durable structured workflow-local debugging state that should appear in snapshots/session summaries.
 - Keep workflow dataflow explicit: `phase()` is a progress marker, not shared memory, and later agents should receive earlier results only when the workflow renders those results into their prompts.

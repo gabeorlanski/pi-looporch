@@ -37,15 +37,11 @@ export const llmPrimitive: WorkflowPrimitive<{
     },
   ],
   globals: ({ runtime }) => ({
-    LLM: (prompt: unknown, inputOptions: unknown = {}) => runLLM(runtime, prompt, inputOptions),
+    LLM: (prompt: unknown, inputOptions: unknown = {}) => trackWorkflowCall(runtime, runLLM(runtime, prompt, inputOptions)),
   }),
 };
 
-function runLLM(runtime: ActiveWorkflowRuntime, prompt: unknown, inputOptions: unknown): Promise<unknown> {
-  return trackWorkflowCall(runtime, runLLMInner(runtime, prompt, inputOptions));
-}
-
-async function runLLMInner(runtime: ActiveWorkflowRuntime, prompt: unknown, inputOptions: unknown): Promise<unknown> {
+async function runLLM(runtime: ActiveWorkflowRuntime, prompt: unknown, inputOptions: unknown): Promise<unknown> {
   throwIfWorkflowAborted(runtime.options.signal);
   if (typeof prompt !== "string") throw new TypeError("LLM prompt must be a string");
   if (!isRecord(inputOptions)) throw new TypeError("LLM options must be an object");

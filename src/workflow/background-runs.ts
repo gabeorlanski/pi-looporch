@@ -25,14 +25,12 @@ export interface BackgroundWorkflowRunResult extends WorkflowRunResult {
 }
 
 /** Handle for a running background workflow, including abort and completion. */
-export type BackgroundWorkflowRunStatus = "running" | "done" | "error" | "aborted";
-
 export interface BackgroundWorkflowRun {
   runId: string;
   outputsDir: string;
   sessionLogDir?: string;
   abort: () => boolean;
-  status: () => BackgroundWorkflowRunStatus;
+  status: () => RunRecord["status"];
   finished: Promise<BackgroundWorkflowRunResult>;
 }
 
@@ -56,32 +54,30 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
   const controller = new AbortController();
   let latestSnapshot: WorkflowSnapshot | undefined;
   let sessionLogDir: string | undefined;
-  let runStatus: BackgroundWorkflowRunStatus = "running";
   let snapshotWrite: Promise<void> = Promise.resolve();
   const abortWorkflow = (): boolean => {
-    if (runStatus !== "running" || controller.signal.aborted) return false;
+    if (runRecord.status !== "running" || controller.signal.aborted) return false;
     controller.abort();
     return true;
   };
   const removeParentAbortListener = linkAbortSignal(options.signal, abortWorkflow);
-  const finished = runWorkflowFromDirectory({
-    ...options,
-    outputsDir,
-    checkpoints,
-    signal: controller.signal,
-    onBeforeComplete: () => {
-      runStatus = "done";
-      options.onBeforeComplete?.();
+  const finished = runWorkflowFromDirectory(
+    {
+      ...options,
+      outputsDir,
+      checkpoints,
+      signal: controller.signal,
+      onSnapshot: (snapshot) => {
+        latestSnapshot = snapshot;
+        snapshotWrite = enqueueSnapshotWrite(snapshotWrite, outputsDir, snapshot);
+        options.onSnapshot?.(snapshot);
+      },
     },
-    onSnapshot: (snapshot) => {
-      latestSnapshot = snapshot;
-      snapshotWrite = enqueueSnapshotWrite(snapshotWrite, outputsDir, snapshot);
-      options.onSnapshot?.(snapshot);
-    },
-  })
-    .then(async (result) => {
-      runStatus = "done";
+    () => {
       runRecord.status = "done";
+    },
+  )
+    .then(async (result) => {
       await writeRunRecord(outputsDir, runRecord);
       return {
         ...result,
@@ -95,8 +91,7 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
       };
     })
     .catch(async (error: unknown) => {
-      runStatus = controller.signal.aborted ? "aborted" : "error";
-      runRecord.status = runStatus;
+      runRecord.status = controller.signal.aborted ? "aborted" : "error";
       await writeRunRecord(outputsDir, runRecord);
       if (latestSnapshot) {
         sessionLogDir = await writeWorkflowSessionSummary({
@@ -120,7 +115,7 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
       return sessionLogDir;
     },
     abort: abortWorkflow,
-    status: () => runStatus,
+    status: () => runRecord.status,
     finished,
   };
 }

@@ -69,10 +69,10 @@ export default async function workflow() {
     },
   }).find((tool) => tool.name === "abort_workflow");
   if (!abortTool) throw new Error("abort_workflow tool was not registered");
-  const toolResponse = abortTool.execute("abort-call", { runId: visible.run.runId }, undefined, undefined, ctx);
+  const toolResponse: unknown = await abortTool.execute("abort-call", { runId: visible.run.runId }, undefined, undefined, ctx);
   const second = await abortVisibleWorkflowRun(ctx, visible.run.runId);
-  await toolResponse;
-  assert.equal(second.status, "already-aborting");
+  assert.match(toolText(toolResponse), /abort-requested/);
+  assert.equal(second.status === "already-aborting" || second.status === "already-aborted", true);
   await assert.rejects(visible.run.finished, /agent aborted/);
 
   const record = await readWorkflowRunRecord(project, "session-a", visible.run.runId);
@@ -119,6 +119,13 @@ void test("aborting rejects unknown and foreign runs while terminal owned runs a
   await assert.rejects(abortVisibleWorkflowRun(ctx, "foreign-run"), /not found in the current live session/);
 });
 
+function toolText(result: unknown): string {
+  if (!isRecord(result) || !Array.isArray(result.content)) throw new Error("abort_workflow did not return content");
+  const content = result.content.find((part): part is Record<string, unknown> => isRecord(part) && part.type === "text");
+  if (!content || typeof content.text !== "string") throw new Error("abort_workflow did not return text content");
+  return content.text;
+}
+
 function runRecord(project: string, ownerSessionId: string, runId: string, status: "running" | "done" | "aborted") {
   return {
     runId,
@@ -131,6 +138,10 @@ function runRecord(project: string, ownerSessionId: string, runId: string, statu
     resumeCount: 0,
     status,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function context(cwd: string, sessionId: string): ExtensionContext {

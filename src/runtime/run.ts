@@ -16,7 +16,7 @@ import { errorMessage } from "../errors.ts";
 import { throwIfWorkflowAborted } from "./abort.ts";
 
 /** Provides the runWorkflowFromDirectory function contract. */
-export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Promise<WorkflowRunResult> {
+export async function runWorkflowFromDirectory(options: RunWorkflowOptions, onBeforeComplete: () => void): Promise<WorkflowRunResult> {
   throwIfWorkflowAborted(options.signal);
   const workflowName = normalizeWorkflowName(options.workflowName);
   if (!Number.isInteger(options.maxParallelAgents) || options.maxParallelAgents < 1)
@@ -44,7 +44,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     const result = cloneSerializable(await compiled.workflow(options.input));
     await drainWorkflowCalls(runtime);
     throwIfWorkflowAborted(options.signal);
-    options.onBeforeComplete?.();
+    onBeforeComplete();
     snapshot.status = "done";
     const resultPath = options.outputsDir ? await writeWorkflowFinalOutput(options.outputsDir, result) : undefined;
     if (options.outputsDir) await writeWorkflowOutputManifest({ outputsDir: options.outputsDir, workflowName, resultPath, snapshot });

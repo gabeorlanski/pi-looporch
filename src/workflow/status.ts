@@ -1,6 +1,6 @@
 /** Provides status behavior. */
 import path from "node:path";
-import { readActiveWorkflowRuns, readWorkflowRunRecords, type WorkflowRunRecord } from "./run-record.ts";
+import { readActiveWorkflowRuns, readWorkflowRunRecords, type RunRecord, type WorkflowRunRecord } from "./run-record.ts";
 import { readWorkflowOutputManifest, readWorkflowSnapshot } from "./outputs.ts";
 import type { WorkflowAgentSnapshot, WorkflowCost, WorkflowSnapshot } from "../runtime/types.ts";
 import { errorMessage } from "../errors.ts";
@@ -50,7 +50,7 @@ export interface WorkflowAgentTotals {
 export interface WorkflowRunStatus {
   runId: string;
   workflowName: string;
-  status: "running" | "done" | "error" | "aborted";
+  status: RunRecord["status"];
   scope: WorkflowStatusScope;
   ownerSessionId: string;
   outputsDir: string;
@@ -115,13 +115,12 @@ async function readWorkflowRunStatus(record: WorkflowRunRecord, query: WorkflowS
     return workflowRunStatusFromSnapshot(
       record,
       query,
-      record.status,
       resultPath,
       manifestResult.kind === "ok" ? manifestResult.manifest.error : manifestResult.error,
       snapshotResult.snapshot,
     );
   }
-  return degradedWorkflowRunStatus(record, query, record.status, resultPath, "snapshot unavailable", snapshotResult.error);
+  return degradedWorkflowRunStatus(record, query, resultPath, "snapshot unavailable", snapshotResult.error);
 }
 
 async function readManifestStatus(
@@ -147,7 +146,6 @@ async function readSnapshotStatus(
 function workflowRunStatusFromSnapshot(
   record: WorkflowRunRecord,
   query: WorkflowStatusQuery,
-  manifestStatus: "running" | "done" | "error" | "aborted",
   resultPath: string | null,
   manifestError: string | undefined,
   snapshot: WorkflowSnapshot,
@@ -159,14 +157,14 @@ function workflowRunStatusFromSnapshot(
   return {
     runId: record.runId,
     workflowName: record.workflowName,
-    status: manifestStatus,
+    status: record.status,
     scope: query.scope,
     ownerSessionId: record.ownerSessionId,
     outputsDir: record.outputsDir,
     resultPath,
     startedAt: record.startedAt,
     elapsedSeconds: elapsedSeconds(record.startedAt, query.now),
-    currentPhase: currentPhase(snapshot, manifestStatus),
+    currentPhase: currentPhase(snapshot, record.status),
     snapshotAvailable: true,
     agents: agentTotals(snapshot.agents),
     fanouts: snapshot.fanOuts.map((fanout) => ({
@@ -185,7 +183,6 @@ function workflowRunStatusFromSnapshot(
 function degradedWorkflowRunStatus(
   record: WorkflowRunRecord,
   query: WorkflowStatusQuery,
-  status: "running" | "done" | "error" | "aborted",
   resultPath: string | null,
   message: string,
   error: string,
@@ -193,7 +190,7 @@ function degradedWorkflowRunStatus(
   return {
     runId: record.runId,
     workflowName: record.workflowName,
-    status,
+    status: record.status,
     scope: query.scope,
     ownerSessionId: record.ownerSessionId,
     outputsDir: record.outputsDir,
@@ -219,7 +216,7 @@ function matchesWorkflowRef(cwd: string, status: WorkflowRunStatus, ref: string)
   );
 }
 
-function currentPhase(snapshot: WorkflowSnapshot, status: "running" | "done" | "error" | "aborted"): string {
+function currentPhase(snapshot: WorkflowSnapshot, status: RunRecord["status"]): string {
   return snapshot.phases.at(-1) ?? (status === "running" ? "running" : status);
 }
 

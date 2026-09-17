@@ -130,6 +130,7 @@ async function runLLMInner(runtime: ActiveWorkflowRuntime, prompt: unknown, inpu
         llm.promptPath = await writeWorkflowLLMPrompt(runtime.options.outputsDir, llm.id, attempt + 1, attemptRequest);
         runtime.emit();
       }
+      throwIfWorkflowAborted(runtime.options.signal);
       const completion = await runtime.options.llm(attemptRequest);
       throwIfWorkflowAborted(runtime.options.signal);
       usage = {

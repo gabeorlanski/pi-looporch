@@ -260,6 +260,7 @@ export interface RunWorkflowOptions {
   agentDefaults?: WorkflowAgentDefaults;
   checkpoints?: CheckpointCache;
   signal?: AbortSignal;
+  onBeforeComplete?: () => void;
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
 }
 

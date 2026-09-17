@@ -92,7 +92,9 @@ async function runQueuedParallel<T, R>(
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(maxParallelAgents, items.length) }, () => runWorker()));
+  const settlements = await Promise.allSettled(Array.from({ length: Math.min(maxParallelAgents, items.length) }, () => runWorker()));
+  const rejected = settlements.find((settlement): settlement is PromiseRejectedResult => settlement.status === "rejected");
+  if (rejected) throw rejected.reason;
   if (errors.length > 0) throw errors[0];
   return results;
 }

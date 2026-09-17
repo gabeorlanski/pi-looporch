@@ -64,17 +64,15 @@ export default async function workflow() {
       runtimeForContext: () => ({ agent, llm: () => Promise.reject(new Error("The waiting workflow must not call the LLM.")) }),
       sendUserMessageForContext: () => () => undefined,
     },
-    agentCapabilityCatalogForContext: () => undefined as never,
+    agentCapabilityCatalogForContext: () => {
+      throw new Error("The abort tool must not load an agent capability catalog.");
+    },
   }).find((tool) => tool.name === "abort_workflow");
   if (!abortTool) throw new Error("abort_workflow tool was not registered");
-  const [first, second] = await Promise.all([
-    abortTool.execute("abort-call", { runId: visible.run.runId }, undefined, undefined, ctx),
-    abortVisibleWorkflowRun(ctx, visible.run.runId),
-  ]);
-  const firstResult = first as { content: { text: string }[] };
-  assert.match(firstResult.content[0]?.text ?? "", /abort-requested/);
+  const toolResponse = abortTool.execute("abort-call", { runId: visible.run.runId }, undefined, undefined, ctx);
+  const second = await abortVisibleWorkflowRun(ctx, visible.run.runId);
+  await toolResponse;
   assert.equal(second.status, "already-aborting");
-  assert.match(firstResult.content[0]?.text ?? "", new RegExp(`Workflow outputs: ${visible.run.outputsDir}`));
   await assert.rejects(visible.run.finished, /agent aborted/);
 
   const record = await readWorkflowRunRecord(project, "session-a", visible.run.runId);

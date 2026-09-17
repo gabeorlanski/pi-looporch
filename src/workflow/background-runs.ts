@@ -69,6 +69,10 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
     outputsDir,
     checkpoints,
     signal: controller.signal,
+    onBeforeComplete: () => {
+      runStatus = "done";
+      options.onBeforeComplete?.();
+    },
     onSnapshot: (snapshot) => {
       latestSnapshot = snapshot;
       snapshotWrite = enqueueSnapshotWrite(snapshotWrite, outputsDir, snapshot);

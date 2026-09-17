@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["extensions/**/*.ts", "src/**/*.ts", "tests/**/*.ts", "eslint.config.mjs"]
+  "include": ["extensions/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "tests/**/*.ts", "eslint.config.mjs"]
 }

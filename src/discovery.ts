@@ -1,5 +1,5 @@
 /** Provides discovery behavior. */
-import { existsSync, type Dirent } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { WorkflowMetadata } from "./runtime/types.ts";
@@ -37,7 +37,8 @@ export async function discoverWorkflows(cwd: string): Promise<WorkflowReference[
 
 async function discoverWorkflowsInRoot(root: string): Promise<WorkflowReference[]> {
   const absoluteRoot = path.resolve(root);
-  const entries = await readDirectoryEntries(absoluteRoot);
+  if (!existsSync(absoluteRoot)) return [];
+  const entries = await readdir(absoluteRoot, { withFileTypes: true, encoding: "utf8" });
   const workflows: WorkflowReference[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || !isValidWorkflowName(entry.name)) continue;
@@ -55,21 +56,12 @@ function isValidWorkflowName(value: string): boolean {
   return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(value);
 }
 
-async function readWorkflowReference(dir: string, name: string): Promise<WorkflowReference> {
-  const entryFile = path.join(dir, "workflow.js");
-  const source = await readFile(entryFile, "utf8");
-  return { name, dir, entryFile, metadata: parseWorkflowSourceMetadata(source, name, entryFile) };
-}
-
 async function readWorkflowReferenceIfValid(dir: string, name: string): Promise<WorkflowReference | undefined> {
   try {
-    return await readWorkflowReference(dir, name);
+    const entryFile = path.join(dir, "workflow.js");
+    const source = await readFile(entryFile, "utf8");
+    return { name, dir, entryFile, metadata: parseWorkflowSourceMetadata(source, name, entryFile) };
   } catch {
     return undefined;
   }
-}
-
-async function readDirectoryEntries(directory: string): Promise<Dirent[]> {
-  if (!existsSync(directory)) return [];
-  return readdir(directory, { withFileTypes: true, encoding: "utf8" });
 }

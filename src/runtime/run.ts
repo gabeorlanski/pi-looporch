@@ -35,7 +35,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     emit: () => options.onSnapshot?.(cloneSnapshot(snapshot)),
   };
   const compiled = compileWorkflow(source, entryFile, workflowGlobals(runtime, workflowDir));
-  if (options.outputsDir) await writeWorkflowOutputManifest({ outputsDir: options.outputsDir, workflowName, status: "running", snapshot });
+  if (options.outputsDir) await writeWorkflowOutputManifest({ outputsDir: options.outputsDir, workflowName, snapshot });
   appendRunMessage(runtime, { phaseIndex: 0, level: "info", message: `workflow ${workflowName} started` });
   runtime.emit();
   try {
@@ -44,8 +44,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     throwIfWorkflowAborted(options.signal);
     snapshot.status = "done";
     const resultPath = options.outputsDir ? await writeWorkflowFinalOutput(options.outputsDir, result) : undefined;
-    if (options.outputsDir)
-      await writeWorkflowOutputManifest({ outputsDir: options.outputsDir, workflowName, status: "done", resultPath, snapshot });
+    if (options.outputsDir) await writeWorkflowOutputManifest({ outputsDir: options.outputsDir, workflowName, resultPath, snapshot });
     appendRunMessage(runtime, {
       phaseIndex: snapshot.phases.length,
       phase: snapshot.phases.at(-1),
@@ -62,8 +61,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
       level: "error",
       message: `workflow failed: ${errorMessage(error)}`,
     });
-    if (options.outputsDir)
-      await writeWorkflowOutputManifest({ outputsDir: options.outputsDir, workflowName, status: "error", snapshot, error });
+    if (options.outputsDir) await writeWorkflowOutputManifest({ outputsDir: options.outputsDir, workflowName, snapshot, error });
     runtime.emit();
     throw error;
   }

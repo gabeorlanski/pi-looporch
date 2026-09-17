@@ -1,9 +1,10 @@
 /** Provides session logs behavior. */
-import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { WorkflowSnapshot } from "../runtime/types.ts";
 import { errorMessage } from "../errors.ts";
+import { writeJsonFileAtomic } from "../workflow/files.ts";
+import { workflowProjectSlug } from "../workflow/run-storage.ts";
 
 export interface WorkflowSessionSummaryOptions {
   cwd: string;
@@ -14,13 +15,18 @@ export interface WorkflowSessionSummaryOptions {
   sessionsRoot?: string;
 }
 
+/** Provides the session-log root for all workflow runs in one project. */
+export function workflowProjectSessionRoot(cwd: string, sessionsRoot = path.join(getAgentDir(), "sessions")): string {
+  return path.join(sessionsRoot, `--${workflowProjectSlug(cwd).replace(/^-/, "")}--`);
+}
+
 /** Provides the workflowAgentSessionLogParentDirectory function contract. */
 export function workflowAgentSessionLogParentDirectory(
   cwd: string,
   parentId: string,
   sessionsRoot = path.join(getAgentDir(), "sessions"),
 ): string {
-  return path.join(sessionsRoot, workflowProjectKey(cwd), parentId);
+  return path.join(workflowProjectSessionRoot(cwd, sessionsRoot), parentId);
 }
 
 /** Provides the workflowAgentSessionLogDirectory function contract. */
@@ -36,8 +42,7 @@ export function workflowAgentSessionLogDirectory(
 /** Provides the writeWorkflowSessionSummary function contract. */
 export async function writeWorkflowSessionSummary(options: WorkflowSessionSummaryOptions): Promise<string> {
   const runDir = workflowAgentSessionLogParentDirectory(options.cwd, options.parentId, options.sessionsRoot);
-  await mkdir(runDir, { recursive: true });
-  await writeFile(path.join(runDir, "workflow-summary.json"), `${JSON.stringify(workflowSessionSummary(options), null, 2)}\n`, "utf8");
+  await writeJsonFileAtomic(path.join(runDir, "workflow-summary.json"), workflowSessionSummary(options));
   return runDir;
 }
 
@@ -60,11 +65,4 @@ function workflowSessionSummary(options: WorkflowSessionSummaryOptions): Record<
     ...(options.resultPath !== undefined ? { resultPath: options.resultPath } : {}),
     ...(options.error !== undefined ? { error: errorMessage(options.error) } : {}),
   };
-}
-
-function workflowProjectKey(cwd: string): string {
-  return `--${path
-    .resolve(cwd)
-    .replace(/^[/\\]/, "")
-    .replace(/[/\\:]/g, "-")}--`;
 }

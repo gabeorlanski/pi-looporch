@@ -3,7 +3,9 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { createLoggedWorkflowAgentSession } from "../src/session/agent-logs.ts";
 import { writeWorkflowSessionSummary } from "../src/session/logs.ts";
+import { parseSessionTokens } from "../src/session/usage.ts";
 import { readWorkflowSnapshot, workflowSnapshotPath } from "../src/workflow/outputs.ts";
 import type { WorkflowSnapshot } from "../src/runtime/types.ts";
 
@@ -62,7 +64,7 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
         phase: "scan",
         status: "done",
         startedAt: 0,
-        model: "fake-model",
+        model: "recorded-model",
         reasoning: "low",
         endedAt: 10,
         inputTokenCount: 9,
@@ -113,4 +115,111 @@ void test("workflow_session_summary_saves_structured_run_metadata", async () => 
   assert.equal("message" in summaryAgent, false);
   assert.deepEqual(summary.llms, []);
   assert.equal(summary.resultPath, resultPath);
+});
+
+void test("agent event logs persist lifecycle metadata without transcript content", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-event-log-"));
+  const agentDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-agent-dir-"));
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  const logged = await createLoggedWorkflowAgentSession(project, project, {
+    parentId: "parent-1",
+    agentId: 1,
+    agentKey: "agent-001-review",
+    workflowName: "review",
+    label: "review",
+    phaseIndex: 1,
+  }).finally(() => {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  });
+  assert.equal(logged.eventsFile.startsWith(agentDir), true);
+
+  logged.recordEvent({
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", delta: "streamed secret" },
+  });
+  logged.recordEvent({
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: "final transcript content" }],
+      usage: { input: 10, output: 3 },
+      provider: "openai-codex",
+    },
+  });
+  logged.recordEvent({
+    type: "tool_execution_end",
+    toolCallId: "call-1",
+    toolName: "read",
+    args: { path: "secret.md" },
+    result: { content: [{ type: "text", text: "large tool output" }] },
+    isError: false,
+  });
+  logged.recordEvent({
+    type: "agent_end",
+    messages: [{ role: "user" }, { role: "assistant" }],
+    willRetry: false,
+  });
+
+  const text = await readFile(logged.eventsFile, "utf8");
+  const events = text
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as { event: Record<string, unknown> });
+
+  assert.deepEqual(
+    events.map(({ event }) => event.type),
+    ["message_end", "tool_execution_end", "agent_end"],
+  );
+  assert.match(text, /"provider":"openai-codex"/);
+  assert.match(text, /"messageCount":2/);
+  assert.doesNotMatch(text, /streamed secret|final transcript content|secret\.md|large tool output/);
+});
+
+void test("session tokens parse provider usage aliases", async () => {
+  const sessionDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-session-tokens-"));
+  await writeFile(
+    path.join(sessionDir, "workflow-agent-1.jsonl"),
+    [
+      JSON.stringify({ usage: { prompt_tokens: 3, completion_tokens: 2, cache_read_input_tokens: 500 } }),
+      JSON.stringify({ message: { usage: { input_tokens: 5, output_tokens: 7, total_tokens: 900 } } }),
+      JSON.stringify({ usage: { totalTokens: 1234, cacheRead: 1000 } }),
+    ].join("\n"),
+    "utf8",
+  );
+
+  assert.deepEqual(parseSessionTokens(sessionDir), {
+    input: 8,
+    cacheRead: 1500,
+    cacheWrite: 0,
+    output: 9,
+    total: 17,
+    cost: { knownUsd: 0, complete: false },
+  });
+});
+
+void test("workflow_session_tokens_parse_actual_usage_from_session_file", async () => {
+  const sessionDir = await mkdtemp(path.join(tmpdir(), "pi-workflow-session-"));
+  await writeFile(
+    path.join(sessionDir, "session.jsonl"),
+    [
+      JSON.stringify({ type: "session", id: "session-1" }),
+      JSON.stringify({ message: { usage: { inputTokens: 10, cacheRead: 2, outputTokens: 4, cost: { total: 0.01 } } } }),
+      "not json",
+      JSON.stringify({ usage: { input: 3, cacheRead: 1, output: 2, cost: { total: 0.02 } } }),
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await writeFile(path.join(sessionDir, "events.jsonl"), `${JSON.stringify({ usage: { input: 100, output: 100 } })}\n`, "utf8");
+
+  assert.deepEqual(parseSessionTokens(sessionDir), {
+    input: 13,
+    cacheRead: 3,
+    cacheWrite: 0,
+    output: 6,
+    total: 19,
+    cost: { knownUsd: 0.03, complete: true },
+  });
 });

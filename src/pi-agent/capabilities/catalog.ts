@@ -197,45 +197,6 @@ export function buildAgentCapabilityCatalog(catalog: AgentCapabilityCatalog): Ag
   };
 }
 
-/** Builds authoritative proposal-time capability metadata with Pi's real extension loader and tool factories. */
-export function createAgentCapabilityCatalogProvider(options: {
-  cwd: string;
-  agentDir?: string;
-  customTools?: ToolDefinition[];
-}): AgentCapabilityCatalogProvider {
-  return async (request) => {
-    const agentDir = options.agentDir ?? getAgentDir();
-    const settingsManager = SettingsManager.create(options.cwd, agentDir);
-    const resolvedSelectors = await resolveAgentExtensionSelectors({
-      cwd: options.cwd,
-      agentDir,
-      settingsManager,
-      selectors: request.extensionSelectors,
-    });
-    const loader = new DefaultResourceLoader({
-      cwd: options.cwd,
-      agentDir,
-      settingsManager,
-      additionalExtensionPaths: resolvedSelectors.paths,
-    });
-    await loader.reload();
-    const loaded = loader.getExtensions();
-    return buildAgentCapabilityCatalog({
-      availableExtensions: availableAgentExtensions(loaded.extensions, resolvedSelectors.selectorsByPath),
-      baseToolNames: availableBaseAgentToolNames(options.cwd),
-      customToolNames: (options.customTools ?? []).map((tool) => tool.name),
-      loadErrors: [
-        ...new Map(
-          loaded.errors.map((error) => [
-            `${error.path}\0${error.error}`,
-            { ...error, selectors: selectorsForExtensionPath(error.path, resolvedSelectors.selectorsByPath) },
-          ]),
-        ).values(),
-      ],
-    });
-  };
-}
-
 /** Enumerates Pi's built-in child-agent tools at the normalized SDK boundary. */
 export function availableBaseAgentToolNames(cwd: string): string[] {
   const tools = [...(createCodingTools(cwd) as ToolDefinition[]), ...(createReadOnlyTools(cwd) as ToolDefinition[])];

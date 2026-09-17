@@ -11,8 +11,6 @@ import type {
 } from "../runtime/types.ts";
 import { writeJsonFileAtomic, writeTextFileAtomic } from "./files.ts";
 
-type WorkflowOutputStatus = "done" | "error" | "running";
-
 interface WorkflowOutputManifestEntry {
   agentId: number;
   label: string;
@@ -23,7 +21,6 @@ interface WorkflowOutputManifestEntry {
 
 export interface WorkflowOutputManifest {
   workflowName: string;
-  status: WorkflowOutputStatus;
   resultPath?: string;
   error?: string;
   outputs: WorkflowOutputManifestEntry[];
@@ -161,7 +158,6 @@ export async function writeWorkflowSnapshot(outputsDir: string, snapshot: Workfl
 export async function writeWorkflowOutputManifest(options: {
   outputsDir: string;
   workflowName: string;
-  status: WorkflowOutputStatus;
   resultPath?: string;
   snapshot?: WorkflowSnapshot;
   error?: unknown;
@@ -171,14 +167,12 @@ export async function writeWorkflowOutputManifest(options: {
 
 function workflowOutputManifest(options: {
   workflowName: string;
-  status: WorkflowOutputStatus;
   resultPath?: string;
   snapshot?: WorkflowSnapshot;
   error?: unknown;
 }): WorkflowOutputManifest {
   return {
     workflowName: options.workflowName,
-    status: options.status,
     ...(options.resultPath ? { resultPath: options.resultPath } : {}),
     ...(options.error !== undefined ? { error: errorMessage(options.error) } : {}),
     outputs: outputManifestEntries(options.snapshot?.agents ?? []),

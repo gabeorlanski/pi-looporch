@@ -1,5 +1,6 @@
 /** Provides input contract behavior. */
 import * as ts from "typescript";
+import { analyzeWorkflowSource, type WorkflowSourceAnalysis } from "./source-analysis.ts";
 
 /** User-facing input validation failure for direct workflow command/tool execution. */
 export class WorkflowInputError extends Error {
@@ -18,8 +19,11 @@ export interface WorkflowInputContract {
 }
 
 /** Reads workflow.js source and extracts required/optional input fields for validation and steering prompts. */
-export function extractWorkflowInputContract(source: string): WorkflowInputContract {
-  const sourceFile = ts.createSourceFile("workflow.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+export function extractWorkflowInputContract(
+  source: string,
+  analysis: WorkflowSourceAnalysis = analyzeWorkflowSource(source),
+): WorkflowInputContract {
+  const { sourceFile } = analysis;
   const workflow = findDefaultWorkflow(sourceFile);
   if (!workflow) return { requiredFields: [], optionalFields: [] };
   const jsdoc = extractNodeJsDoc(source, sourceFile, workflow.node) ?? extractLeadingJsDoc(source);

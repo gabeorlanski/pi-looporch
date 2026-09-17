@@ -16,6 +16,7 @@ import { cloneSerializable } from "../serialization.ts";
 import { renderWorkflowAgentTask } from "../prompts.ts";
 import { throwIfWorkflowAborted } from "../abort.ts";
 import { checkpointHash } from "../checkpoint-hash.ts";
+import { replayWorkflowCheckpoint } from "../checkpoint-replay.ts";
 
 export const agentPrimitive: WorkflowPrimitive<{
   agent: (task: WorkflowAgentTask, agentOptions?: WorkflowAgentOptions) => Promise<unknown>;
@@ -68,39 +69,15 @@ export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, a
     ...request,
     adapter: await runtime.options.agent.cacheContext?.(callOptions),
   });
-  const checkpoint = await runtime.options.checkpoints?.get("agent", executionId, requestHash);
-  if (checkpoint?.kind === "agent") {
-    const phase = runtime.snapshot.phases.at(-1);
-    const agent: WorkflowAgentSnapshot = {
-      ...checkpoint.snapshot,
-      id: runtime.snapshot.agents.length + 1,
-      label: callOptions.label ?? `agent ${String(runtime.snapshot.agents.length + 1)}`,
-      phaseIndex: runtime.snapshot.phases.length,
-      ...(phase ? { phase } : {}),
-      fanOutId: fanOutScope.getStore(),
-      status: "done",
-    };
-    if (!phase) delete agent.phase;
-    runtime.snapshot.agents.push(agent);
-    appendRunMessage(runtime, {
-      phaseIndex: agent.phaseIndex,
-      ...(agent.phase ? { phase: agent.phase } : {}),
-      agentId: agent.id,
-      agentLabel: agent.label,
-      level: "info",
-      message: `${agent.label} started`,
-    });
-    appendRunMessage(runtime, {
-      phaseIndex: agent.phaseIndex,
-      ...(agent.phase ? { phase: agent.phase } : {}),
-      agentId: agent.id,
-      agentLabel: agent.label,
-      level: "info",
-      message: `${agent.label} done`,
-    });
-    runtime.emit();
-    return cloneSerializable(checkpoint.result);
-  }
+  const replay = await replayWorkflowCheckpoint({
+    runtime,
+    kind: "agent",
+    executionId,
+    requestHash,
+    label: callOptions.label ?? `agent ${String(runtime.snapshot.agents.length + 1)}`,
+    fanOutId: fanOutScope.getStore(),
+  });
+  if (replay) return replay.result;
   const releaseAgentSlot = await runtime.agentLaunchQueue.acquire(runtime.options.signal);
   try {
     throwIfWorkflowAborted(runtime.options.signal);
@@ -157,15 +134,13 @@ export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, a
         level: "info",
         message: `${agent.label} done`,
       });
-      if (runtime.options.checkpoints) {
-        await runtime.options.checkpoints.put({
-          kind: "agent",
-          executionId,
-          requestHash,
-          result: output,
-          snapshot: { ...agent, ...(agent.tools === undefined ? {} : { tools: [...agent.tools] }) },
-        });
-      }
+      await runtime.options.checkpoints?.put({
+        kind: "agent",
+        executionId,
+        requestHash,
+        result: output,
+        snapshot: { ...agent, ...(agent.tools === undefined ? {} : { tools: [...agent.tools] }) },
+      });
       runtime.emit();
       return output;
     } catch (error) {

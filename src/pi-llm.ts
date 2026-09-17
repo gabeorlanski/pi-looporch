@@ -12,7 +12,6 @@ export function createPiWorkflowLLM(options: {
     headers?: ProviderHeaders;
     env?: Record<string, string>;
   }>;
-  complete?: typeof completeSimple;
 }): WorkflowLLM {
   const resolveModel = (request: WorkflowLLMRequest): Model<Api> | undefined =>
     request.model !== undefined
@@ -46,7 +45,7 @@ export function createPiWorkflowLLM(options: {
         timestamp: 0,
       };
     });
-    const response = await (options.complete ?? completeSimple)(
+    const response = await completeSimple(
       model,
       {
         ...(request.system ? { systemPrompt: request.system } : {}),

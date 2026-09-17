@@ -51,7 +51,6 @@ async function refreshMonitor(ctx: ExtensionContext, state: MonitorState): Promi
     scope: "project",
     ownerSessionId: state.ownerSessionId,
     ref: "latest",
-    includeCompleted: false,
     now: Date.now(),
   };
   const statuses = await readWorkflowStatusList(state.cwd, query).catch(() => []);

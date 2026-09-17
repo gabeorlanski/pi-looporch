@@ -5,6 +5,7 @@ import path from "node:path";
 import { extractWorkflowInputContract } from "./input-contract.ts";
 import { parseWorkflowSourceMetadata } from "./metadata.ts";
 import { isInsideOrEqual } from "./paths.ts";
+import { analyzeWorkflowSource, type WorkflowSourceAnalysis } from "./source-analysis.ts";
 
 export interface WorkflowDraft {
   name: string;
@@ -24,8 +25,9 @@ export async function readWorkflowDraft(options: WorkflowDraftReadOptions): Prom
   const stats = await stat(sourceDirectory);
   if (!stats.isDirectory()) throw new Error("propose_workflow draftDir must be a directory containing workflow.js");
   const source = await readFile(path.join(sourceDirectory, "workflow.js"), "utf8");
-  validateDraftDocstring(source);
-  parseWorkflowSourceMetadata(source, options.name);
+  const analysis = analyzeWorkflowSource(source);
+  validateDraftDocstring(source, analysis);
+  parseWorkflowSourceMetadata(source, options.name, "workflow.js", analysis);
   return {
     name: options.name,
     source,
@@ -53,8 +55,8 @@ function resolveDraftWorkflowDirectory(cwd: string, draftDir: string): string {
   return resolved;
 }
 
-function validateDraftDocstring(source: string): void {
-  const contract = extractWorkflowInputContract(source);
+function validateDraftDocstring(source: string, analysis: WorkflowSourceAnalysis): void {
+  const contract = extractWorkflowInputContract(source, analysis);
   if (!contract.jsdoc) throw new Error("Generated workflow function must start with a JSDoc docstring before it can be saved");
   const normalized = contract.jsdoc.toLowerCase();
   for (const requiredTopic of ["input", "phase", "agent", "result"]) {

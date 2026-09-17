@@ -1,9 +1,10 @@
 /** Provides agent capability validation behavior. */
-import * as ts from "typescript";
+import type * as ts from "typescript";
 import type { AgentCapabilityCatalog, AgentCapabilityCatalogProvider } from "../pi-agent/capabilities/catalog.ts";
 import { resolveAgentCapabilities } from "../pi-agent/capabilities/resolution.ts";
 import { collectWorkflowAgentCapabilityUses, type CapabilityDiagnostic, type CapabilityUse } from "./agent-capability-source.ts";
 import type { CapabilitySelection } from "./settings.ts";
+import { analyzeWorkflowSource } from "./source-analysis.ts";
 
 /** Inputs required to validate workflow child-agent capabilities before publishing a draft. */
 export interface ValidateWorkflowAgentCapabilitiesOptions {
@@ -16,7 +17,7 @@ export interface ValidateWorkflowAgentCapabilitiesOptions {
 
 /** Validates all statically identifiable child-agent capability selections in generated workflow source. */
 export async function validateWorkflowAgentCapabilities(options: ValidateWorkflowAgentCapabilitiesOptions): Promise<void> {
-  const sourceFile = ts.createSourceFile("workflow.js", options.source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const { sourceFile } = analyzeWorkflowSource(options.source);
   const diagnostics: CapabilityDiagnostic[] = [];
   const uses = collectWorkflowAgentCapabilityUses(sourceFile, options.defaultExtensions, options.defaultTools, diagnostics);
   if (uses.length === 0 && diagnostics.length === 0) return;

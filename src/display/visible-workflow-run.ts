@@ -14,8 +14,6 @@ import { sendWorkflowUserMessage, type SendWorkflowUserMessage } from "./workflo
 
 interface VisibleWorkflowRunOptions {
   ctx: ExtensionContext;
-  cwd: string;
-  agentDir: string;
   agent: WorkflowAgent;
   llm: WorkflowLLM;
   signal?: AbortSignal;
@@ -25,8 +23,10 @@ interface VisibleWorkflowRunOptions {
 }
 
 export interface StartVisibleWorkflowRunOptions extends VisibleWorkflowRunOptions {
+  cwd: string;
   workflowName: string;
   input: unknown;
+  agentDir: string;
 }
 
 export interface VisibleWorkflowRun {
@@ -36,7 +36,14 @@ export interface VisibleWorkflowRun {
 }
 
 export interface ResumeVisibleWorkflowRunOptions extends VisibleWorkflowRunOptions {
+  cwd: string;
   runId: string;
+  agentDir: string;
+}
+
+/** Starts the visible lifecycle for a workflow that has already been prepared at the command boundary. */
+export interface StartVisiblePreparedWorkflowRunOptions extends VisibleWorkflowRunOptions {
+  prepared: PreparedWorkflowRun;
 }
 
 interface TrackedVisibleWorkflowRun extends VisibleWorkflowRun {
@@ -54,7 +61,7 @@ export async function startVisibleWorkflowRun(options: StartVisibleWorkflowRunOp
     input: options.input,
     agentDir: options.agentDir,
   });
-  return startVisiblePreparedWorkflowRun(options, prepared);
+  return startVisiblePreparedWorkflowRun({ ...options, prepared });
 }
 
 /** Resumes a failed or aborted visible workflow run in its owning live Pi session. */
@@ -65,13 +72,12 @@ export async function resumeVisibleWorkflowRun(options: ResumeVisibleWorkflowRun
     ownerSessionId: options.ctx.sessionManager.getSessionId(),
     agentDir: options.agentDir,
   });
-  return startVisiblePreparedWorkflowRun(options, prepared);
+  return startVisiblePreparedWorkflowRun({ ...options, prepared });
 }
 
-async function startVisiblePreparedWorkflowRun(
-  options: StartVisibleWorkflowRunOptions | ResumeVisibleWorkflowRunOptions,
-  prepared: PreparedWorkflowRun,
-): Promise<VisibleWorkflowRun> {
+/** Starts a prepared workflow and owns its visible Pi lifecycle. */
+export async function startVisiblePreparedWorkflowRun(options: StartVisiblePreparedWorkflowRunOptions): Promise<VisibleWorkflowRun> {
+  const { prepared } = options;
   const showRunningUi = options.ctx.mode === "tui";
   const ownerSessionId = options.ctx.sessionManager.getSessionId();
   const scope = extensionSessionScope(options.ctx);

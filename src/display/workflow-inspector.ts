@@ -56,7 +56,13 @@ export class WorkflowInspector implements Component, Focusable {
     const height = Math.max(8, this.getHeight());
     const workflow = this.model.workflow();
     const statusTag =
-      workflow.status === "error" ? this.theme.danger(" [error]") : workflow.status === "done" ? this.theme.ok(" [done]") : "";
+      workflow.status === "error"
+        ? this.theme.danger(" [error]")
+        : workflow.status === "aborted"
+          ? this.theme.warn(" [aborted]")
+          : workflow.status === "done"
+            ? this.theme.ok(" [done]")
+            : "";
     const llmStats = workflow.llmsTotal > 0 ? ` ${glyph.mid} ${String(workflow.llmsDone)}/${String(workflow.llmsTotal)} LLM` : "";
     const stats = `${String(workflow.agentsDone)}/${String(workflow.agentsTotal)} agents${llmStats} ${glyph.mid} ${fmtDuration(workflow.elapsed)}`;
     const renderedStats = this.theme.dim(truncEnd(stats, Math.floor(termWidth / 2)));
@@ -277,18 +283,21 @@ function phaseGlyph(phase: WorkflowUiPhase, tick: number, theme: WorkflowTuiThem
   if (phase.status === "done") return theme.ok(glyph.done);
   if (phase.status === "running") return theme.warn(spinnerFrame(tick));
   if (phase.status === "error") return theme.danger("✗");
+  if (phase.status === "aborted") return theme.warn("■");
   return theme.pending(String(phase.index));
 }
 
 function callGlyph(call: WorkflowUiCall, tick: number, theme: WorkflowTuiTheme): string {
   if (call.status === "completed") return theme.ok(glyph.done);
   if (call.status === "running") return theme.warn(spinnerFrame(tick));
+  if (call.status === "aborted") return theme.warn("■");
   return theme.danger("✗");
 }
 
 function statusWord(status: WorkflowUiCall["status"]): string {
   if (status === "completed") return "Completed";
   if (status === "running") return "Running";
+  if (status === "aborted") return "Aborted";
   return "Failed";
 }
 

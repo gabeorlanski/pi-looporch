@@ -28,7 +28,9 @@ export interface BackgroundWorkflowRunResult extends WorkflowRunResult {
 export interface BackgroundWorkflowRun {
   runId: string;
   outputsDir: string;
-  abort: () => void;
+  sessionLogDir?: string;
+  abort: () => boolean;
+  isAborting: () => boolean;
   finished: Promise<BackgroundWorkflowRunResult>;
 }
 
@@ -51,9 +53,12 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
   await writeRunRecord(outputsDir, runRecord);
   const controller = new AbortController();
   let latestSnapshot: WorkflowSnapshot | undefined;
+  let sessionLogDir: string | undefined;
   let snapshotWrite: Promise<void> = Promise.resolve();
-  const abortWorkflow = (): void => {
-    if (!controller.signal.aborted) controller.abort();
+  const abortWorkflow = (): boolean => {
+    if (controller.signal.aborted) return false;
+    controller.abort();
+    return true;
   };
   const removeParentAbortListener = linkAbortSignal(options.signal, abortWorkflow);
   const finished = runWorkflowFromDirectory({
@@ -73,19 +78,19 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
       return {
         ...result,
         runId: options.runId,
-        sessionLogDir: await writeWorkflowSessionSummary({
+        sessionLogDir: (sessionLogDir = await writeWorkflowSessionSummary({
           cwd: options.cwd,
           parentId: options.runId,
           snapshot: result.snapshot,
           resultPath: result.resultPath,
-        }),
+        })),
       };
     })
     .catch(async (error: unknown) => {
       runRecord.status = controller.signal.aborted ? "aborted" : "error";
       await writeRunRecord(outputsDir, runRecord);
       if (latestSnapshot) {
-        await writeWorkflowSessionSummary({
+        sessionLogDir = await writeWorkflowSessionSummary({
           cwd: options.cwd,
           parentId: options.runId,
           snapshot: latestSnapshot,
@@ -102,7 +107,11 @@ export async function startBackgroundWorkflowRun(options: StartBackgroundWorkflo
   return {
     runId: options.runId,
     outputsDir,
+    get sessionLogDir() {
+      return sessionLogDir;
+    },
     abort: abortWorkflow,
+    isAborting: () => controller.signal.aborted,
     finished,
   };
 }

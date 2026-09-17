@@ -3,9 +3,9 @@ import { workflowCalls } from "../runtime/calls.ts";
 import type { WorkflowAgentSnapshot, WorkflowCost, WorkflowLLMSnapshot, WorkflowSnapshot, WorkflowSnapshotCall } from "../runtime/types.ts";
 import { workflowUsageTotals } from "../runtime/usage.ts";
 
-type WorkflowStatus = "running" | "done" | "error";
-type PhaseStatus = "done" | "running" | "pending" | "error";
-type CallStatus = "completed" | "running" | "failed";
+type WorkflowStatus = "running" | "done" | "error" | "aborted";
+type PhaseStatus = "done" | "running" | "pending" | "error" | "aborted";
+type CallStatus = "completed" | "running" | "failed" | "aborted";
 
 export type WorkflowUiCall = {
   id: number;
@@ -160,6 +160,8 @@ function phaseCalls(calls: readonly WorkflowSnapshotCall[], phaseIndex: number, 
 
 function phaseStatus(snapshot: WorkflowSnapshot, calls: readonly WorkflowSnapshotCall[], phaseIndex: number): PhaseStatus {
   if (snapshot.status === "error" && calls.some((call) => call.phaseIndex === phaseIndex && call.status === "error")) return "error";
+  if (snapshot.status === "aborted" && calls.some((call) => call.phaseIndex === phaseIndex && call.status === "aborted")) return "aborted";
+  if (snapshot.status === "aborted" && phaseIndex === snapshot.phases.length) return "aborted";
   if (snapshot.status === "running" && phaseIndex === snapshot.phases.length) return "running";
   if (snapshot.status === "running" && phaseIndex === 0 && snapshot.phases.length === 0) return "running";
   return "done";
@@ -228,6 +230,7 @@ function uiLLM(llm: WorkflowLLMSnapshot, now: number): WorkflowUiCall {
 function callStatus(status: WorkflowAgentSnapshot["status"]): CallStatus {
   if (status === "done") return "completed";
   if (status === "error") return "failed";
+  if (status === "aborted") return "aborted";
   return "running";
 }
 

@@ -14,6 +14,7 @@ const workflowCompletionHandoffTemplate = readFileSync(
   "utf8",
 ).trim();
 const workflowFailureHandoffTemplate = readFileSync(new URL("./prompts/workflow-failure-handoff.txt", import.meta.url), "utf8").trim();
+const workflowAbortedHandoffTemplate = readFileSync(new URL("./prompts/workflow-aborted-handoff.txt", import.meta.url), "utf8").trim();
 
 export interface SteerableInputResolutionOptions {
   rawInput: string;
@@ -75,6 +76,23 @@ export function workflowCompletionHandoffPrompt(metadata: unknown, result: strin
 /** Renders a typed automated handoff after a workflow fails. */
 export function workflowFailureHandoffPrompt(workflowName: string, failure: string, runId: string): string {
   return renderPromptTemplate(workflowFailureHandoffTemplate, { workflowName, runId, failure });
+}
+
+/** Renders a typed automated handoff after a workflow is intentionally aborted. */
+export function workflowAbortedHandoffPrompt(options: {
+  workflowName: string;
+  runId: string;
+  outputsDir: string;
+  snapshotPath: string;
+  sessionLogDir?: string;
+}): string {
+  return renderPromptTemplate(workflowAbortedHandoffTemplate, {
+    workflowName: options.workflowName,
+    runId: options.runId,
+    outputsDir: options.outputsDir,
+    snapshotPath: options.snapshotPath,
+    sessionLogDir: options.sessionLogDir ?? "not written",
+  });
 }
 
 function renderPromptTemplate(template: string, values: Record<string, string>): string {

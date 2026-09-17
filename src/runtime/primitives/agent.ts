@@ -145,7 +145,8 @@ export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, a
       return output;
     } catch (error) {
       await reporter?.flush();
-      agent.status = "error";
+      const aborted = runtime.options.signal?.aborted === true;
+      agent.status = aborted ? "aborted" : "error";
       agent.endedAt = Date.now();
       agent.error = errorMessage(error);
       appendRunMessage(runtime, {
@@ -153,8 +154,8 @@ export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, a
         ...(agent.phase ? { phase: agent.phase } : {}),
         agentId: agent.id,
         agentLabel: agent.label,
-        level: "error",
-        message: `${agent.label} error: ${agent.error}`,
+        level: aborted ? "warning" : "error",
+        message: aborted ? `${agent.label} aborted` : `${agent.label} error: ${agent.error}`,
       });
       runtime.emit();
       throw error;

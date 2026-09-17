@@ -1,0 +1,23 @@
+<workflow_handoff event="aborted">
+A workflow run was intentionally aborted after it started.
+
+## Required action
+
+- Tell the user the workflow was aborted and has no final workflow result.
+- Preserve the artifact locations below when reporting what completed before cancellation.
+- `resume_workflow` remains available for this run in the same live Pi session, but do not resume automatically.
+
+## Workflow
+
+`{{workflowName}}`
+
+## Run ID
+
+`{{runId}}`
+
+## Artifact locations
+
+- Workflow outputs: `{{outputsDir}}`
+- Latest snapshot: `{{snapshotPath}}`
+- Workflow session logs: `{{sessionLogDir}}`
+</workflow_handoff>

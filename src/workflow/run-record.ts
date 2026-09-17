@@ -17,20 +17,34 @@ export interface RunRecord {
   status: "running" | "done" | "error" | "aborted";
 }
 
-/** A running record with its canonical run-directory location. */
-export interface ActiveWorkflowRunRecord extends Omit<RunRecord, "status"> {
-  status: "running";
+/** A canonical run record with its run-directory location. */
+export interface WorkflowRunRecord extends RunRecord {
   outputsDir: string;
+}
+
+/** A canonical record for a workflow that is still running. */
+export interface ActiveWorkflowRunRecord extends WorkflowRunRecord {
+  status: "running";
+}
+
+/** Reads canonical run records for this project, optionally restricted to one live session. */
+export async function readWorkflowRunRecords(cwd: string, ownerSessionId?: string): Promise<WorkflowRunRecord[]> {
+  const sessionIds = ownerSessionId === undefined ? await workflowSessionIds(cwd) : [ownerSessionId];
+  const records: WorkflowRunRecord[] = [];
+  for (const sessionId of sessionIds) records.push(...(await readWorkflowRunRecordsForSession(cwd, sessionId)));
+  return records;
+}
+
+/** Reads one canonical run record from the specified live parent session. */
+export async function readWorkflowRunRecord(cwd: string, ownerSessionId: string, runId: string): Promise<WorkflowRunRecord | undefined> {
+  return readWorkflowRunRecordFile(cwd, ownerSessionId, runId, workflowRunDirectory(cwd, ownerSessionId, runId));
 }
 
 /** Reads canonical running records for this project, optionally restricted to one live session. */
 export async function readActiveWorkflowRuns(cwd: string, ownerSessionId?: string): Promise<ActiveWorkflowRunRecord[]> {
-  const sessionIds = ownerSessionId === undefined ? await workflowSessionIds(cwd) : [ownerSessionId];
-  const records: ActiveWorkflowRunRecord[] = [];
-  for (const sessionId of sessionIds) {
-    records.push(...(await readActiveWorkflowRunsForSession(cwd, sessionId)));
-  }
-  return records;
+  return (await readWorkflowRunRecords(cwd, ownerSessionId)).filter(
+    (record): record is ActiveWorkflowRunRecord => record.status === "running",
+  );
 }
 
 /** Exclusively claims a run for one resume attempt until the returned release function is called. */
@@ -83,14 +97,19 @@ async function workflowSessionIds(cwd: string): Promise<string[]> {
   }
 }
 
-async function readActiveWorkflowRunsForSession(cwd: string, ownerSessionId: string): Promise<ActiveWorkflowRunRecord[]> {
+async function readWorkflowRunRecordsForSession(cwd: string, ownerSessionId: string): Promise<WorkflowRunRecord[]> {
   const runsDirectory = workflowRunsDirectory(cwd, ownerSessionId);
   try {
     const entries = await readdir(runsDirectory, { withFileTypes: true });
-    const records: ActiveWorkflowRunRecord[] = [];
+    const records: WorkflowRunRecord[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const record = await readActiveWorkflowRun(cwd, ownerSessionId, decodeURIComponent(entry.name), path.join(runsDirectory, entry.name));
+      const record = await readWorkflowRunRecordFile(
+        cwd,
+        ownerSessionId,
+        decodeURIComponent(entry.name),
+        path.join(runsDirectory, entry.name),
+      );
       if (record !== undefined) records.push(record);
     }
     return records;
@@ -100,23 +119,22 @@ async function readActiveWorkflowRunsForSession(cwd: string, ownerSessionId: str
   }
 }
 
-async function readActiveWorkflowRun(
+async function readWorkflowRunRecordFile(
   cwd: string,
   ownerSessionId: string,
   runId: string,
   outputsDir: string,
-): Promise<ActiveWorkflowRunRecord | undefined> {
+): Promise<WorkflowRunRecord | undefined> {
   try {
     const value = JSON.parse(await readFile(path.join(outputsDir, "run.json"), "utf8")) as unknown;
     if (
       !isRunRecord(value) ||
-      value.status !== "running" ||
       value.runId !== runId ||
       value.ownerSessionId !== ownerSessionId ||
       path.resolve(value.cwd) !== path.resolve(cwd)
     )
       return undefined;
-    return { ...value, status: "running", outputsDir };
+    return { ...value, outputsDir };
   } catch (error) {
     if (isMissingFileError(error)) return undefined;
     throw error;

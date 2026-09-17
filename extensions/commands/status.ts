@@ -20,6 +20,7 @@ export async function workflowStatusCommand(pi: ExtensionAPI, ctx: ExtensionComm
       scope: "project",
       ownerSessionId: ctx.sessionManager.getSessionId(),
       ref: parsed.ref,
+      includeCompleted: false,
       now: Date.now(),
     };
     const { content, details } = parsed.all

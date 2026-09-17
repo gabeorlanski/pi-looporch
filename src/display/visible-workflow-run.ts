@@ -2,10 +2,12 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { BackgroundWorkflowRun } from "../workflow/background-runs.ts";
 import { errorMessage } from "../errors.ts";
-import { workflowFailureHandoffPrompt } from "../prompt-templates.ts";
+import { workflowAbortedHandoffPrompt, workflowFailureHandoffPrompt } from "../prompt-templates.ts";
 import type { WorkflowAgent, WorkflowLLM, WorkflowSnapshot } from "../runtime/types.ts";
 import { createInitialWorkflowSnapshot } from "../runtime/snapshot.ts";
+import { workflowSnapshotPath } from "../workflow/outputs.ts";
 import { WorkflowInputError } from "../workflow/input-contract.ts";
+import { readWorkflowRunRecord } from "../workflow/run-record.ts";
 import { prepareWorkflowResume, prepareWorkflowRun, startPreparedWorkflowRun, type PreparedWorkflowRun } from "../workflow/start.ts";
 import { beginDynamicWorkflow, clearRunningWorkflowUi, updateRunningWorkflowUi } from "./running-workflow-ui.ts";
 import { extensionSessionScope } from "./session-scope.ts";
@@ -33,6 +35,16 @@ export interface VisibleWorkflowRun {
   prepared: PreparedWorkflowRun;
   run: BackgroundWorkflowRun;
   isSessionClosing: () => boolean;
+}
+
+export type VisibleWorkflowAbortStatus = "abort-requested" | "already-aborting" | "already-aborted" | "already-finished";
+
+export interface VisibleWorkflowAbort {
+  status: VisibleWorkflowAbortStatus;
+  runId: string;
+  workflowName: string;
+  outputsDir: string;
+  snapshotPath: string;
 }
 
 export interface ResumeVisibleWorkflowRunOptions extends VisibleWorkflowRunOptions {
@@ -133,6 +145,32 @@ export async function startVisiblePreparedWorkflowRun(options: StartVisiblePrepa
   }
 }
 
+/** Requests cooperative cancellation for one visible workflow run owned by this live Pi session. */
+export async function abortVisibleWorkflowRun(ctx: ExtensionContext, runId: string): Promise<VisibleWorkflowAbort> {
+  const visible = visibleWorkflowRunsByScope.get(extensionSessionScope(ctx))?.get(runId);
+  if (visible) {
+    return {
+      status: visible.run.abort() ? "abort-requested" : "already-aborting",
+      runId,
+      workflowName: visible.prepared.workflowName,
+      outputsDir: visible.run.outputsDir,
+      snapshotPath: workflowSnapshotPath(visible.run.outputsDir),
+    };
+  }
+
+  const record = await readWorkflowRunRecord(ctx.cwd, ctx.sessionManager.getSessionId(), runId);
+  if (!record) throw new Error(`Workflow run '${runId}' was not found in the current live session.`);
+  if (record.ownerProcessId !== process.pid) throw new Error(`Workflow run '${runId}' belongs to a different Pi process.`);
+  if (record.status === "running") throw new Error(`Workflow run '${runId}' is no longer controllable by this session.`);
+  return {
+    status: record.status === "aborted" ? "already-aborted" : "already-finished",
+    runId,
+    workflowName: record.workflowName,
+    outputsDir: record.outputsDir,
+    snapshotPath: workflowSnapshotPath(record.outputsDir),
+  };
+}
+
 /** Provides the abortVisibleWorkflowRuns function contract. */
 export async function abortVisibleWorkflowRuns(ctx: ExtensionContext): Promise<void> {
   const runs = [...(visibleWorkflowRunsByScope.get(extensionSessionScope(ctx))?.values() ?? [])];
@@ -167,10 +205,37 @@ async function settleVisibleWorkflowRun(
       }
     }
   } catch (error) {
-    if (!visible.isSessionClosing())
-      failVisibleWorkflowRun(ctx, visible.prepared.workflowName, visible.prepared.runId, error, sendUserMessage);
+    if (!visible.isSessionClosing()) {
+      if (visible.run.isAborting()) abortVisibleWorkflowRunHandoff(ctx, visible, sendUserMessage);
+      else failVisibleWorkflowRun(ctx, visible.prepared.workflowName, visible.prepared.runId, error, sendUserMessage);
+    }
   } finally {
     visible.cleanup();
+  }
+}
+
+function abortVisibleWorkflowRunHandoff(
+  ctx: ExtensionContext,
+  visible: TrackedVisibleWorkflowRun,
+  sendUserMessage: SendWorkflowUserMessage,
+): void {
+  const { prepared, run } = visible;
+  try {
+    ctx.ui.notify(`Workflow '${prepared.workflowName}' aborted.`, "warning");
+    sendWorkflowUserMessage(
+      ctx,
+      sendUserMessage,
+      workflowAbortedHandoffPrompt({
+        workflowName: prepared.workflowName,
+        runId: prepared.runId,
+        outputsDir: run.outputsDir,
+        snapshotPath: workflowSnapshotPath(run.outputsDir),
+        sessionLogDir: run.sessionLogDir,
+      }),
+      "steer",
+    );
+  } catch (handlingError) {
+    ctx.ui.notify(`Workflow '${prepared.workflowName}' was aborted, but abort handling failed: ${errorMessage(handlingError)}`, "error");
   }
 }
 

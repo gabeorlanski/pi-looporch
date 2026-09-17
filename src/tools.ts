@@ -1,7 +1,7 @@
 /** Provides tools behavior. */
 import { Type } from "typebox";
 import { defineTool, getAgentDir, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { resumeVisibleWorkflowRun, startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
+import { abortVisibleWorkflowRun, resumeVisibleWorkflowRun, startVisibleWorkflowRun } from "./display/visible-workflow-run.ts";
 import type { SendWorkflowUserMessage } from "./display/workflow-user-message.ts";
 import { workflowFinalOutputPath } from "./workflow/outputs.ts";
 import type { WorkflowAgent, WorkflowLLM, WorkflowSnapshot } from "./runtime/types.ts";
@@ -33,6 +33,7 @@ export function createWorkflowTools(options: WorkflowToolsOptions): ToolDefiniti
   return [
     createRunWorkflowTool(options.run),
     createResumeWorkflowTool(options.run),
+    createAbortWorkflowTool(),
     createWorkflowStatusTool(),
     createGuidanceTool(),
     createProposeWorkflowTool(options),
@@ -97,6 +98,30 @@ function createResumeWorkflowTool(options: WorkflowRunToolOptions): ToolDefiniti
   });
 }
 
+function createAbortWorkflowTool(): ToolDefinition {
+  return defineTool({
+    name: "abort_workflow",
+    label: "Abort Workflow",
+    description: "Request cooperative cancellation of a running workflow in this live Pi session.",
+    promptSnippet: "abort_workflow: Request cancellation of one current-session workflow by its exact run ID.",
+    parameters: Type.Object({
+      runId: Type.String({ description: "Exact workflow run ID returned by run_workflow" }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const aborted = await abortVisibleWorkflowRun(ctx, params.runId);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Workflow ${aborted.workflowName}: ${aborted.status}.\n\nWorkflow run ID: ${aborted.runId}\nWorkflow outputs: ${aborted.outputsDir}\nWorkflow snapshot: ${aborted.snapshotPath}`,
+          },
+        ],
+        details: aborted,
+      };
+    },
+  });
+}
+
 function workflowToolSnapshot(
   onUpdate:
     | ((partialResult: { content: { type: "text"; text: string }[]; details: ReturnType<typeof runningWorkflowToolDetails> }) => void)
@@ -157,6 +182,7 @@ function createWorkflowStatusTool(): ToolDefinition {
     parameters: Type.Object({
       scope: Type.Optional(Type.Union([Type.Literal("project"), Type.Literal("current-session")])),
       ref: Type.Optional(Type.String()),
+      includeCompleted: Type.Optional(Type.Boolean()),
       format: Type.Optional(Type.Union([Type.Literal("summary"), Type.Literal("json")])),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -165,6 +191,7 @@ function createWorkflowStatusTool(): ToolDefinition {
         scope: params.scope ?? "project",
         ownerSessionId: ctx.sessionManager.getSessionId(),
         ref: params.ref ?? "latest",
+        includeCompleted: params.includeCompleted ?? false,
         now: Date.now(),
       };
       const status = await readSelectedWorkflowStatus(cwd, query);

@@ -138,7 +138,7 @@ export interface WorkflowCallSnapshot {
   phase?: string;
   model?: string;
   reasoning?: ReasoningLevel;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "aborted";
   startedAt: number;
   endedAt?: number;
   inputTokenCount: number;
@@ -242,7 +242,7 @@ export interface WorkflowSnapshot {
   llms: WorkflowLLMSnapshot[];
   fanOuts: WorkflowFanOutSnapshot[];
   messages: WorkflowRunMessageSnapshot[];
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "aborted";
   input?: unknown;
 }
 

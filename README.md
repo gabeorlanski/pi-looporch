@@ -48,11 +48,15 @@ When a workflow finishes, pi-workflow posts the final result or report, keeps
 the output paths visible, and asks the current agent to review and summarize the
 result for you.
 
-`run_workflow` returns a run ID. If that run fails or is aborted, the current
-agent can call `resume_workflow` with the ID. Resume replays the current workflow
-source with its original input, returns unchanged completed `agent` and `LLM`
-calls from the run cache, and executes normally from the first changed or
-incomplete call. Resume is available only in the same live Pi session.
+`run_workflow` returns a run ID. The current agent can call
+`abort_workflow({ runId })` to request cooperative cancellation of an active run
+from the same live Pi session. It returns immediately with the run ID and output
+locations; a later aborted handoff confirms settlement. Aborting preserves
+completed artifacts but writes no workflow result. If that run fails or is
+aborted, the current agent can call `resume_workflow` with the ID. Resume replays
+the current workflow source with its original input, returns unchanged completed
+`agent` and `LLM` calls from the run cache, and executes normally from the first
+changed or incomplete call. Resume is available only in the same live Pi session.
 
 ## TUI
 
@@ -70,7 +74,9 @@ A trailing `+` means at least one observed provider response did not report a pr
 A passive project monitor also appears below the editor for workflows active in
 other Pi sessions for the same project. Use `/workflow-status [--json] [--all]
 [latest|<ref>]` or the `workflow_status` tool for compact status without knowing
-the output directory.
+the output directory. Agents can pass `includeCompleted: true` to
+`workflow_status` to inspect terminal run records, including aborted runs, while
+their owning live session persists.
 
 Inspector view:
 

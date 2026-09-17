@@ -197,14 +197,15 @@ export const llmPrimitive: WorkflowPrimitive<{
           return result;
         }
       } catch (error) {
-        llm.status = "error";
+        const aborted = runtime.options.signal?.aborted === true;
+        llm.status = aborted ? "aborted" : "error";
         llm.endedAt = Date.now();
         llm.error = errorMessage(error);
         appendRunMessage(runtime, {
           phaseIndex: llm.phaseIndex,
           ...(llm.phase ? { phase: llm.phase } : {}),
-          level: "error",
-          message: `LLM #${String(llm.id)} error: ${llm.error}`,
+          level: aborted ? "warning" : "error",
+          message: aborted ? `LLM #${String(llm.id)} aborted` : `LLM #${String(llm.id)} error: ${llm.error}`,
         });
         runtime.emit();
         throw error;

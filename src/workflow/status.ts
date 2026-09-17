@@ -1,6 +1,6 @@
 /** Provides status behavior. */
 import path from "node:path";
-import { readActiveWorkflowRuns, type ActiveWorkflowRunRecord } from "./run-record.ts";
+import { readActiveWorkflowRuns, readWorkflowRunRecords, type WorkflowRunRecord } from "./run-record.ts";
 import { readWorkflowOutputManifest, readWorkflowSnapshot } from "./outputs.ts";
 import type { WorkflowAgentSnapshot, WorkflowCost, WorkflowSnapshot } from "../runtime/types.ts";
 import { errorMessage } from "../errors.ts";
@@ -11,6 +11,7 @@ export interface WorkflowStatusQuery {
   scope: WorkflowStatusScope;
   ownerSessionId: string;
   ref: string;
+  includeCompleted: boolean;
   now: number;
 }
 
@@ -49,7 +50,7 @@ export interface WorkflowAgentTotals {
 export interface WorkflowRunStatus {
   runId: string;
   workflowName: string;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "aborted";
   scope: WorkflowStatusScope;
   ownerSessionId: string;
   outputsDir: string;
@@ -76,7 +77,10 @@ export type SelectedWorkflowStatus =
 
 /** Provides the readWorkflowStatusList function contract. */
 export async function readWorkflowStatusList(cwd: string, query: WorkflowStatusQuery): Promise<WorkflowRunStatus[]> {
-  const records = await readActiveWorkflowRuns(cwd, query.scope === "current-session" ? query.ownerSessionId : undefined);
+  const ownerSessionId = query.scope === "current-session" ? query.ownerSessionId : undefined;
+  const records = query.includeCompleted
+    ? await readWorkflowRunRecords(cwd, ownerSessionId)
+    : await readActiveWorkflowRuns(cwd, ownerSessionId);
   const statuses: WorkflowRunStatus[] = [];
   for (const record of records) statuses.push(await readWorkflowRunStatus(record, query));
   return statuses.sort((left, right) => right.startedAt - left.startedAt);
@@ -100,7 +104,7 @@ function selectWorkflowStatus(cwd: string, statuses: WorkflowRunStatus[], query:
   );
 }
 
-async function readWorkflowRunStatus(record: ActiveWorkflowRunRecord, query: WorkflowStatusQuery): Promise<WorkflowRunStatus> {
+async function readWorkflowRunStatus(record: WorkflowRunRecord, query: WorkflowStatusQuery): Promise<WorkflowRunStatus> {
   const [manifestResult, snapshotResult] = await Promise.all([
     readManifestStatus(record.outputsDir),
     readSnapshotStatus(record.outputsDir),
@@ -146,9 +150,9 @@ async function readSnapshotStatus(
 }
 
 function workflowRunStatusFromSnapshot(
-  record: ActiveWorkflowRunRecord,
+  record: WorkflowRunRecord,
   query: WorkflowStatusQuery,
-  manifestStatus: "running" | "done" | "error",
+  manifestStatus: "running" | "done" | "error" | "aborted",
   resultPath: string | null,
   manifestError: string | undefined,
   snapshot: WorkflowSnapshot,
@@ -184,9 +188,9 @@ function workflowRunStatusFromSnapshot(
 }
 
 function degradedWorkflowRunStatus(
-  record: ActiveWorkflowRunRecord,
+  record: WorkflowRunRecord,
   query: WorkflowStatusQuery,
-  status: "running" | "done" | "error",
+  status: "running" | "done" | "error" | "aborted",
   resultPath: string | null,
   message: string,
   error: string,
@@ -220,7 +224,7 @@ function matchesWorkflowRef(cwd: string, status: WorkflowRunStatus, ref: string)
   );
 }
 
-function currentPhase(snapshot: WorkflowSnapshot, status: "running" | "done" | "error"): string {
+function currentPhase(snapshot: WorkflowSnapshot, status: "running" | "done" | "error" | "aborted"): string {
   return snapshot.phases.at(-1) ?? (status === "running" ? "running" : status);
 }
 

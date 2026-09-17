@@ -54,14 +54,21 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     runtime.emit();
     return { workflowName, workflowDir, metadata, result, snapshot: cloneSnapshot(snapshot), outputsDir: options.outputsDir, resultPath };
   } catch (error) {
-    snapshot.status = "error";
+    const aborted = options.signal?.aborted === true;
+    snapshot.status = aborted ? "aborted" : "error";
     appendRunMessage(runtime, {
       phaseIndex: snapshot.phases.length,
       phase: snapshot.phases.at(-1),
-      level: "error",
-      message: `workflow failed: ${errorMessage(error)}`,
+      level: aborted ? "warning" : "error",
+      message: aborted ? "workflow aborted" : `workflow failed: ${errorMessage(error)}`,
     });
-    if (options.outputsDir) await writeWorkflowOutputManifest({ outputsDir: options.outputsDir, workflowName, snapshot, error });
+    if (options.outputsDir)
+      await writeWorkflowOutputManifest({
+        outputsDir: options.outputsDir,
+        workflowName,
+        snapshot,
+        ...(aborted ? {} : { error }),
+      });
     runtime.emit();
     throw error;
   }

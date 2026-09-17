@@ -62,6 +62,10 @@ _Avoid_: Snapshot, artifact cache
 Re-execution of a Workflow Run using its original input and current Workflow Definition, reusing the unchanged successful model-call prefix and continuing from the first changed or incomplete call.
 _Avoid_: Resume
 
+**Abort**:
+The intentional cooperative cancellation of a running Workflow Run. An aborted run preserves completed artifacts and may later Resume in its live Parent Session.
+_Avoid_: Stop, failure
+
 **Resume**:
 The same-session action that restarts a failed or aborted Workflow Run through Replay.
 _Avoid_: Replay, retry

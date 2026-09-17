@@ -22,6 +22,7 @@ void test("workflow status reads canonical running records for the requested ses
     scope: "project",
     ownerSessionId: "session-a",
     ref: "latest",
+    includeCompleted: false,
     now: 3_000,
   });
   assert.deepEqual(
@@ -33,6 +34,7 @@ void test("workflow status reads canonical running records for the requested ses
     scope: "current-session",
     ownerSessionId: "session-a",
     ref: "latest",
+    includeCompleted: false,
     now: 3_000,
   });
   assert.deepEqual(
@@ -44,6 +46,40 @@ void test("workflow status reads canonical running records for the requested ses
     (await readActiveWorkflowSnapshots(project, "session-a")).map((snapshot) => snapshot.runId),
     ["run-a"],
   );
+});
+
+void test("workflow status includes terminal aborted records only when requested", async () => {
+  const project = await mkdtemp(path.join(tmpdir(), "pi-workflow-status-"));
+  await writeRunRecord(workflowRunDirectory(project, "session-a", "run-aborted"), {
+    runId: "run-aborted",
+    workflowName: "review",
+    cwd: project,
+    input: {},
+    ownerSessionId: "session-a",
+    ownerProcessId: process.pid,
+    startedAt: 1,
+    resumeCount: 0,
+    status: "aborted",
+  });
+
+  const active = await readWorkflowStatusList(project, {
+    scope: "current-session",
+    ownerSessionId: "session-a",
+    ref: "latest",
+    includeCompleted: false,
+    now: 2_000,
+  });
+  const completed = await readWorkflowStatusList(project, {
+    scope: "current-session",
+    ownerSessionId: "session-a",
+    ref: "latest",
+    includeCompleted: true,
+    now: 2_000,
+  });
+
+  assert.deepEqual(active, []);
+  assert.equal(completed[0]?.status, "aborted");
+  assert.equal(completed[0]?.resultPath, null);
 });
 
 void test("workflow status degrades a canonical running record when its output projection is unavailable", async () => {
@@ -64,6 +100,7 @@ void test("workflow status degrades a canonical running record when its output p
     scope: "current-session",
     ownerSessionId: "session-a",
     ref: "latest",
+    includeCompleted: false,
     now: 2_000,
   });
 
@@ -119,6 +156,7 @@ void test("workflow status retains a valid snapshot when the manifest is absent"
     scope: "current-session",
     ownerSessionId: "session-a",
     ref: "latest",
+    includeCompleted: false,
     now: 2_000,
   });
 

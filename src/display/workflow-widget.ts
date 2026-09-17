@@ -29,7 +29,9 @@ export class WorkflowWidget implements Component {
       ? this.theme.accent(spinnerFrame(model.tick))
       : workflow.status === "done"
         ? this.theme.ok(glyph.done)
-        : this.theme.danger("✗");
+        : workflow.status === "aborted"
+          ? this.theme.warn("■")
+          : this.theme.danger("✗");
     const stats = `${String(workflow.agentsDone)}/${String(workflow.agentsTotal)} agents done ${glyph.mid} ${fmtDuration(workflow.elapsed)}`;
     const usage = `${this.theme.dim("in ")}${this.theme.accent(fmtTokens(workflow.inputTokens))}${this.theme.dim(
       ` ${glyph.mid} cached ${fmtTokens(workflow.cachedTokens)} ${glyph.mid} out ${fmtTokens(workflow.outputTokens)} ${glyph.mid} `,

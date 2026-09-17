@@ -10,7 +10,7 @@ import type {
 import { errorMessage } from "../../errors.ts";
 import { resolveWorkflowAgentCwd } from "../../workflow/paths.ts";
 import { writeWorkflowAgentActivity, writeWorkflowAgentOutput, writeWorkflowAgentPrompt } from "../../workflow/outputs.ts";
-import { fanOutScope, nextExecutionId, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
+import { fanOutScope, nextExecutionId, trackWorkflowCall, type ActiveWorkflowRuntime, type WorkflowPrimitive } from "../context.ts";
 import { appendRunMessage } from "../messages.ts";
 import { cloneSerializable } from "../serialization.ts";
 import { renderWorkflowAgentTask } from "../prompts.ts";
@@ -34,8 +34,12 @@ export const agentPrimitive: WorkflowPrimitive<{
   }),
 };
 
-/** Provides the runAgent function contract. */
-export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
+/** Runs and tracks one workflow-owned child-agent call until it settles. */
+export function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
+  return trackWorkflowCall(runtime, runAgentInner(runtime, prompt, agentOptions));
+}
+
+async function runAgentInner(runtime: ActiveWorkflowRuntime, prompt: string, agentOptions: WorkflowAgentOptions): Promise<unknown> {
   throwIfWorkflowAborted(runtime.options.signal);
   const callOptions: WorkflowAgentOptions = {
     ...agentOptions,
@@ -69,6 +73,7 @@ export async function runAgent(runtime: ActiveWorkflowRuntime, prompt: string, a
     ...request,
     adapter: await runtime.options.agent.cacheContext?.(callOptions),
   });
+  throwIfWorkflowAborted(runtime.options.signal);
   const replay = await replayWorkflowCheckpoint({
     runtime,
     kind: "agent",

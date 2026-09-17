@@ -49,6 +49,7 @@ export interface ActiveWorkflowRuntime {
   snapshot: WorkflowSnapshot;
   agentLaunchQueue: AgentLaunchQueue;
   executionCounters: Map<string, number>;
+  inFlightCalls: Set<Promise<unknown>>;
   emit: () => void;
 }
 
@@ -75,6 +76,21 @@ export const fanOutScope = new AsyncLocalStorage<number>();
 
 /** Async-local deterministic execution scope used for resumable model-call identities. */
 export const executionScope = new AsyncLocalStorage<string>();
+
+/** Tracks a workflow-owned asynchronous model call until it settles. */
+export function trackWorkflowCall<T>(runtime: ActiveWorkflowRuntime, call: Promise<T>): Promise<T> {
+  runtime.inFlightCalls.add(call);
+  void call.then(
+    () => runtime.inFlightCalls.delete(call),
+    () => runtime.inFlightCalls.delete(call),
+  );
+  return call;
+}
+
+/** Waits for every workflow-owned model call that was still in flight at settlement time. */
+export async function drainWorkflowCalls(runtime: ActiveWorkflowRuntime): Promise<void> {
+  while (runtime.inFlightCalls.size > 0) await Promise.allSettled([...runtime.inFlightCalls]);
+}
 
 /** Assigns the next deterministic execution identity within the current workflow scope. */
 export function nextExecutionId(

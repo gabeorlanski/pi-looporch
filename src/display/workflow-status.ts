@@ -48,7 +48,12 @@ export function renderWorkflowStatus(status: SelectedWorkflowStatus): string {
     lines.push("", "Errors:");
     lines.push(...status.errors.map((error) => `- ${error}`));
   }
-  lines.push("", "Outputs:", `- outputsDir: ${status.outputsDir}`, `- finalResultPath: ${status.resultPath ?? "not written yet"}`);
+  lines.push(
+    "",
+    "Outputs:",
+    `- outputsDir: ${status.outputsDir}`,
+    `- finalResultPath: ${status.status === "aborted" ? "no workflow result" : (status.resultPath ?? "not written yet")}`,
+  );
   return lines.join("\n");
 }
 

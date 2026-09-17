@@ -7,6 +7,7 @@ import { readActiveWorkflowSnapshots } from "../src/workflow/active-run-snapshot
 import { writeWorkflowOutputManifest, writeWorkflowSnapshot } from "../src/workflow/outputs.ts";
 import { writeRunRecord } from "../src/workflow/run-record.ts";
 import { workflowRunDirectory } from "../src/workflow/run-storage.ts";
+import { renderWorkflowStatus } from "../src/display/workflow-status.ts";
 import { readWorkflowStatusList } from "../src/workflow/status.ts";
 
 void test("workflow status reads canonical running records for the requested session scope", async () => {
@@ -78,8 +79,11 @@ void test("workflow status includes terminal aborted records only when requested
   });
 
   assert.deepEqual(active, []);
-  assert.equal(completed[0]?.status, "aborted");
-  assert.equal(completed[0]?.resultPath, null);
+  const [aborted] = completed;
+  assert.ok(aborted);
+  assert.equal(aborted.status, "aborted");
+  assert.equal(aborted.resultPath, null);
+  assert.match(renderWorkflowStatus(aborted), /no workflow result/);
 });
 
 void test("workflow status degrades a canonical running record when its output projection is unavailable", async () => {

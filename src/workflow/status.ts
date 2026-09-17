@@ -109,24 +109,19 @@ async function readWorkflowRunStatus(record: WorkflowRunRecord, query: WorkflowS
     readManifestStatus(record.outputsDir),
     readSnapshotStatus(record.outputsDir),
   ]);
+  const resultPath =
+    record.status === "aborted" ? null : manifestResult.kind === "ok" ? (manifestResult.manifest.resultPath ?? null) : null;
   if (snapshotResult.kind === "ok") {
     return workflowRunStatusFromSnapshot(
       record,
       query,
       record.status,
-      manifestResult.kind === "ok" ? (manifestResult.manifest.resultPath ?? null) : null,
+      resultPath,
       manifestResult.kind === "ok" ? manifestResult.manifest.error : manifestResult.error,
       snapshotResult.snapshot,
     );
   }
-  return degradedWorkflowRunStatus(
-    record,
-    query,
-    record.status,
-    manifestResult.kind === "ok" ? (manifestResult.manifest.resultPath ?? null) : null,
-    "snapshot unavailable",
-    snapshotResult.error,
-  );
+  return degradedWorkflowRunStatus(record, query, record.status, resultPath, "snapshot unavailable", snapshotResult.error);
 }
 
 async function readManifestStatus(

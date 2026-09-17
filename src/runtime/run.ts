@@ -5,7 +5,7 @@ import type { RunWorkflowOptions, WorkflowRunResult } from "./types.ts";
 import { normalizeWorkflowName, resolveWorkflowDirectory } from "../workflow/paths.ts";
 import { compileWorkflow } from "../workflow/sandbox.ts";
 import { writeWorkflowFinalOutput, writeWorkflowOutputManifest } from "../workflow/outputs.ts";
-import type { ActiveWorkflowRuntime } from "./context.ts";
+import { drainWorkflowCalls, type ActiveWorkflowRuntime } from "./context.ts";
 import { workflowGlobals } from "./globals.ts";
 import { parseWorkflowSourceMetadata } from "../workflow/metadata.ts";
 import { appendRunMessage } from "./messages.ts";
@@ -32,6 +32,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     snapshot,
     agentLaunchQueue: createAgentLaunchQueue(options.maxParallelAgents),
     executionCounters: new Map(),
+    inFlightCalls: new Set(),
     emit: () => options.onSnapshot?.(cloneSnapshot(snapshot)),
   };
   const compiled = compileWorkflow(source, entryFile, workflowGlobals(runtime, workflowDir));
@@ -41,6 +42,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
   try {
     throwIfWorkflowAborted(options.signal);
     const result = cloneSerializable(await compiled.workflow(options.input));
+    await drainWorkflowCalls(runtime);
     throwIfWorkflowAborted(options.signal);
     snapshot.status = "done";
     const resultPath = options.outputsDir ? await writeWorkflowFinalOutput(options.outputsDir, result) : undefined;
@@ -54,6 +56,7 @@ export async function runWorkflowFromDirectory(options: RunWorkflowOptions): Pro
     runtime.emit();
     return { workflowName, workflowDir, metadata, result, snapshot: cloneSnapshot(snapshot), outputsDir: options.outputsDir, resultPath };
   } catch (error) {
+    await drainWorkflowCalls(runtime);
     const aborted = options.signal?.aborted === true;
     snapshot.status = aborted ? "aborted" : "error";
     appendRunMessage(runtime, {

@@ -149,8 +149,16 @@ export async function startVisiblePreparedWorkflowRun(options: StartVisiblePrepa
 export async function abortVisibleWorkflowRun(ctx: ExtensionContext, runId: string): Promise<VisibleWorkflowAbort> {
   const visible = visibleWorkflowRunsByScope.get(extensionSessionScope(ctx))?.get(runId);
   if (visible) {
+    const abortRequested = visible.run.abort();
+    const status = visible.run.status();
     return {
-      status: visible.run.abort() ? "abort-requested" : "already-aborting",
+      status: abortRequested
+        ? "abort-requested"
+        : status === "aborted"
+          ? "already-aborted"
+          : status === "running"
+            ? "already-aborting"
+            : "already-finished",
       runId,
       workflowName: visible.prepared.workflowName,
       outputsDir: visible.run.outputsDir,
@@ -206,7 +214,7 @@ async function settleVisibleWorkflowRun(
     }
   } catch (error) {
     if (!visible.isSessionClosing()) {
-      if (visible.run.isAborting()) abortVisibleWorkflowRunHandoff(ctx, visible, sendUserMessage);
+      if (visible.run.status() === "aborted") abortVisibleWorkflowRunHandoff(ctx, visible, sendUserMessage);
       else failVisibleWorkflowRun(ctx, visible.prepared.workflowName, visible.prepared.runId, error, sendUserMessage);
     }
   } finally {
